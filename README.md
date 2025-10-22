@@ -158,3 +158,40 @@ Zerver is now in **active development** with a working MVP. The core concepts, A
 Phase-2 will introduce the non-blocking I/O reactor and priority scheduler. The MVP API is fully compatible with Phase-2 enhancements.
 
 We welcome discussion, feedback, and contributions on the design. Please review the documentation in `docs/` and open an issue to share your thoughts.
+
+---
+
+## Full Example: Todo CRUD API
+
+For a complete, runnable example demonstrating all of Zerver's core features working together, see [`examples/todo_crud.zig`](examples/todo_crud.zig).
+
+This example showcases:
+-   **Slot system** with typed per-request state
+-   **CtxView** with compile-time slot access restrictions
+-   **Steps** with effects (simulated DB operations)
+-   **Continuations** and join strategies
+-   **Error handling**
+-   A complete request/response cycle for a CRUD API
+
+It's the best place to see how Zerver's principles translate into a functional application.
+
+---
+
+## Code Structure and Rationale
+
+The Zerver project is organized to clearly separate core framework logic from examples and documentation, promoting modularity and ease of understanding.
+
+-   **`src/`**: Contains the core Zerver framework source code.
+    -   **`src/zerver/core/`**: Fundamental building blocks of the Zerver framework, including `Ctx` (context management), `reqtest` (request testing utilities), and `types` (common data structures). This is where the core abstractions reside.
+    -   **`src/zerver/impure/`**: Components that interact with the outside world or manage side effects, such as the `executor` (for handling effects) and the `server` (HTTP server implementation). This separation highlights the framework's pure-step philosophy.
+    -   **`src/zerver/observability/`**: Contains tracing and observability related code, like the `tracer`.
+    -   **`src/config/`**: Configuration-related modules.
+    -   **`src/effects/`**: Definitions and handling logic for various side effects (e.g., database operations, HTTP calls).
+    -   **`src/funcs/`**: General utility functions and helpers.
+    -   **`src/routes/`**: Logic for defining and managing API routes.
+
+-   **`examples/`**: Demonstrates how to use the Zerver framework with various practical scenarios. Each example is designed to showcase specific features or common use cases, like the `todo_crud.zig` example.
+
+-   **`docs/`**: Comprehensive documentation, design specifications, and internal notes. This directory serves as a knowledge base for understanding the framework's design decisions and future plans.
+
+This structure emphasizes Zerver's core principles by clearly delineating pure logic from impure operations and providing dedicated spaces for examples and documentation.

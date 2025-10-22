@@ -1,6 +1,6 @@
 /// Shared helper functions
 const std = @import("std");
-const zerver = @import("../../zerver/root.zig");
+const zerver = @import("../root.zig");
 
 /// Helper function to create a step that wraps a CtxBase function
 pub fn makeStep(comptime name: []const u8, comptime func: anytype) zerver.types.Step {
