@@ -4,6 +4,7 @@
 pub const core = @import("core/core.zig");
 pub const ctx_module = @import("core/ctx.zig");
 pub const types = @import("core/types.zig");
+pub const error_renderer_module = @import("core/error_renderer.zig");
 pub const server = @import("impure/server.zig");
 pub const router = @import("../routes/router.zig");
 pub const executor = @import("impure/executor.zig");
@@ -22,12 +23,19 @@ pub const Method = types.Method;
 pub const RouteSpec = types.RouteSpec;
 pub const FlowSpec = types.FlowSpec;
 pub const ErrorCode = types.ErrorCode;
+pub const Retry = types.Retry;
+pub const Timeout = types.Timeout;
+pub const BackoffStrategy = types.BackoffStrategy;
+pub const AdvancedRetryPolicy = types.AdvancedRetryPolicy;
 
 // Helpers
 pub const step = core.step;
 pub const continue_ = core.continue_;
 pub const done = core.done;
 pub const fail = core.fail;
+
+// Error handling
+pub const ErrorRenderer = error_renderer_module.ErrorRenderer;
 
 // Server & Router & Executor & Testing
 pub const Server = server.Server;
@@ -37,3 +45,4 @@ pub const Router = router.Router;
 pub const Executor = executor.Executor;
 pub const Tracer = tracer_module.Tracer;
 pub const ReqTest = reqtest_module.ReqTest;
+

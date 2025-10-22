@@ -133,6 +133,84 @@ pub const CtxBase = struct {
         return self.header("Idempotency-Key") orelse "";
     }
 
+    /// Format a string using arena allocator (result valid for request lifetime)
+    pub fn bufFmt(self: *CtxBase, comptime fmt: []const u8, args: anytype) []const u8 {
+        var buf: [4096]u8 = undefined;
+        const formatted = std.fmt.bufPrint(&buf, fmt, args) catch return "";
+        return self.allocator.dupe(u8, formatted) catch return "";
+    }
+
+    /// Serialize a value to JSON string (arena-backed)
+    /// Supports basic types: integers, floats, bools, strings, arrays
+    pub fn toJson(self: *CtxBase, value: anytype) ![]const u8 {
+        var buf = std.ArrayList(u8).initCapacity(self.allocator, 256) catch return "";
+        defer buf.deinit();
+        const writer = buf.writer();
+
+        try self.stringifyValue(writer, value);
+        return buf.items;
+    }
+
+    fn stringifyValue(self: *CtxBase, writer: anytype, value: anytype) !void {
+        const T = @TypeOf(value);
+        const type_info = @typeInfo(T);
+
+        switch (type_info) {
+            .int => try writer.print("{}", .{value}),
+            .float => try writer.print("{d}", .{value}),
+            .bool => try writer.writeAll(if (value) "true" else "false"),
+            .pointer => |ptr_info| {
+                if (ptr_info.size == .Slice and ptr_info.child == u8) {
+                    // String
+                    try writer.writeAll("\"");
+                    try self.escapeJsonString(writer, value);
+                    try writer.writeAll("\"");
+                } else {
+                    try writer.writeAll("null");
+                }
+            },
+            .optional => {
+                if (value) |v| {
+                    try self.stringifyValue(writer, v);
+                } else {
+                    try writer.writeAll("null");
+                }
+            },
+            .array => |arr_info| {
+                try writer.writeAll("[");
+                for (value, 0..) |item, idx| {
+                    try self.stringifyValue(writer, item);
+                    if (idx < arr_info.len - 1) try writer.writeAll(",");
+                }
+                try writer.writeAll("]");
+            },
+            .struct_ => {
+                try writer.writeAll("{");
+                inline for (@typeInfo(T).struct_.fields, 0..) |field, idx| {
+                    try writer.print("\"{s}\":", .{field.name});
+                    try self.stringifyValue(writer, @field(value, field.name));
+                    if (idx < @typeInfo(T).struct_.fields.len - 1) try writer.writeAll(",");
+                }
+                try writer.writeAll("}");
+            },
+            else => try writer.writeAll("null"),
+        }
+    }
+
+    fn escapeJsonString(self: *CtxBase, writer: anytype, str: []const u8) !void {
+        _ = self;
+        for (str) |ch| {
+            switch (ch) {
+                '"' => try writer.writeAll("\\\""),
+                '\\' => try writer.writeAll("\\\\"),
+                '\n' => try writer.writeAll("\\n"),
+                '\r' => try writer.writeAll("\\r"),
+                '\t' => try writer.writeAll("\\t"),
+                else => try writer.writeByte(ch),
+            }
+        }
+    }
+
     /// Store a value in a slot (internal use; typed access via CtxView)
     pub fn _put(self: *CtxBase, comptime slot_id: u32, value: anytype) !void {
         const value_ptr = try self.allocator.create(@TypeOf(value));
