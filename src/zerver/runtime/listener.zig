@@ -87,7 +87,7 @@ fn handleConnection(
         });
 
         // Handle request
-        const response = srv.handleRequest(req_data, request_arena.allocator()) catch |err| {
+        const response_result = srv.handleRequest(req_data, request_arena.allocator()) catch |err| {
             slog.err("Failed to handle request", &.{
                 slog.Attr.string("error", @errorName(err)),
             });
@@ -95,8 +95,20 @@ fn handleConnection(
             return;
         };
 
-        // Send response
-        try handler.sendResponse(connection, response);
+        // Send response based on type
+        switch (response_result) {
+            .complete => |response| {
+                // Send complete response
+                try handler.sendResponse(connection, response);
+            },
+            .streaming => |streaming_resp| {
+                // Send streaming response (SSE)
+                try handler.sendStreamingResponse(connection, streaming_resp.headers, streaming_resp.writer, streaming_resp.context);
+                // For streaming responses, we typically don't keep the connection alive in the same way
+                // as the stream may run indefinitely
+                return;
+            },
+        }
 
         slog.debug("Response sent successfully", &.{});
 

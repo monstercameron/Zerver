@@ -33,6 +33,19 @@ pub const ParsedRequest = struct {
     body: []const u8,
 };
 
+/// Response result that can be either complete or streaming
+pub const ResponseResult = union(enum) {
+    complete: []const u8,
+    streaming: StreamingResponse,
+};
+
+/// Streaming response for SSE and other use cases
+pub const StreamingResponse = struct {
+    headers: []const u8,
+    writer: *const fn (*anyopaque, []const u8) anyerror!void,
+    context: *anyopaque,
+};
+
 pub const Server = struct {
     allocator: std.mem.Allocator,
     config: Config,
@@ -40,6 +53,74 @@ pub const Server = struct {
     executor: executor_module.Executor,
     flows: std.ArrayList(Flow),
     global_before: std.ArrayList(types.Step),
+
+    /// SSE event structure per HTML Living Standard
+    pub const SSEEvent = struct {
+        data: ?[]const u8 = null,
+        event: ?[]const u8 = null,
+        id: ?[]const u8 = null,
+        retry: ?u32 = null,
+    };
+
+    /// Format an SSE event according to HTML Living Standard
+    pub fn formatSSEEvent(self: *Server, event: SSEEvent, arena: std.mem.Allocator) ![]const u8 {
+        _ = self;
+        var buf = std.ArrayList(u8).initCapacity(arena, 256) catch unreachable;
+        const w = buf.writer(arena);
+
+        // Event type (optional)
+        if (event.event) |event_type| {
+            try w.print("event: {s}\n", .{event_type});
+        }
+
+        // Event data (required for most events)
+        if (event.data) |data| {
+            // Split multi-line data
+            var lines = std.mem.splitSequence(u8, data, "\n");
+            while (lines.next()) |line| {
+                try w.print("data: {s}\n", .{line});
+            }
+        }
+
+        // Event ID (optional)
+        if (event.id) |id| {
+            try w.print("id: {s}\n", .{id});
+        }
+
+        // Retry delay (optional)
+        if (event.retry) |retry_ms| {
+            try w.print("retry: {d}\n", .{retry_ms});
+        }
+
+        // Double newline to end the event
+        try w.writeAll("\n");
+
+        return buf.items;
+    }
+
+    /// Create an SSE streaming response
+    pub fn createSSEResponse(self: *Server, writer: *const fn (*anyopaque, []const u8) anyerror!void, context: *anyopaque) types.Response {
+        _ = self;
+        return .{
+            .status = 200,
+            .headers = &.{
+                .{ .name = "Content-Type", .value = "text/event-stream" },
+                .{ .name = "Cache-Control", .value = "no-cache" },
+                .{ .name = "Connection", .value = "keep-alive" },
+                .{ .name = "Access-Control-Allow-Origin", .value = "*" },
+                .{ .name = "Access-Control-Allow-Headers", .value = "Cache-Control" },
+            },
+            .body = .{
+                .streaming = .{
+                    .content_type = "text/event-stream",
+                    .writer = writer,
+                    .context = context,
+                    .is_sse = true,
+                },
+            },
+        };
+    }
+
 
     pub fn init(
         allocator: std.mem.Allocator,
@@ -129,7 +210,7 @@ pub const Server = struct {
         self: *Server,
         request_text: []const u8,
         arena: std.mem.Allocator,
-    ) ![]const u8 {
+    ) !ResponseResult {
         // Create tracer for this request
         var tracer = tracer_module.Tracer.init(arena);
         defer tracer.deinit();
@@ -143,44 +224,44 @@ pub const Server = struct {
                 error.MissingHostHeader => {
                     // RFC 9110 Section 7.2 - Missing Host header in HTTP/1.1
                     tracer.recordRequestEnd();
-                    return self.httpResponse(.{
+                    return ResponseResult{ .complete = try self.httpResponse(.{
                         .status = 400,
-                        .body = "Bad Request: Missing Host header (required for HTTP/1.1)",
+                        .body = .{ .complete = "Bad Request: Missing Host header (required for HTTP/1.1)" },
                         .headers = &[_]types.Header{
                             .{ .name = "Content-Type", .value = "text/plain" },
                         },
-                    }, &tracer, arena, false, false);
+                    }, &tracer, arena, false, false) };
                 },
                 error.InvalidRequest, error.InvalidMethod, error.UnsupportedVersion, error.InvalidUri, error.UserinfoNotAllowed => {
                     tracer.recordRequestEnd();
-                    return self.httpResponse(.{
+                    return ResponseResult{ .complete = try self.httpResponse(.{
                         .status = 400,
-                        .body = "Bad Request",
+                        .body = .{ .complete = "Bad Request" },
                         .headers = &[_]types.Header{
                             .{ .name = "Content-Type", .value = "text/plain" },
                         },
-                    }, &tracer, arena, false, false);
+                    }, &tracer, arena, false, false) };
                 },
                 error.MultipleContentLength, error.InvalidContentLength, error.ContentLengthMismatch, error.UnexpectedBody, error.ContentLengthRequired, error.InvalidPercentEncoding => {
                     // RFC 9110 Section 6 - Message body framing errors and RFC 3986 - URL decoding errors
                     tracer.recordRequestEnd();
-                    return self.httpResponse(.{
+                    return ResponseResult{ .complete = try self.httpResponse(.{
                         .status = 400,
-                        .body = "Bad Request: Invalid request format",
+                        .body = .{ .complete = "Bad Request: Invalid request format" },
                         .headers = &[_]types.Header{
                             .{ .name = "Content-Type", .value = "text/plain" },
                         },
-                    }, &tracer, arena, false, false);
+                    }, &tracer, arena, false, false) };
                 },
                 else => {
                     tracer.recordRequestEnd();
-                    return self.httpResponse(.{
+                    return ResponseResult{ .complete = try self.httpResponse(.{
                         .status = 500,
-                        .body = "Internal Server Error",
+                        .body = .{ .complete = "Internal Server Error" },
                         .headers = &[_]types.Header{
                             .{ .name = "Content-Type", .value = "text/plain" },
                         },
-                    }, &tracer, arena, false, false);
+                    }, &tracer, arena, false, false) };
                 },
             }
         };
@@ -228,13 +309,13 @@ pub const Server = struct {
 
             const response_body = try std.fmt.allocPrint(arena, "Allow: {s}", .{allowed_methods});
             const keep_alive = self.shouldKeepAlive(parsed.headers);
-            return self.httpResponse(.{
+            return ResponseResult{ .complete = try self.httpResponse(.{
                 .status = 200,
-                .body = response_body,
+                .body = .{ .complete = response_body },
                 .headers = &[_]types.Header{
                     .{ .name = "Allow", .value = allowed_methods },
                 },
-            }, &tracer, arena, false, keep_alive);
+            }, &tracer, arena, false, keep_alive) };
         }
 
         // Try to match route
@@ -256,7 +337,7 @@ pub const Server = struct {
 
             // Render response based on decision
             const keep_alive = self.shouldKeepAlive(parsed.headers);
-            return self.renderResponse(&ctx, decision, &tracer, arena, keep_alive);
+            return try self.renderResponse(&ctx, decision, &tracer, arena, keep_alive);
         }
 
         // Try to match flow (if method is POST to /flow/v1/<slug>)
@@ -273,7 +354,7 @@ pub const Server = struct {
                     tracer.recordRequestEnd();
 
                     const keep_alive = self.shouldKeepAlive(parsed.headers);
-                    return self.renderResponse(&ctx, decision, &tracer, arena, keep_alive);
+                    return try self.renderResponse(&ctx, decision, &tracer, arena, keep_alive);
                 }
             }
         }
@@ -508,7 +589,7 @@ pub const Server = struct {
         // RFC 9110 Section 4.2.3 - Reject userinfo in URI
         // Check for userinfo pattern: scheme://user:pass@host/path
         if (std.mem.indexOf(u8, uri, "://")) |scheme_end| {
-            const after_scheme = uri[scheme_end + 3..];
+            const after_scheme = uri[scheme_end + 3 ..];
             if (std.mem.indexOfScalar(u8, after_scheme, '@')) |at_pos| {
                 // Check if there's a colon before @ (indicating user:pass format)
                 const userinfo_part = after_scheme[0..at_pos];
@@ -570,19 +651,40 @@ pub const Server = struct {
         tracer: *tracer_module.Tracer,
         arena: std.mem.Allocator,
         keep_alive: bool,
-    ) ![]const u8 {
+    ) !ResponseResult {
         const response = switch (decision) {
-            .Continue => types.Response{ .status = 200, .body = "OK" },
+            .Continue => types.Response{ .status = 200, .body = .{ .complete = "OK" } },
             .Done => |resp| resp,
             .Fail => |err| {
                 return self.renderError(ctx, err, tracer, arena, keep_alive);
             },
-            .need => types.Response{ .status = 500, .body = "Pipeline incomplete" },
+            .need => types.Response{ .status = 500, .body = .{ .complete = "Pipeline incomplete" } },
         };
 
-        // RFC 9110 Section 9.3.2 - HEAD responses are identical to GET but without message body
-        const is_head = std.mem.eql(u8, ctx.method_str, "HEAD");
-        return self.httpResponse(response, tracer, arena, is_head, keep_alive);
+        // Check if this is a streaming response
+        switch (response.body) {
+            .streaming => |streaming| {
+                // For streaming responses, return headers separately
+                const headers_only = try self.httpResponse(.{
+                    .status = response.status,
+                    .headers = response.headers,
+                    .body = .{ .complete = "" }, // Empty body for headers-only
+                }, tracer, arena, false, keep_alive);
+
+                return ResponseResult{
+                    .streaming = .{
+                        .headers = headers_only,
+                        .writer = streaming.writer,
+                        .context = streaming.context,
+                    },
+                };
+            },
+            .complete => {
+                // For complete responses, format normally
+                const formatted = try self.httpResponse(response, tracer, arena, false, keep_alive);
+                return ResponseResult{ .complete = formatted };
+            },
+        }
     }
 
     /// Render an error response.
@@ -593,7 +695,7 @@ pub const Server = struct {
         tracer: *tracer_module.Tracer,
         arena: std.mem.Allocator,
         keep_alive: bool,
-    ) ![]const u8 {
+    ) !ResponseResult {
         // Store the error in the context for the error handler
         ctx.last_error = _err;
 
@@ -604,9 +706,9 @@ pub const Server = struct {
         const is_head = std.mem.eql(u8, ctx.method_str, "HEAD");
 
         return switch (response) {
-            .Continue => self.httpResponse(.{ .status = 500, .body = "Error" }, tracer, arena, is_head, keep_alive),
-            .Done => |resp| self.httpResponse(resp, tracer, arena, is_head, keep_alive),
-            else => self.httpResponse(.{ .status = 500, .body = "Error" }, tracer, arena, is_head, keep_alive),
+            .Continue => ResponseResult{ .complete = try self.httpResponse(.{ .status = 500, .body = .{ .complete = "Error" } }, tracer, arena, is_head, keep_alive) },
+            .Done => |resp| ResponseResult{ .complete = try self.httpResponse(resp, tracer, arena, is_head, keep_alive) },
+            else => ResponseResult{ .complete = try self.httpResponse(.{ .status = 500, .body = .{ .complete = "Error" } }, tracer, arena, is_head, keep_alive) },
         };
     }
 
@@ -661,7 +763,7 @@ pub const Server = struct {
                 return error.InvalidChunkedEncoding;
             }
 
-            const chunk_data = raw_body[pos..pos + chunk_size];
+            const chunk_data = raw_body[pos .. pos + chunk_size];
             try result.appendSlice(arena, chunk_data);
 
             // Skip the trailing CRLF after chunk data
@@ -819,13 +921,42 @@ pub const Server = struct {
             try w.print("{s}: {s}\r\n", .{ header.name, header.value });
         }
 
-        // TODO: RFC 9112 Section 6.1 - When Transfer-Encoding: chunked is used for responses, ensure that the Content-Length header is NOT sent.
-        try w.print("\r\n", .{});
+        // Handle different response body types
+        switch (response.body) {
+            .complete => |body| {
+                // For complete responses, add Content-Length unless it's SSE
+                const is_sse = response.status == 200 and
+                              blk: {
+                                  for (response.headers) |header| {
+                                      if (std.ascii.eqlIgnoreCase(header.name, "content-type") and
+                                          std.mem.eql(u8, header.value, "text/event-stream")) {
+                                          break :blk true;
+                                      }
+                                  }
+                                  break :blk false;
+                              };
 
-        // RFC 9110 Section 9.3.2 - HEAD responses must not include a message body
-        if (!is_head) {
-            try w.writeAll(response.body);
+                if (!is_sse) {
+                    try w.print("Content-Length: {d}\r\n", .{body.len});
+                }
+
+                try w.print("\r\n", .{});
+
+                // RFC 9110 Section 9.3.2 - HEAD responses must not include a message body
+                if (!is_head) {
+                    try w.writeAll(body);
+                }
+            },
+            .streaming => |streaming| {
+                // For streaming responses (SSE), never send Content-Length
+                try w.print("\r\n", .{});
+
+                // For SSE, we don't write the body here - it will be streamed later
+                // The streaming writer will be called by the handler
+                _ = streaming;
+            },
         }
+
         // TODO: RFC 9110 Section 9.3.2 - For HEAD responses, ensure the Content-Length header indicates the length of the content that would have been sent in a corresponding GET response.
 
         return buf.items;

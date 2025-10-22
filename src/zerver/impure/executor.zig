@@ -141,6 +141,8 @@ pub const Executor = struct {
                 .db_put => |e| e.token,
                 .db_del => |e| e.token,
                 .db_scan => |e| e.token,
+                .file_json_read => |e| e.token,
+                .file_json_write => |e| e.token,
             };
 
             const timeout_ms = switch (effect) {
@@ -150,6 +152,8 @@ pub const Executor = struct {
                 .db_put => |e| e.timeout_ms,
                 .db_del => |e| e.timeout_ms,
                 .db_scan => |e| e.timeout_ms,
+                .file_json_read => 1000, // Default 1s timeout for file reads
+                .file_json_write => 1000, // Default 1s timeout for file writes
             };
             // TODO: RFC 9110 - Consider how `timeout_ms` should explicitly influence HTTP-level timeout responses (e.g., 408 Request Timeout) or retry behavior as per RFC 9110 Section 2.4 and 15.5.9.
 
@@ -161,6 +165,8 @@ pub const Executor = struct {
                 .db_put => |e| e.required,
                 .db_del => |e| e.required,
                 .db_scan => |e| e.required,
+                .file_json_read => |e| e.required,
+                .file_json_write => |e| e.required,
             };
 
             // Execute the effect via the handler

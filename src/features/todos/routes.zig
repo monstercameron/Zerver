@@ -156,7 +156,7 @@ fn continuation_list(ctx: *anyopaque) !zerver.Decision {
 
     return zerver.done(.{
         .status = 200,
-        .body = "[{\"id\":\"1\",\"title\":\"Buy milk\",\"done\":false},{\"id\":\"2\",\"title\":\"Pay bills\",\"done\":true}]",
+            .body = .{ .complete = "[{\"id\":\"1\",\"title\":\"Buy milk\",\"done\":false},{\"id\":\"2\",\"title\":\"Pay bills\",\"done\":true}]" },
     });
 }
 
@@ -169,7 +169,7 @@ fn continuation_get(ctx: *anyopaque) !zerver.Decision {
 
     return zerver.done(.{
         .status = 200,
-        .body = "{\"id\":\"1\",\"title\":\"Buy milk\",\"done\":false}",
+        .body = .{ .complete = "{\"id\":\"1\",\"title\":\"Buy milk\",\"done\":false}" },
     });
 }
 
@@ -207,7 +207,7 @@ fn continuation_create(ctx: *anyopaque) !zerver.Decision {
 
     return zerver.done(.{
         .status = 201,
-        .body = "{\"id\":\"1\",\"title\":\"New todo\",\"done\":false}",
+        .body = .{ .complete = "{\"id\":\"1\",\"title\":\"New todo\",\"done\":false}" },
     });
 }
 
@@ -251,7 +251,7 @@ fn continuation_update(ctx: *anyopaque) !zerver.Decision {
 
     return zerver.done(.{
         .status = 200,
-        .body = "{\"id\":\"1\",\"title\":\"Updated todo\",\"done\":true}",
+        .body = .{ .complete = "{\"id\":\"1\",\"title\":\"Updated todo\",\"done\":true}" },
     });
 }
 
@@ -294,7 +294,7 @@ fn continuation_delete(ctx: *anyopaque) !zerver.Decision {
 
     return zerver.done(.{
         .status = 204,
-        .body = "",
+        .body = .{ .complete = "" },
     });
 }
 

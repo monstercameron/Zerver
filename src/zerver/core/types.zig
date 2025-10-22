@@ -101,8 +101,24 @@ pub const ErrorCode = struct {
 pub const Response = struct {
     status: u16 = 200,
     headers: []const Header = &.{},
-    body: []const u8 = "",
+    body: ResponseBody = .{ .complete = "" },
+    // TODO: SSE - Consider a mechanism for streaming response bodies (e.g., an iterator or a writer) to support Server-Sent Events and other streaming use cases.
 };
+
+/// Response body can be either complete or streaming
+pub const ResponseBody = union(enum) {
+    complete: []const u8,
+    streaming: StreamingBody,
+};
+
+/// Streaming response body for SSE and other use cases
+pub const StreamingBody = struct {
+    content_type: []const u8 = "text/plain",
+    writer: *const fn (*anyopaque, []const u8) anyerror!void,
+    context: *anyopaque,
+    is_sse: bool = false,
+};
+
 
 /// A header name-value pair.
 pub const Header = struct {
@@ -248,6 +264,21 @@ pub const DbScan = struct {
     required: bool = true,
 };
 
+/// File JSON Read effect.
+pub const FileJsonRead = struct {
+    path: []const u8,
+    token: u32, // Slot identifier for result storage
+    required: bool = true,
+};
+
+/// File JSON Write effect.
+pub const FileJsonWrite = struct {
+    path: []const u8,
+    data: []const u8,
+    token: u32, // Slot identifier for result storage (e.g., success/failure)
+    required: bool = true,
+};
+
 /// An Effect represents a request to perform I/O (HTTP, DB, etc.).
 pub const Effect = union(enum) {
     http_get: HttpGet,
@@ -256,6 +287,8 @@ pub const Effect = union(enum) {
     db_put: DbPut,
     db_del: DbDel,
     db_scan: DbScan,
+    file_json_read: FileJsonRead,
+    file_json_write: FileJsonWrite,
 };
 
 /// Mode for executing multiple effects.

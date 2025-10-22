@@ -28,7 +28,7 @@ fn helloStep(ctx: *root.CtxBase) !root.Decision {
     _ = ctx;
     return root.done(.{
         .status = 200,
-        .body = "Hello from Zerver! Try /todos endpoints with X-User-ID header.",
+        .body = .{ .complete = "Hello from Zerver! Try /todos endpoints with X-User-ID header." },
     });
 }
 

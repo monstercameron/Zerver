@@ -105,7 +105,7 @@ fn continuation_list(ctx: *anyopaque) !zerver.Decision {
         .headers = &[_]zerver.types.Header{
             .{ .name = "Content-Type", .value = "application/json" },
         },
-        .body = "[{\"id\":\"1\",\"title\":\"Buy milk\",\"done\":false},{\"id\":\"2\",\"title\":\"Pay bills\",\"done\":true}]",
+        .body = .{ .complete = "[{\"id\":\"1\",\"title\":\"Buy milk\",\"done\":false},{\"id\":\"2\",\"title\":\"Pay bills\",\"done\":true}]" },
     });
 }
 
@@ -118,7 +118,7 @@ fn continuation_get(ctx: *anyopaque) !zerver.Decision {
         .headers = &[_]zerver.types.Header{
             .{ .name = "Content-Type", .value = "application/json" },
         },
-        .body = "{\"id\":\"1\",\"title\":\"Buy milk\",\"done\":false}",
+        .body = .{ .complete = "{\"id\":\"1\",\"title\":\"Buy milk\",\"done\":false}" },
     });
 }
 
@@ -155,7 +155,7 @@ fn continuation_create(ctx: *anyopaque) !zerver.Decision {
         .headers = &[_]zerver.types.Header{
             .{ .name = "Content-Type", .value = "application/json" },
         },
-        .body = "{\"id\":\"1\",\"title\":\"New todo\",\"done\":false}",
+        .body = .{ .complete = "{\"id\":\"1\",\"title\":\"New todo\",\"done\":false}" },
     });
 }
 
@@ -196,7 +196,7 @@ fn continuation_update(ctx: *anyopaque) !zerver.Decision {
         .headers = &[_]zerver.types.Header{
             .{ .name = "Content-Type", .value = "application/json" },
         },
-        .body = "{\"id\":\"1\",\"title\":\"Updated todo\",\"done\":true}",
+        .body = .{ .complete = "{\"id\":\"1\",\"title\":\"Updated todo\",\"done\":true}" },
     });
 }
 
@@ -233,7 +233,7 @@ fn continuation_delete(ctx: *anyopaque) !zerver.Decision {
 
     return zerver.done(.{
         .status = 204,
-        .body = "",
+        .body = .{ .complete = "" },
     });
 }
 
@@ -258,7 +258,7 @@ pub fn onError(ctx: *zerver.CtxBase) anyerror!zerver.Decision {
                 .headers = &[_]zerver.types.Header{
                     .{ .name = "Content-Type", .value = "application/json" },
                 },
-                .body = "{\"error\":\"Missing X-User-ID header\"}",
+                .body = .{ .complete = "{\"error\":\"Missing X-User-ID header\"}" },
             });
         } else if (std.mem.eql(u8, err.ctx.key, "missing_id")) {
             return zerver.done(.{
@@ -266,7 +266,7 @@ pub fn onError(ctx: *zerver.CtxBase) anyerror!zerver.Decision {
                 .headers = &[_]zerver.types.Header{
                     .{ .name = "Content-Type", .value = "application/json" },
                 },
-                .body = "{\"error\":\"Missing todo ID\"}",
+                .body = .{ .complete = "{\"error\":\"Missing todo ID\"}" },
             });
         } else {
             return zerver.done(.{
@@ -274,7 +274,7 @@ pub fn onError(ctx: *zerver.CtxBase) anyerror!zerver.Decision {
                 .headers = &[_]zerver.types.Header{
                     .{ .name = "Content-Type", .value = "application/json" },
                 },
-                .body = "{\"error\":\"Unknown error\"}",
+                .body = .{ .complete = "{\"error\":\"Unknown error\"}" },
             });
         }
     } else {
@@ -284,7 +284,7 @@ pub fn onError(ctx: *zerver.CtxBase) anyerror!zerver.Decision {
             .headers = &[_]zerver.types.Header{
                 .{ .name = "Content-Type", .value = "application/json" },
             },
-            .body = "{\"error\":\"Internal server error - no error details\"}",
+                .body = .{ .complete = "{\"error\":\"Internal server error - no error details\"}" },
         });
     }
 }
@@ -379,7 +379,7 @@ pub fn main() !void {
             "Host: localhost\r\n" ++
             "X-User-ID: user-123\r\n" ++
             "\r\n", arena_alloc);
-        std.debug.print("Response: {s}\n\n", .{resp1});
+        std.debug.print("Response: {s}\n\n", .{resp1.complete});
     }
 
     std.debug.print("Test 2: GET /todos/1 (get)\n", .{});
@@ -391,7 +391,7 @@ pub fn main() !void {
             "Host: localhost\r\n" ++
             "X-User-ID: user-123\r\n" ++
             "\r\n", arena_alloc);
-        std.debug.print("Response: {s}\n\n", .{resp2});
+        std.debug.print("Response: {s}\n\n", .{resp2.complete});
     }
 
     std.debug.print("Test 3: POST /todos (create)\n", .{});
@@ -405,7 +405,7 @@ pub fn main() !void {
             "Content-Length: 20\r\n" ++
             "\r\n" ++
             "{\"title\":\"New todo\"}", arena_alloc);
-        std.debug.print("Response: {s}\n\n", .{resp3});
+        std.debug.print("Response: {s}\n\n", .{resp3.complete});
     }
 
     std.debug.print("Test 4: PATCH /todos/1 (update)\n", .{});
@@ -419,7 +419,7 @@ pub fn main() !void {
             "Content-Length: 36\r\n" ++
             "\r\n" ++
             "{\"title\":\"Updated todo\",\"done\":true}", arena_alloc);
-        std.debug.print("Response: {s}\n\n", .{resp4});
+        std.debug.print("Response: {s}\n\n", .{resp4.complete});
     }
 
     std.debug.print("Test 5: DELETE /todos/1 (delete)\n", .{});
@@ -431,7 +431,7 @@ pub fn main() !void {
             "Host: localhost\r\n" ++
             "X-User-ID: user-123\r\n" ++
             "\r\n", arena_alloc);
-        std.debug.print("Response: {s}\n\n", .{resp5});
+        std.debug.print("Response: {s}\n\n", .{resp5.complete});
     }
 
     std.debug.print("--- Features Demonstrated ---\n", .{});

@@ -21,17 +21,17 @@ pub fn onError(ctx: *zerver.CtxBase) anyerror!zerver.Decision {
         if (std.mem.eql(u8, err.ctx.key, "missing_user")) {
             return zerver.done(.{
                 .status = @intCast(err.kind),
-                .body = "{\"error\":\"Missing X-User-ID header\"}",
+                .body = .{ .complete = "{\"error\":\"Missing X-User-ID header\"}" },
             });
         } else if (std.mem.eql(u8, err.ctx.key, "missing_id")) {
             return zerver.done(.{
                 .status = @intCast(err.kind),
-                .body = "{\"error\":\"Missing todo ID\"}",
+                .body = .{ .complete = "{\"error\":\"Missing todo ID\"}" },
             });
         } else {
             return zerver.done(.{
                 .status = @intCast(err.kind),
-                .body = "{\"error\":\"Unknown error\"}",
+                .body = .{ .complete = "{\"error\":\"Unknown error\"}" },
             });
         }
     } else {
@@ -40,7 +40,7 @@ pub fn onError(ctx: *zerver.CtxBase) anyerror!zerver.Decision {
         });
         return zerver.done(.{
             .status = 500,
-            .body = "{\"error\":\"Internal server error - no error details\"}",
+                .body = .{ .complete = "{\"error\":\"Internal server error - no error details\"}" },
         });
     }
 }

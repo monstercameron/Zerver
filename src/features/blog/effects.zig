@@ -1,6 +1,7 @@
 const std = @import("std");
 const zerver = @import("../../../src/zerver/root.zig");
 const types = @import("types.zig");
+const fs = std.fs;
 
 pub fn effectHandler(effect: *const zerver.Effect, _timeout_ms: u32) anyerror!zerver.executor.EffectResult {
     std.debug.print("  [Blog Effect] Handling effect type: {}\n", .{@as(std.meta.Tag(zerver.Effect), effect.*)});
@@ -28,6 +29,50 @@ pub fn effectHandler(effect: *const zerver.Effect, _timeout_ms: u32) anyerror!ze
         },
         .db_del => |db_del| {
             std.debug.print("  [Blog Effect] DB DEL: {s} (token {})\n", .{ db_del.key, db_del.token });
+            return .{ .success = "" };
+        },
+        .file_json_read => |file_read| {
+            std.debug.print("  [Blog Effect] FILE JSON READ: {s} (token {})\n", .{ file_read.path, file_read.token });
+            const file = fs.cwd().openFile(file_read.path, .{
+                .mode = .read_only,
+            }) catch |err| {
+                std.debug.print("  [Blog Effect] Failed to open file {s}: {}\n", .{ file_read.path, err });
+                return .{ .failure = zerver.types.Error{
+                    .kind = zerver.types.ErrorCode.NotFound,
+                    .ctx = .{ .what = "file", .key = file_read.path },
+                } };
+            };
+            defer file.close();
+
+            const content = file.readToEndAlloc(zerver.core.gpa.allocator) catch |err| {
+                std.debug.print("  [Blog Effect] Failed to read file {s}: {}\n", .{ file_read.path, err });
+                return .{ .failure = zerver.types.Error{
+                    .kind = zerver.types.ErrorCode.InternalError,
+                    .ctx = .{ .what = "file", .key = file_read.path },
+                } };
+            };
+            return .{ .success = content };
+        },
+        .file_json_write => |file_write| {
+            std.debug.print("  [Blog Effect] FILE JSON WRITE: {s} = {s} (token {})\n", .{ file_write.path, file_write.data, file_write.token });
+            const file = fs.cwd().createFile(file_write.path, .{
+                .truncate = true,
+            }) catch |err| {
+                std.debug.print("  [Blog Effect] Failed to create file {s}: {}\n", .{ file_write.path, err });
+                return .{ .failure = zerver.types.Error{
+                    .kind = zerver.types.ErrorCode.InternalError,
+                    .ctx = .{ .what = "file", .key = file_write.path },
+                } };
+            };
+            defer file.close();
+
+            file.writeAll(file_write.data) catch |err| {
+                std.debug.print("  [Blog Effect] Failed to write to file {s}: {}\n", .{ file_write.path, err });
+                return .{ .failure = zerver.types.Error{
+                    .kind = zerver.types.ErrorCode.InternalError,
+                    .ctx = .{ .what = "file", .key = file_write.path },
+                } };
+            };
             return .{ .success = "" };
         },
         else => {
