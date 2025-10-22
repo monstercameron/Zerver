@@ -2,6 +2,15 @@
 
 const std = @import("std");
 
+/// HTTP method.
+pub const Method = enum {
+    GET,
+    POST,
+    PATCH,
+    PUT,
+    DELETE,
+};
+
 /// A response to send back to the client.
 pub const Response = struct {
     status: u16 = 200,
@@ -139,6 +148,19 @@ pub const Step = struct {
     call: *const fn (*anyopaque) anyerror!Decision,  // *CtxBase, re-trampolined to typed *CtxView
     reads: []const u32 = &.{},  // Slot identifiers
     writes: []const u32 = &.{},  // Slot identifiers
+};
+
+/// Route specification: before chain and main steps.
+pub const RouteSpec = struct {
+    before: []const Step = &.{},
+    steps: []const Step,
+};
+
+/// Flow specification: slug-addressed endpoint.
+pub const FlowSpec = struct {
+    slug: []const u8,
+    before: []const Step = &.{},
+    steps: []const Step,
 };
 
 /// Result of parsing an HTTP request.
