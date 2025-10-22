@@ -1,9 +1,13 @@
 /// Hello feature step implementations
 const std = @import("std");
 const zerver = @import("../../zerver/root.zig");
+const slog = @import("../../zerver/observability/slog.zig");
 
 pub fn helloStep(ctx: *zerver.CtxBase) !zerver.Decision {
-    std.debug.print("  [Hello] Hello step called\n", .{});
+    slog.debug("Hello step called", &.{
+        slog.Attr.string("step", "hello"),
+        slog.Attr.string("feature", "hello"),
+    });
     _ = ctx;
     return zerver.done(.{
         .status = 200,

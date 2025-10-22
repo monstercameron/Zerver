@@ -4,6 +4,7 @@
 /// and initialization of the application.
 const std = @import("std");
 const root = @import("../root.zig");
+const slog = @import("../observability/slog.zig");
 
 // Import features
 const todos = @import("../../features/todos/routes.zig");
@@ -20,7 +21,10 @@ fn helloStepWrapper(ctx_opaque: *anyopaque) anyerror!root.Decision {
 
 /// Hello world step
 fn helloStep(ctx: *root.CtxBase) !root.Decision {
-    std.debug.print("  [Hello] Hello step called\n", .{});
+    slog.debug("Hello step called", &[_]slog.Attr{
+        slog.Attr.string("step", "hello"),
+        slog.Attr.string("feature", "bootstrap"),
+    });
     _ = ctx;
     return root.done(.{
         .status = 200,
@@ -30,7 +34,13 @@ fn helloStep(ctx: *root.CtxBase) !root.Decision {
 
 /// Initialize and configure the server
 pub fn initializeServer(allocator: std.mem.Allocator) !root.Server {
-    std.debug.print("Zerver MVP Server Starting...\n", .{});
+    // Initialize structured logging with default logger
+    _ = slog.default();
+
+    slog.info("Zerver MVP Server Starting", &[_]slog.Attr{
+        slog.Attr.string("version", "mvp"),
+        slog.Attr.int("port", 8080),
+    });
 
     // Create server config
     const config = root.Config{
@@ -65,30 +75,19 @@ pub fn initializeServer(allocator: std.mem.Allocator) !root.Server {
 
 /// Print available routes for documentation
 fn printRoutes() void {
-    std.debug.print("Todo CRUD Routes:\n", .{});
-    std.debug.print("  GET    /          - Hello World\n", .{});
-    std.debug.print("  GET    /todos     - List all todos\n", .{});
-    std.debug.print("  GET    /todos/:id - Get specific todo\n", .{});
-    std.debug.print("  POST   /todos     - Create todo\n", .{});
-    std.debug.print("  PATCH  /todos/:id - Update todo\n", .{});
-    std.debug.print("  DELETE /todos/:id - Delete todo\n\n", .{});
+    slog.info("Todo CRUD Routes registered", &[_]slog.Attr{
+        slog.Attr.string("routes", "GET /, GET /todos, GET /todos/:id, POST /todos, PATCH /todos/:id, DELETE /todos/:id"),
+    });
 }
 
 /// Print demonstration information
 pub fn printDemoInfo() void {
-    std.debug.print("Testing API endpoints...\n\n", .{});
+    slog.info("Server ready for HTTP requests", &[_]slog.Attr{
+        slog.Attr.int("port", 8080),
+        slog.Attr.string("status", "running"),
+    });
 
-    std.debug.print("--- Features Demonstrated ---\n", .{});
-    std.debug.print("✓ Slot system for per-request state\n", .{});
-    std.debug.print("✓ Global middleware chain\n", .{});
-    std.debug.print("✓ Route matching with path parameters\n", .{});
-    std.debug.print("✓ Step-based orchestration\n", .{});
-    std.debug.print("✓ Effect handling (DB operations)\n", .{});
-    std.debug.print("✓ Continuations after effects\n", .{});
-    std.debug.print("✓ Error handling\n", .{});
-    std.debug.print("✓ Complete CRUD workflow\n", .{});
-    std.debug.print("✓ HTTP server with TCP listener\n\n", .{});
-
-    std.debug.print("Server ready for HTTP requests on port 8080!\n", .{});
-    std.debug.print("Use curl or your browser to test the endpoints.\n\n", .{});
+    slog.info("Features demonstrated", &[_]slog.Attr{
+        slog.Attr.string("features", "slot system, middleware, routing, steps, effects, continuations, error handling, CRUD"),
+    });
 }

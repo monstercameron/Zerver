@@ -9,6 +9,7 @@
 /// Exported as structured JSON for debugging and analysis.
 const std = @import("std");
 const types = @import("../core/types.zig");
+const slog = @import("slog.zig");
 
 /// Event types recorded during execution.
 pub const EventKind = enum {
@@ -199,5 +200,7 @@ pub fn testTracer() !void {
     defer trace_arena.deinit();
 
     const json = try tracer.toJson(trace_arena.allocator());
-    std.debug.print("{s}\n", .{json});
+    slog.info("Tracer test completed", &.{
+        slog.Attr.string("trace_json", json),
+    });
 }

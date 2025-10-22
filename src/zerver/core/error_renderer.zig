@@ -2,6 +2,7 @@
 const std = @import("std");
 const types = @import("types.zig");
 const ctx = @import("ctx.zig");
+const slog = @import("../observability/slog.zig");
 
 pub const ErrorRenderer = struct {
     /// Render an error as a formatted HTTP response with JSON body
@@ -85,6 +86,8 @@ pub fn testErrorRenderer() !void {
     };
 
     const response = try ErrorRenderer.render(allocator, error_val);
-    std.debug.print("Status: {}\n", .{response.status});
-    std.debug.print("Body: {s}\n", .{response.body});
+    slog.info("Error renderer test completed", &.{
+        slog.Attr.uint("status", response.status),
+        slog.Attr.string("body", response.body),
+    });
 }

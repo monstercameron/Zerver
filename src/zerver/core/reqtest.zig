@@ -8,6 +8,7 @@
 const std = @import("std");
 const types = @import("types.zig");
 const ctx_module = @import("ctx.zig");
+const slog = @import("../observability/slog.zig");
 
 /// Test request builder and context.
 pub const ReqTest = struct {
@@ -106,5 +107,5 @@ pub fn testReqTest() !void {
         return error.ParamNotSet;
     }
 
-    std.debug.print("ReqTest tests passed!\n", .{});
+    slog.info("ReqTest tests completed successfully", &.{});
 }

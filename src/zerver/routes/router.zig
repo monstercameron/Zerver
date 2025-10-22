@@ -4,6 +4,7 @@
 /// then declaration order (stable).
 const std = @import("std");
 const types = @import("../core/types.zig");
+const slog = @import("../observability/slog.zig");
 
 /// A compiled route pattern with segments.
 pub const CompiledRoute = struct {
@@ -211,25 +212,27 @@ pub fn testRouter() !void {
     defer arena.deinit();
 
     if (try router.match(.GET, "/todos", arena.allocator())) |_| {
-        std.debug.print("Matched /todos\n", .{});
+        slog.info("Router test: matched /todos", &.{});
     }
 
     if (try router.match(.GET, "/todos/123", arena.allocator())) |m| {
-        std.debug.print("Matched /todos/:id with id={s}\n", .{m.params.get("id").?});
+        slog.info("Router test: matched /todos/:id", &.{
+            slog.Attr.string("id", m.params.get("id").?),
+        });
     }
 
     if (try router.match(.GET, "/todos/123/items/456", arena.allocator())) |m| {
-        std.debug.print("Matched /todos/:id/items/:item_id with id={s}, item_id={s}\n", .{
-            m.params.get("id").?,
-            m.params.get("item_id").?,
+        slog.info("Router test: matched /todos/:id/items/:item_id", &.{
+            slog.Attr.string("id", m.params.get("id").?),
+            slog.Attr.string("item_id", m.params.get("item_id").?),
         });
     }
 
     if (try router.match(.GET, "/unknown", arena.allocator())) |_| {
-        std.debug.print("ERROR: Should not match /unknown\n", .{});
+        slog.err("Router test: unexpectedly matched /unknown", &.{});
     } else {
-        std.debug.print("Correctly rejected /unknown\n", .{});
+        slog.info("Router test: correctly rejected /unknown", &.{});
     }
 
-    std.debug.print("Router tests passed!\n", .{});
+    slog.info("Router tests completed successfully", &.{});
 }

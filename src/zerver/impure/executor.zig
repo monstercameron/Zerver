@@ -11,6 +11,7 @@
 const std = @import("std");
 const types = @import("../core/types.zig");
 const ctx_module = @import("../core/ctx.zig");
+const slog = @import("../observability/slog.zig");
 
 pub const ExecutionMode = enum {
     Synchronous, // Block on each effect
@@ -213,5 +214,8 @@ pub fn testExecutor() !void {
     var ctx = try ctx_module.CtxBase.init(allocator, arena.allocator());
     defer ctx.deinit();
 
-    std.debug.print("Executor tests passed!\n", .{});
+    slog.info("Executor tests completed successfully", &.{
+        slog.Attr.string("component", "executor"),
+        slog.Attr.string("status", "tests_passed"),
+    });
 }

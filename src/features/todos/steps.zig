@@ -2,16 +2,27 @@
 const std = @import("std");
 const zerver = @import("../../zerver/root.zig");
 const types = @import("types.zig");
+const slog = @import("../../zerver/observability/slog.zig");
 
 // Step 1: Extract and validate user from header
 pub fn step_auth(ctx: *zerver.CtxBase) !zerver.Decision {
-    std.debug.print("  [Auth] Step auth called\n", .{});
+    slog.debug("Auth step called", &.{
+        slog.Attr.string("step", "auth"),
+        slog.Attr.string("feature", "todos"),
+    });
     const user_id = ctx.header("X-User-ID") orelse {
-        std.debug.print("  [Auth] Missing X-User-ID header\n", .{});
+        slog.warn("Missing X-User-ID header", &.{
+            slog.Attr.string("step", "auth"),
+            slog.Attr.string("feature", "todos"),
+        });
         return zerver.fail(zerver.ErrorCode.Unauthorized, "auth", "missing_user");
     };
 
-    std.debug.print("  [Auth] User: {s}\n", .{user_id});
+    slog.debug("User authenticated", &.{
+        slog.Attr.string("step", "auth"),
+        slog.Attr.string("user_id", user_id),
+        slog.Attr.string("feature", "todos"),
+    });
     return zerver.continue_();
 }
 
@@ -21,16 +32,26 @@ pub fn step_extract_id(ctx: *zerver.CtxBase) !zerver.Decision {
         return zerver.continue_(); // OK if not present (LIST operation)
     };
 
-    std.debug.print("  [Extract] TodoId: {s}\n", .{todo_id});
+    slog.debug("Extracted todo ID from path", &.{
+        slog.Attr.string("step", "extract_id"),
+        slog.Attr.string("todo_id", todo_id),
+        slog.Attr.string("feature", "todos"),
+    });
     return zerver.continue_();
 }
 
 // Step 3: Simulate database load
 pub fn step_load_from_db(ctx: *zerver.CtxBase) !zerver.Decision {
-    std.debug.print("  [Step] step_load_from_db called\n", .{});
+    slog.debug("Database load step called", &.{
+        slog.Attr.string("step", "load_from_db"),
+        slog.Attr.string("feature", "todos"),
+    });
     const todo_id = ctx.param("id") orelse {
         // LIST operation - return empty list effect
-        std.debug.print("  [DB Load] Fetching todo list\n", .{});
+        slog.debug("Fetching todo list", &.{
+            slog.Attr.string("operation", "list"),
+            slog.Attr.string("feature", "todos"),
+        });
 
         const effects = [_]zerver.Effect{
             .{
@@ -51,7 +72,11 @@ pub fn step_load_from_db(ctx: *zerver.CtxBase) !zerver.Decision {
     };
 
     // Single item load
-    std.debug.print("  [DB Load] Fetching todo {s}\n", .{todo_id});
+    slog.debug("Fetching single todo", &.{
+        slog.Attr.string("operation", "get"),
+        slog.Attr.string("todo_id", todo_id),
+        slog.Attr.string("feature", "todos"),
+    });
 
     const effects = [_]zerver.Effect{
         .{
@@ -73,7 +98,10 @@ pub fn step_load_from_db(ctx: *zerver.CtxBase) !zerver.Decision {
 
 fn continuation_list(ctx: *anyopaque) !zerver.Decision {
     _ = ctx;
-    std.debug.print("  [Continuation] List continuation called\n", .{});
+    slog.debug("List continuation called", &.{
+        slog.Attr.string("continuation", "list"),
+        slog.Attr.string("feature", "todos"),
+    });
 
     return zerver.done(.{
         .status = 200,
@@ -83,7 +111,10 @@ fn continuation_list(ctx: *anyopaque) !zerver.Decision {
 
 fn continuation_get(ctx: *anyopaque) !zerver.Decision {
     _ = ctx;
-    std.debug.print("  [Continuation] Item continuation called\n", .{});
+    slog.debug("Item continuation called", &.{
+        slog.Attr.string("continuation", "get"),
+        slog.Attr.string("feature", "todos"),
+    });
 
     return zerver.done(.{
         .status = 200,
@@ -94,7 +125,10 @@ fn continuation_get(ctx: *anyopaque) !zerver.Decision {
 // Step 4: Create todo
 pub fn step_create_todo(ctx: *zerver.CtxBase) !zerver.Decision {
     _ = ctx;
-    std.debug.print("  [Create] Storing new todo\n", .{});
+    slog.debug("Storing new todo", &.{
+        slog.Attr.string("operation", "create"),
+        slog.Attr.string("feature", "todos"),
+    });
 
     const effects = [_]zerver.Effect{
         .{
@@ -117,7 +151,10 @@ pub fn step_create_todo(ctx: *zerver.CtxBase) !zerver.Decision {
 
 fn continuation_create(ctx: *anyopaque) !zerver.Decision {
     _ = ctx;
-    std.debug.print("  [Continuation] Create continuation called\n", .{});
+    slog.debug("Create continuation called", &.{
+        slog.Attr.string("continuation", "create"),
+        slog.Attr.string("feature", "todos"),
+    });
 
     return zerver.done(.{
         .status = 201,
@@ -131,7 +168,11 @@ pub fn step_update_todo(ctx: *zerver.CtxBase) !zerver.Decision {
         return zerver.fail(zerver.ErrorCode.NotFound, "todo", "missing_id");
     };
 
-    std.debug.print("  [Update] Updating todo {s}\n", .{todo_id});
+    slog.debug("Updating todo", &.{
+        slog.Attr.string("operation", "update"),
+        slog.Attr.string("todo_id", todo_id),
+        slog.Attr.string("feature", "todos"),
+    });
 
     const effects = [_]zerver.Effect{
         .{
@@ -155,7 +196,10 @@ pub fn step_update_todo(ctx: *zerver.CtxBase) !zerver.Decision {
 
 fn continuation_update(ctx: *anyopaque) !zerver.Decision {
     _ = ctx;
-    std.debug.print("  [Continuation] Update continuation called\n", .{});
+    slog.debug("Update continuation called", &.{
+        slog.Attr.string("continuation", "update"),
+        slog.Attr.string("feature", "todos"),
+    });
 
     return zerver.done(.{
         .status = 200,
@@ -169,7 +213,11 @@ pub fn step_delete_todo(ctx: *zerver.CtxBase) !zerver.Decision {
         return zerver.fail(zerver.ErrorCode.NotFound, "todo", "missing_id");
     };
 
-    std.debug.print("  [Delete] Deleting todo {s}\n", .{todo_id});
+    slog.debug("Deleting todo", &.{
+        slog.Attr.string("operation", "delete"),
+        slog.Attr.string("todo_id", todo_id),
+        slog.Attr.string("feature", "todos"),
+    });
 
     const effects = [_]zerver.Effect{
         .{
@@ -192,7 +240,10 @@ pub fn step_delete_todo(ctx: *zerver.CtxBase) !zerver.Decision {
 fn continuation_delete(ctx: *anyopaque) !zerver.Decision {
     const base: *zerver.CtxBase = @ptrCast(@alignCast(ctx));
     _ = base;
-    std.debug.print("  [Continuation] Todo deleted\n", .{});
+    slog.debug("Todo deleted", &.{
+        slog.Attr.string("continuation", "delete"),
+        slog.Attr.string("feature", "todos"),
+    });
 
     return zerver.done(.{
         .status = 204,

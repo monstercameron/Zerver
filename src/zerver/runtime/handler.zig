@@ -6,6 +6,7 @@ const std = @import("std");
 const builtin = @import("builtin");
 const windows_sockets = @import("platform/windows_sockets.zig");
 const root = @import("../root.zig");
+const slog = @import("../observability/slog.zig");
 
 /// Read an HTTP request from a connection
 pub fn readRequest(
@@ -24,37 +25,51 @@ pub fn readRequest(
             // Windows: use raw Winsock
             bytes_read = windows_sockets.recv(connection.stream.handle, &read_buf) catch |err| {
                 if (req_buf.items.len > 0) {
-                    std.debug.print("Winsock recv error after {d} bytes: {s}\n", .{ req_buf.items.len, @errorName(err) });
+                    slog.debug("Winsock recv error after partial read", &.{
+                        slog.Attr.uint("bytes_read", req_buf.items.len),
+                        slog.Attr.string("error", @errorName(err)),
+                    });
                     break;
                 }
-                std.debug.print("Winsock recv error: {s}\n", .{@errorName(err)});
+                slog.debug("Winsock recv error", &.{
+                    slog.Attr.string("error", @errorName(err)),
+                });
                 break;
             };
         } else {
             // Unix: use standard stream read
             bytes_read = connection.stream.read(&read_buf) catch |err| {
                 if (req_buf.items.len > 0) {
-                    std.debug.print("Got {d} bytes before error\n", .{req_buf.items.len});
+                    slog.debug("Partial read before error", &.{
+                        slog.Attr.uint("bytes_read", req_buf.items.len),
+                    });
                     break;
                 }
-                std.debug.print("Read error: {}\n", .{err});
+                slog.debug("Read error", &.{
+                    slog.Attr.string("error", @errorName(err)),
+                });
                 break;
             };
         }
 
         if (bytes_read == 0) {
-            std.debug.print("EOF\n", .{});
+            slog.debug("Connection closed by client", &.{});
             break;
         }
 
         try req_buf.appendSlice(allocator, read_buf[0..bytes_read]);
-        std.debug.print("Read {d} bytes, total {d}\n", .{ bytes_read, req_buf.items.len });
+        slog.debug("Read chunk from connection", &.{
+            slog.Attr.uint("chunk_size", bytes_read),
+            slog.Attr.uint("total_bytes", req_buf.items.len),
+        });
 
         // Check for HTTP request completion (double CRLF)
         if (req_buf.items.len >= 4) {
             const tail = req_buf.items[req_buf.items.len - 4 ..];
             if (std.mem.eql(u8, tail, "\r\n\r\n")) {
-                std.debug.print("Found complete HTTP request\n", .{});
+                slog.debug("Complete HTTP request received", &.{
+                    slog.Attr.uint("total_bytes", req_buf.items.len),
+                });
                 break;
             }
         }
@@ -68,23 +83,28 @@ pub fn sendResponse(
     connection: std.net.Server.Connection,
     response: []const u8,
 ) !void {
-    std.debug.print("Sending {d} bytes response\n", .{response.len});
-    std.debug.print("Response content (first 50 bytes): {s}\n", .{if (response.len > 50) response[0..50] else response});
+    slog.debug("Sending HTTP response", &.{
+        slog.Attr.uint("response_size", response.len),
+    });
 
     if (windows_sockets.isWindows()) {
         // Windows: use raw Winsock
         windows_sockets.sendAll(connection.stream.handle, response) catch |err| {
-            std.debug.print("Winsock send error: {s}\n", .{@errorName(err)});
+            slog.err("Winsock send error", &.{
+                slog.Attr.string("error", @errorName(err)),
+            });
             // Try to send a simple error response
             const fallback = "HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nOK";
             windows_sockets.sendAll(connection.stream.handle, fallback) catch {
-                std.debug.print("Fallback send also failed\n", .{});
+                slog.err("Fallback response send failed", &.{});
             };
         };
     } else {
         // Unix: use standard stream write
         _ = connection.stream.writeAll(response) catch |err| {
-            std.debug.print("Write error: {}\n", .{err});
+            slog.err("Response write error", &.{
+                slog.Attr.string("error", @errorName(err)),
+            });
         };
     }
 }

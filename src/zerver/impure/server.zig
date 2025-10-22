@@ -5,6 +5,7 @@ const ctx_module = @import("../core/ctx.zig");
 const router_module = @import("../routes/router.zig");
 const executor_module = @import("executor.zig");
 const tracer_module = @import("../observability/tracer.zig");
+const slog = @import("../observability/slog.zig");
 
 pub const Address = struct {
     ip: [4]u8,
@@ -308,16 +309,19 @@ pub const Server = struct {
 
     /// Start listening for HTTP requests (blocking).
     pub fn listen(self: *Server) !void {
-        std.debug.print("Server listening on {}.{}.{}.{}:{}\n", .{
-            self.config.addr.ip[0],
-            self.config.addr.ip[1],
-            self.config.addr.ip[2],
-            self.config.addr.ip[3],
-            self.config.addr.port,
+        slog.info("Server starting", &.{
+            slog.Attr.uint("ip0", self.config.addr.ip[0]),
+            slog.Attr.uint("ip1", self.config.addr.ip[1]),
+            slog.Attr.uint("ip2", self.config.addr.ip[2]),
+            slog.Attr.uint("ip3", self.config.addr.ip[3]),
+            slog.Attr.uint("port", self.config.addr.port),
         });
 
         // TODO: Phase-2: Implement actual TCP listener
         // For MVP, this is a stub that allows testing via handleRequest()
-        std.debug.print("Note: MVP server requires explicit handleRequest() calls (no TCP listener yet)\n", .{});
+        slog.info("MVP server initialized", &.{
+            slog.Attr.string("note", "requires explicit handleRequest() calls"),
+            slog.Attr.string("status", "no TCP listener yet"),
+        });
     }
 };

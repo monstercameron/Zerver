@@ -4,6 +4,7 @@
 /// when a threshold is exceeded, allowing the system to recover.
 const std = @import("std");
 const types = @import("types.zig");
+const slog = @import("../observability/slog.zig");
 
 pub const CircuitBreakerState = enum {
     Closed, // Normal operation, requests flow through
@@ -214,11 +215,11 @@ pub fn testCircuitBreaker() !void {
     var breaker = try CircuitBreaker.init(allocator, "test_service", 3, 2, 1000);
     defer breaker.deinit();
 
-    std.debug.print("\n=== Circuit Breaker Tests ===\n\n", .{});
+    slog.info("Starting circuit breaker tests", &.{});
 
     // Test 1: Closed state allows requests
     std.debug.assert(breaker.canExecute());
-    std.debug.print("✓ Closed state allows requests\n", .{});
+    slog.info("Circuit breaker test: closed state allows requests", &.{});
 
     // Test 2: Failures accumulate
     breaker.recordFailure();
@@ -226,23 +227,23 @@ pub fn testCircuitBreaker() !void {
     std.debug.assert(breaker.getState() == .Closed); // Still closed, threshold is 3
     breaker.recordFailure(); // Third failure
     std.debug.assert(breaker.getState() == .Open); // Now open
-    std.debug.print("✓ Circuit opens after failure threshold\n", .{});
+    slog.info("Circuit breaker test: circuit opens after failure threshold", &.{});
 
     // Test 3: Open state blocks requests
     std.debug.assert(!breaker.canExecute());
-    std.debug.print("✓ Open state blocks requests\n", .{});
+    slog.info("Circuit breaker test: open state blocks requests", &.{});
 
     // Test 4: Half-open after timeout
     std.time.sleep(1100 * std.time.ns_per_ms); // Wait for timeout
     std.debug.assert(breaker.canExecute()); // Can attempt
     std.debug.assert(breaker.getState() == .HalfOpen);
-    std.debug.print("✓ Transitions to half-open after timeout\n", .{});
+    slog.info("Circuit breaker test: transitions to half-open after timeout", &.{});
 
     // Test 5: Successes in half-open close the circuit
     breaker.recordSuccess();
     breaker.recordSuccess(); // Second success closes
     std.debug.assert(breaker.getState() == .Closed);
-    std.debug.print("✓ Successes in half-open close the circuit\n", .{});
+    slog.info("Circuit breaker test: successes in half-open close the circuit", &.{});
 
     // Test 6: Failure in half-open reopens immediately
     // Re-open the circuit
@@ -255,9 +256,9 @@ pub fn testCircuitBreaker() !void {
     std.debug.assert(breaker.getState() == .HalfOpen);
     breaker.recordFailure(); // Fail in half-open
     std.debug.assert(breaker.getState() == .Open); // Immediately reopens
-    std.debug.print("✓ Failure in half-open immediately reopens\n", .{});
+    slog.info("Circuit breaker test: failure in half-open immediately reopens", &.{});
 
-    std.debug.print("\n✅ All circuit breaker tests passed\n\n", .{});
+    slog.info("Circuit breaker tests completed successfully", &.{});
 }
 
 /// Test circuit breaker pool
@@ -269,7 +270,7 @@ pub fn testCircuitBreakerPool() !void {
     var pool = CircuitBreakerPool.init(allocator);
     defer pool.deinit();
 
-    std.debug.print("\n=== Circuit Breaker Pool Tests ===\n\n", .{});
+    slog.info("Starting circuit breaker pool tests", &.{});
 
     // Create breakers for different services
     var db_breaker = try pool.get("database", 5, 3, 2000);
@@ -289,6 +290,6 @@ pub fn testCircuitBreakerPool() !void {
     // DB service should still be working
     std.debug.assert(db_breaker.canExecute());
 
-    std.debug.print("✓ Pool manages multiple independent breakers\n", .{});
-    std.debug.print("\n✅ All pool tests passed\n\n", .{});
+    slog.info("Circuit breaker pool test: manages multiple independent breakers", &.{});
+    slog.info("Circuit breaker pool tests completed successfully", &.{});
 }

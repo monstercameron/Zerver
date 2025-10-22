@@ -1,11 +1,18 @@
 /// Todo feature middleware
 const std = @import("std");
 const zerver = @import("../../zerver/root.zig");
+const slog = @import("../../zerver/observability/slog.zig");
 
 // Global middleware
 pub fn middleware_logging(ctx: *zerver.CtxBase) !zerver.Decision {
-    std.debug.print("  [Middleware] Logging middleware called\n", .{});
+    slog.debug("Logging middleware called", &.{
+        slog.Attr.string("middleware", "logging"),
+        slog.Attr.string("feature", "todos"),
+    });
     _ = ctx;
-    std.debug.print("→ Request received\n", .{});
+    slog.info("Request received", &.{
+        slog.Attr.string("middleware", "logging"),
+        slog.Attr.string("feature", "todos"),
+    });
     return zerver.continue_();
 }

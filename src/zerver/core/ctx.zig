@@ -1,6 +1,7 @@
 /// Request context and CtxView for compile-time access control.
 const std = @import("std");
 const types = @import("types.zig");
+const slog = @import("../observability/slog.zig");
 
 /// Callback type for on-exit hooks.
 pub const ExitCallback = *const fn (*CtxBase) void;
@@ -106,8 +107,18 @@ pub const CtxBase = struct {
     }
 
     pub fn logDebug(self: *CtxBase, comptime fmt: []const u8, args: anytype) void {
-        _ = self;
-        std.debug.print(fmt ++ "\n", args);
+        // Format the message using the provided format string and args
+        var buf: [1024]u8 = undefined;
+        const message = std.fmt.bufPrint(&buf, fmt, args) catch fmt;
+
+        // Create attributes for structured logging
+        var attrs = [_]slog.Attr{
+            slog.Attr.string("request_id", self.request_id),
+            slog.Attr.string("method", self.method_str),
+            slog.Attr.string("path", self.path_str),
+        };
+
+        slog.debug(message, &attrs);
     }
 
     pub fn lastError(self: *CtxBase) ?types.Error {
