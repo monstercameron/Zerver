@@ -1,5 +1,6 @@
 /// Main entry point - example usage.
 const std = @import("std");
+const builtin = @import("builtin");
 const root = @import("root.zig");
 
 fn defaultEffectHandler(_effect: *const root.Effect, _timeout_ms: u32) anyerror!root.executor.EffectResult {
@@ -15,6 +16,104 @@ fn defaultErrorRenderer(ctx: *root.CtxBase) anyerror!root.Decision {
         .status = 500,
         .body = "Internal Server Error",
     });
+}
+
+// Windows builds use raw Winsock calls because std.net.Stream currently fails with GetLastError(87).
+const WindowsRecvError = if (builtin.os.tag == .windows) error{
+    ConnectionResetByPeer,
+    SocketNotConnected,
+    SocketNotBound,
+    MessageTooBig,
+    NetworkSubsystemFailed,
+    OperationAborted,
+    WouldBlock,
+    TimedOut,
+    Unexpected,
+} else error{};
+
+const WindowsSendError = if (builtin.os.tag == .windows) error{
+    ConnectionResetByPeer,
+    SocketNotConnected,
+    SocketNotBound,
+    MessageTooBig,
+    NetworkSubsystemFailed,
+    SystemResources,
+    OperationAborted,
+    WouldBlock,
+    TimedOut,
+    Unexpected,
+} else error{};
+
+fn winsockRecv(handle: std.net.Stream.Handle, buffer: []u8) WindowsRecvError!usize {
+    if (builtin.os.tag != .windows) {
+        unreachable;
+    }
+
+    if (buffer.len == 0) return 0;
+    const windows = std.os.windows;
+    const max_chunk = @as(usize, @intCast(std.math.maxInt(i32)));
+    const to_read = if (buffer.len > max_chunk) max_chunk else buffer.len;
+    const rc = windows.ws2_32.recv(
+        handle,
+        buffer.ptr,
+        @as(i32, @intCast(to_read)),
+        0,
+    );
+
+    if (rc == windows.ws2_32.SOCKET_ERROR) {
+        const wsa_err = windows.ws2_32.WSAGetLastError();
+        return switch (wsa_err) {
+            .WSAECONNRESET, .WSAENETRESET, .WSAECONNABORTED => error.ConnectionResetByPeer,
+            .WSAETIMEDOUT => error.TimedOut,
+            .WSAENETDOWN => error.NetworkSubsystemFailed,
+            .WSA_OPERATION_ABORTED => error.OperationAborted,
+            .WSAENOTCONN, .WSAESHUTDOWN => error.SocketNotConnected,
+            .WSAENOTSOCK, .WSAEINVAL => error.SocketNotBound,
+            .WSAEMSGSIZE => error.MessageTooBig,
+            .WSAEWOULDBLOCK => error.WouldBlock,
+            else => error.Unexpected,
+        };
+    }
+
+    return @as(usize, @intCast(rc));
+}
+
+fn winsockSendAll(handle: std.net.Stream.Handle, data: []const u8) WindowsSendError!void {
+    if (builtin.os.tag != .windows) {
+        unreachable;
+    }
+
+    const windows = std.os.windows;
+    const max_chunk = @as(usize, @intCast(std.math.maxInt(i32)));
+    var sent_total: usize = 0;
+    while (sent_total < data.len) {
+        const remaining = data.len - sent_total;
+        const chunk = if (remaining > max_chunk) max_chunk else remaining;
+        const rc = windows.ws2_32.send(
+            handle,
+            data[sent_total .. sent_total + chunk].ptr,
+            @as(i32, @intCast(chunk)),
+            0,
+        );
+
+        if (rc == windows.ws2_32.SOCKET_ERROR) {
+            const wsa_err = windows.ws2_32.WSAGetLastError();
+            return switch (wsa_err) {
+                .WSAECONNRESET, .WSAECONNABORTED, .WSAENETRESET => error.ConnectionResetByPeer,
+                .WSAETIMEDOUT => error.TimedOut,
+                .WSAENETDOWN => error.NetworkSubsystemFailed,
+                .WSA_OPERATION_ABORTED => error.OperationAborted,
+                .WSAENOTCONN, .WSAESHUTDOWN => error.SocketNotConnected,
+                .WSAENOTSOCK, .WSAEINVAL => error.SocketNotBound,
+                .WSAEMSGSIZE => error.MessageTooBig,
+                .WSAENOBUFS => error.SystemResources,
+                .WSAEWOULDBLOCK => error.WouldBlock,
+                else => error.Unexpected,
+            };
+        }
+
+        sent_total += @as(usize, @intCast(rc));
+    }
 }
 
 pub fn main() !void {
@@ -79,16 +178,28 @@ pub fn main() !void {
 
         // Use a simple but reliable read approach: read all available data
         var read_buf: [256]u8 = undefined;
-        
         while (req_buf.items.len < 4096) {
-            const bytes_read = connection.stream.read(&read_buf) catch |err| {
-                if (req_buf.items.len > 0) {
-                    std.debug.print("Got {d} bytes before error\n", .{req_buf.items.len});
+            var bytes_read: usize = 0;
+            if (builtin.os.tag == .windows) {
+                // Bypass std.net.Stream.read to avoid overlapping I/O issues on Windows.
+                bytes_read = winsockRecv(connection.stream.handle, read_buf[0..]) catch |err| {
+                    if (req_buf.items.len > 0) {
+                        std.debug.print("Winsock recv error after {d} bytes: {s}\n", .{ req_buf.items.len, @errorName(err) });
+                        break;
+                    }
+                    std.debug.print("Winsock recv error: {s}\n", .{@errorName(err)});
                     break;
-                }
-                std.debug.print("Read error: {}\n", .{err});
-                break;
-            };
+                };
+            } else {
+                bytes_read = connection.stream.read(&read_buf) catch |err| {
+                    if (req_buf.items.len > 0) {
+                        std.debug.print("Got {d} bytes before error\n", .{req_buf.items.len});
+                        break;
+                    }
+                    std.debug.print("Read error: {}\n", .{err});
+                    break;
+                };
+            }
 
             if (bytes_read == 0) {
                 std.debug.print("EOF\n", .{});
@@ -119,19 +230,33 @@ pub fn main() !void {
         const response = srv.handleRequest(req_buf.items) catch |err| {
             std.debug.print("Error handling request: {}\n", .{err});
             const error_response = "HTTP/1.1 500 Internal Server Error\r\nContent-Type: text/plain\r\nContent-Length: 21\r\n\r\nInternal Server Error\n";
-            _ = connection.stream.writeAll(error_response) catch |we| {
-                std.debug.print("Failed to send error response: {}\n", .{we});
-            };
+            if (builtin.os.tag == .windows) {
+                winsockSendAll(connection.stream.handle, error_response) catch |we| {
+                    std.debug.print("Failed to send error response (winsock): {s}\n", .{@errorName(we)});
+                };
+            } else {
+                _ = connection.stream.writeAll(error_response) catch |we| {
+                    std.debug.print("Failed to send error response: {}\n", .{we});
+                };
+            }
             continue;
         };
 
         std.debug.print("Sending {d} bytes response\n", .{response.len});
         
         // Send response
-        _ = connection.stream.writeAll(response) catch |err| {
-            std.debug.print("Write error: {}\n", .{err});
-            continue;
-        };
+        if (builtin.os.tag == .windows) {
+            // Use raw send to keep the connection on the same Winsock path as the reader.
+            winsockSendAll(connection.stream.handle, response) catch |err| {
+                std.debug.print("Winsock send error: {s}\n", .{@errorName(err)});
+                continue;
+            };
+        } else {
+            _ = connection.stream.writeAll(response) catch |err| {
+                std.debug.print("Write error: {}\n", .{err});
+                continue;
+            };
+        }
 
         std.debug.print("Response sent successfully\n", .{});
     }
