@@ -1,14 +1,14 @@
 /// Zerver: A backend framework for Zig with observability and composable orchestration.
 ///
 /// This is the main library root that exports the public API surface.
-pub const core = @import("core.zig");
-pub const ctx_module = @import("ctx.zig");
-pub const types = @import("types.zig");
-pub const server = @import("server.zig");
-pub const router = @import("router.zig");
-pub const executor = @import("executor.zig");
-pub const tracer_module = @import("tracer.zig");
-pub const reqtest_module = @import("reqtest.zig");
+pub const core = @import("core/core.zig");
+pub const ctx_module = @import("core/ctx.zig");
+pub const types = @import("core/types.zig");
+pub const server = @import("impure/server.zig");
+pub const router = @import("../routes/router.zig");
+pub const executor = @import("impure/executor.zig");
+pub const tracer_module = @import("observability/tracer.zig");
+pub const reqtest_module = @import("core/reqtest.zig");
 
 // Main types
 pub const CtxBase = ctx_module.CtxBase;

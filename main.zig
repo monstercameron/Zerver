@@ -1,7 +1,7 @@
 /// Main entry point - example usage.
 const std = @import("std");
 const builtin = @import("builtin");
-const root = @import("root.zig");
+const root = @import("src/zerver/root.zig");
 
 fn defaultEffectHandler(_effect: *const root.Effect, _timeout_ms: u32) anyerror!root.executor.EffectResult {
     _ = _effect;

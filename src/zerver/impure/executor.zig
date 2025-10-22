@@ -9,8 +9,8 @@
 /// MVP executes all effects sequentially, even when mode=Parallel.
 /// Trace semantics are preserved for Phase-2 migration.
 const std = @import("std");
-const types = @import("types.zig");
-const ctx_module = @import("ctx.zig");
+const types = @import("../core/types.zig");
+const ctx_module = @import("../core/ctx.zig");
 
 pub const ExecutionMode = enum {
     Synchronous, // Block on each effect

@@ -8,7 +8,7 @@
 ///
 /// Exported as structured JSON for debugging and analysis.
 const std = @import("std");
-const types = @import("types.zig");
+const types = @import("../core/types.zig");
 
 /// Event types recorded during execution.
 pub const EventKind = enum {

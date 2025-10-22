@@ -1,8 +1,8 @@
 /// Server: HTTP listener, routing, request handling.
 const std = @import("std");
-const types = @import("types.zig");
-const ctx_module = @import("ctx.zig");
-const router_module = @import("router.zig");
+const types = @import("../core/types.zig");
+const ctx_module = @import("../core/ctx.zig");
+const router_module = @import("../../routes/router.zig");
 const executor_module = @import("executor.zig");
 
 pub const Address = struct {
