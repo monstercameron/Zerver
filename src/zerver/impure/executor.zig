@@ -11,6 +11,7 @@
 const std = @import("std");
 const types = @import("../core/types.zig");
 const ctx_module = @import("../core/ctx.zig");
+const tracer_module = @import("../observability/tracer.zig");
 const slog = @import("../observability/slog.zig");
 
 pub const ExecutionMode = enum {
@@ -33,6 +34,9 @@ pub const Executor = struct {
     /// Signature: fn (*const Effect, timeout_ms: u32) anyerror!EffectResult
     effect_handler: *const fn (*const types.Effect, u32) anyerror!EffectResult,
 
+    /// Optional tracer for recording events
+    tracer: ?*tracer_module.Tracer = null,
+
     pub fn init(
         allocator: std.mem.Allocator,
         effect_handler: *const fn (*const types.Effect, u32) anyerror!EffectResult,
@@ -40,6 +44,18 @@ pub const Executor = struct {
         return .{
             .allocator = allocator,
             .effect_handler = effect_handler,
+        };
+    }
+
+    pub fn initWithTracer(
+        allocator: std.mem.Allocator,
+        effect_handler: *const fn (*const types.Effect, u32) anyerror!EffectResult,
+        tracer: *tracer_module.Tracer,
+    ) Executor {
+        return .{
+            .allocator = allocator,
+            .effect_handler = effect_handler,
+            .tracer = tracer,
         };
     }
 
@@ -52,6 +68,18 @@ pub const Executor = struct {
         ctx_base: *ctx_module.CtxBase,
         step_fn: *const fn (*anyopaque) anyerror!types.Decision,
     ) !types.Decision {
+        return self.executeStepInternal(ctx_base, step_fn, 0);
+    }
+
+    /// Execute a single step with tracing.
+    pub fn executeStepWithTracer(
+        self: *Executor,
+        ctx_base: *ctx_module.CtxBase,
+        step_fn: *const fn (*anyopaque) anyerror!types.Decision,
+        tracer: *tracer_module.Tracer,
+    ) !types.Decision {
+        // Set the tracer for this execution
+        self.tracer = tracer;
         return self.executeStepInternal(ctx_base, step_fn, 0);
     }
 
@@ -99,6 +127,13 @@ pub const Executor = struct {
         // MVP: execute sequentially regardless of mode
         // Phase-2 can parallelize this
         for (need.effects) |effect| {
+            const effect_kind = @tagName(effect);
+
+            // Record effect start
+            if (self.tracer) |tracer| {
+                tracer.recordEffectStart(effect_kind);
+            }
+
             const token = switch (effect) {
                 .http_get => |e| e.token,
                 .http_post => |e| e.token,
@@ -134,6 +169,11 @@ pub const Executor = struct {
                 };
                 try results.put(token, .{ .failure = error_result });
 
+                // Record effect end (failure)
+                if (self.tracer) |tracer| {
+                    tracer.recordEffectEnd(effect_kind, false);
+                }
+
                 if (required) {
                     had_required_failure = true;
                     failure_error = error_result;
@@ -142,6 +182,11 @@ pub const Executor = struct {
             };
 
             try results.put(token, result);
+
+            // Record effect end (success)
+            if (self.tracer) |tracer| {
+                tracer.recordEffectEnd(effect_kind, result == .success);
+            }
 
             // If this is a required effect that failed, mark failure
             if (required and result == .failure) {

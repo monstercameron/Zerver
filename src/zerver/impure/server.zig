@@ -84,12 +84,15 @@ pub const Server = struct {
     pub fn executePipeline(
         self: *Server,
         ctx_base: *ctx_module.CtxBase,
+        tracer: *tracer_module.Tracer,
         before_steps: []const types.Step,
         main_steps: []const types.Step,
     ) !types.Decision {
         // Execute global before chain
         for (self.global_before.items) |before_step| {
-            const decision = try self.executor.executeStep(ctx_base, before_step.call);
+            tracer.recordStepStart(before_step.name);
+            const decision = try self.executor.executeStepWithTracer(ctx_base, before_step.call, tracer);
+            tracer.recordStepEnd(before_step.name, @tagName(decision));
             if (decision != .Continue) {
                 return decision;
             }
@@ -97,7 +100,9 @@ pub const Server = struct {
 
         // Execute route-specific before chain
         for (before_steps) |before_step| {
-            const decision = try self.executor.executeStep(ctx_base, before_step.call);
+            tracer.recordStepStart(before_step.name);
+            const decision = try self.executor.executeStepWithTracer(ctx_base, before_step.call, tracer);
+            tracer.recordStepEnd(before_step.name, @tagName(decision));
             if (decision != .Continue) {
                 return decision;
             }
@@ -105,7 +110,9 @@ pub const Server = struct {
 
         // Execute main steps
         for (main_steps) |main_step| {
-            const decision = try self.executor.executeStep(ctx_base, main_step.call);
+            tracer.recordStepStart(main_step.name);
+            const decision = try self.executor.executeStepWithTracer(ctx_base, main_step.call, tracer);
+            tracer.recordStepEnd(main_step.name, @tagName(decision));
             if (decision != .Continue) {
                 return decision;
             }
@@ -149,12 +156,12 @@ pub const Server = struct {
             tracer.recordStepEnd("route_match", "Continue");
 
             // Execute the pipeline
-            const decision = try self.executePipeline(&ctx, route_match.spec.before, route_match.spec.steps);
+            const decision = try self.executePipeline(&ctx, &tracer, route_match.spec.before, route_match.spec.steps);
 
             tracer.recordRequestEnd();
 
             // Render response based on decision
-            return self.renderResponse(&ctx, decision, arena);
+            return self.renderResponse(&ctx, decision, &tracer, arena);
         }
 
         // Try to match flow (if method is POST to /flow/v1/<slug>)
@@ -166,11 +173,11 @@ pub const Server = struct {
                     tracer.recordStepStart("flow_match");
                     tracer.recordStepEnd("flow_match", "Continue");
 
-                    const decision = try self.executePipeline(&ctx, flow.spec.before, flow.spec.steps);
+                    const decision = try self.executePipeline(&ctx, &tracer, flow.spec.before, flow.spec.steps);
 
                     tracer.recordRequestEnd();
 
-                    return self.renderResponse(&ctx, decision, arena);
+                    return self.renderResponse(&ctx, decision, &tracer, arena);
                 }
             }
         }
@@ -180,7 +187,7 @@ pub const Server = struct {
         return self.renderError(&ctx, .{
             .kind = types.ErrorCode.NotFound,
             .ctx = .{ .what = "routing", .key = parsed.path },
-        }, arena);
+        }, &tracer, arena);
     }
 
     /// Parse an HTTP request (MVP: very simplified).
@@ -237,18 +244,19 @@ pub const Server = struct {
         self: *Server,
         _ctx: *ctx_module.CtxBase,
         decision: types.Decision,
+        tracer: *tracer_module.Tracer,
         arena: std.mem.Allocator,
     ) ![]const u8 {
         const response = switch (decision) {
             .Continue => types.Response{ .status = 200, .body = "OK" },
             .Done => |resp| resp,
             .Fail => |err| {
-                return self.renderError(_ctx, err, arena);
+                return self.renderError(_ctx, err, tracer, arena);
             },
             .need => types.Response{ .status = 500, .body = "Pipeline incomplete" },
         };
 
-        return self.httpResponse(response, arena);
+        return self.httpResponse(response, tracer, arena);
     }
 
     /// Render an error response.
@@ -256,6 +264,7 @@ pub const Server = struct {
         self: *Server,
         ctx: *ctx_module.CtxBase,
         _err: types.Error,
+        tracer: *tracer_module.Tracer,
         arena: std.mem.Allocator,
     ) ![]const u8 {
         // Store the error in the context for the error handler
@@ -265,9 +274,9 @@ pub const Server = struct {
         const response = try self.config.on_error(ctx);
 
         return switch (response) {
-            .Continue => self.httpResponse(.{ .status = 500, .body = "Error" }, arena),
-            .Done => |resp| self.httpResponse(resp, arena),
-            else => self.httpResponse(.{ .status = 500, .body = "Error" }, arena),
+            .Continue => self.httpResponse(.{ .status = 500, .body = "Error" }, tracer, arena),
+            .Done => |resp| self.httpResponse(resp, tracer, arena),
+            else => self.httpResponse(.{ .status = 500, .body = "Error" }, tracer, arena),
         };
     }
 
@@ -275,6 +284,7 @@ pub const Server = struct {
     fn httpResponse(
         self: *Server,
         response: types.Response,
+        tracer: *tracer_module.Tracer,
         arena: std.mem.Allocator,
     ) ![]const u8 {
         _ = self;
@@ -300,6 +310,13 @@ pub const Server = struct {
         };
 
         try w.print("HTTP/1.1 {} {s}\r\n", .{ response.status, status_text });
+
+        // Export trace as JSON header
+        const trace_json = tracer.toJson(arena) catch "";
+        if (trace_json.len > 0) {
+            try w.print("X-Zerver-Trace: {s}\r\n", .{trace_json});
+        }
+
         try w.print("Content-Length: {}\r\n", .{response.body.len});
         try w.print("\r\n", .{});
         try w.writeAll(response.body);

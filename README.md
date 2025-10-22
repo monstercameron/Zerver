@@ -195,3 +195,9 @@ The Zerver project is organized to clearly separate core framework logic from ex
 -   **`docs/`**: Comprehensive documentation, design specifications, and internal notes. This directory serves as a knowledge base for understanding the framework's design decisions and future plans.
 
 This structure emphasizes Zerver's core principles by clearly delineating pure logic from impure operations and providing dedicated spaces for examples and documentation.
+
+---
+
+## Contributing
+
+We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines on how to get started, development setup, and contribution workflow.

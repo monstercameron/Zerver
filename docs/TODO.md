@@ -1,12 +1,6 @@
-[] migrate SPEC to todods
+[x] review README for references to SPEC
 
-[] remove SPEC.md
-
-[] review README for references to SPEC
-
-[] update README.md to reflect removal of SPEC
-
-[] add basic CONTRIBUTING pointer to docs
+[x] add basic CONTRIBUTING pointer to docs
 
 [x] create initial todo list for MVP implementation
 
@@ -26,25 +20,25 @@
 
 [x] add routing for REST and flow namespace
 
-[] implement simple blocking executor for effects
+[x] implement simple blocking executor for effects
 
 [x] implement ReqTest harness
 
-[] write unit test for db_load_by_id
+[x] write unit test for db_load_by_id
 
 [x] add example Todo flow to examples/ or src/
 
 [x] wire basic logging and trace recording
 
-[] export simple trace JSON per request
+[x] export simple trace JSON per request
 
 [x] add error renderer and mapping table
 
-[] implement bufFmt and toJson helpers
+[x] implement bufFmt and toJson helpers
 
 [x] add middleware examples (auth, rate limiting)
 
-[] design idempotency key helpers
+[x] design idempotency key helpers
 
 [x] add retry and timeout policy structs
 
@@ -66,9 +60,9 @@
 
 [] add replay CLI sketch and subcommands
 
-[] write CONTRIBUTING.md draft
+[x] write CONTRIBUTING.md draft
 
-[] write simple LICENSE file (choose a license)
+[x] write simple LICENSE file (choose a license)
 
 [] add build.zig checks for Zig 0.15 compatibility
 
@@ -82,11 +76,27 @@
 
 [] prototype OTLP exporter interface
 
+[] define span naming conventions for flows/steps
+
+[] specify default span attributes and enrichment sources
+
+[] document span status + error mapping rules
+
+[] implement OTLP exporter configuration struct (endpoint, headers, batching)
+
+[] wire tracer to emit OTLP spans through exporter
+
+[] expose OTLP exporter toggle via config/env
+
+[] write setup guide for connecting to OTLP collector
+
+[] add troubleshooting notes and sample collector config
+
 [x] add test for continuation resume logic
 
 [x] add test for CtxView compile-time enforcement (where possible)
 
-[] document slot lifetime and arena rules
+[x] document slot lifetime and arena rules
 
 [] add example of streaming JSON writer in a step
 
@@ -96,11 +106,11 @@
 
 [] move Security Review Checklist into todods
 
-[] check other docs for SPEC references and update
+[x] check other docs for SPEC references and update
 
 [] create a small example that demonstrates replay
 
-[] ensure README links to todods instead of SPEC
+[x] ensure README links to todods instead of SPEC
 
 [x] push changes to GitHub (main branch)
 
@@ -116,32 +126,32 @@
 
 [x] write quickstart for running example locally
 
-[] add CODE_OF_CONDUCT.md
+[x] add CODE_OF_CONDUCT.md
 
-[] create issues in repo for top 10 tasks
+[x] create issues in repo for top 10 tasks
 
-[] sort todos by priority and tag owners
+[x] sort todos by priority and tag owners
 
-[] archive old design notes if needed
+[x] archive old design notes if needed
 
-[] add folder for experiments/prototypes
+[x] add folder for experiments/prototypes
 
-[] add license header template for source files
+[x] add license header template for source files
 
-[] finish migrating spec content to docs folder
+[x] finish migrating spec content to docs folder
 
-[] schedule design review meeting notes placeholder
+[x] schedule design review meeting notes placeholder
 
-[] mark migration task as done
+[x] mark migration task as done
 
-[] tidy up repository root files
+[x] tidy up repository root files
 
 [x] ensure src/ is populated or remove empty folder
 
 [x] verify repo builds in CI (if configured)
 
-[] update README to reference new todods
+[x] update README to reference new todods
 
-[] validate links across markdown files
+[x] validate links across markdown files
 
-[] finalize todods and commit
+[x] finalize todods and commit
