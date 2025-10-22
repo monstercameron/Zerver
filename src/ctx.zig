@@ -160,28 +160,109 @@ pub const TraceEvent = union(enum) {
 };
 
 /// CtxView(spec) creates a typed view that enforces read/write permissions at compile time.
+/// 
+/// The spec should contain:
+///   - reads: array of slot tags that can be read
+///   - writes: array of slot tags that can be written
+///
 /// Usage:
 ///   const MyView = CtxView(.{
 ///       .reads = &.{ .TodoId, .TodoItem },
 ///       .writes = &.{ .TodoItem },
 ///   });
+///
+/// Then use:
+///   var value = try ctx.require(.TodoItem);     // Read (error if not in .TodoItem written)
+///   var opt_value = try ctx.optional(.TodoId);  // Optional read
+///   try ctx.put(.TodoItem, my_value);           // Write
 pub fn CtxView(comptime spec: anytype) type {
-    _ = spec;  // spec is used at comptime for validation
+    // Extract reads and writes from the spec at comptime
+    const reads = if (@hasField(@TypeOf(spec), "reads")) spec.reads else &.{};
+    const writes = if (@hasField(@TypeOf(spec), "writes")) spec.writes else &.{};
+    
     return struct {
         base: *CtxBase,
         
-        pub fn require(self: @This(), comptime slot: anytype) !@TypeOf(slot) {
+        /// Require a slot to be populated (must be in .reads or .writes)
+        /// Returns error.SlotMissing if the slot was not previously written
+        pub fn require(self: @This(), comptime slot_tag: anytype) !@TypeOf(slot_tag) {
+            // Compile-time check: slot must be in reads or writes
+            comptime {
+                var found = false;
+                for (reads) |s| {
+                    if (s == slot_tag) {
+                        found = true;
+                        break;
+                    }
+                }
+                if (!found) {
+                    for (writes) |s| {
+                        if (s == slot_tag) {
+                            found = true;
+                            break;
+                        }
+                    }
+                }
+                if (!found) {
+                    @compileError("Slot " ++ @tagName(slot_tag) ++ " not in reads or writes for this CtxView");
+                }
+            }
+            
+            // Runtime: retrieve the slot value
+            // TODO: implement actual slot storage and retrieval
             _ = self;
-            // Compile-time check would go here; for now we're building the MVP
             return error.NotImplemented;
         }
         
-        pub fn optional(self: @This(), comptime slot: anytype) !?@TypeOf(slot) {
+        /// Optionally read a slot (returns null if not set)
+        /// Must be in .reads or .writes
+        pub fn optional(self: @This(), comptime slot_tag: anytype) !?@TypeOf(slot_tag) {
+            // Compile-time check: slot must be in reads or writes
+            comptime {
+                var found = false;
+                for (reads) |s| {
+                    if (s == slot_tag) {
+                        found = true;
+                        break;
+                    }
+                }
+                if (!found) {
+                    for (writes) |s| {
+                        if (s == slot_tag) {
+                            found = true;
+                            break;
+                        }
+                    }
+                }
+                if (!found) {
+                    @compileError("Slot " ++ @tagName(slot_tag) ++ " not in reads or writes for this CtxView");
+                }
+            }
+            
+            // Runtime: retrieve slot or return null
+            // TODO: implement actual slot storage and retrieval
             _ = self;
             return error.NotImplemented;
         }
         
-        pub fn put(self: @This(), comptime slot: anytype, value: @TypeOf(slot)) !void {
+        /// Write a value to a slot (must be in .writes)
+        pub fn put(self: @This(), comptime slot_tag: anytype, value: @TypeOf(slot_tag)) !void {
+            // Compile-time check: slot must be in writes
+            comptime {
+                var found = false;
+                for (writes) |s| {
+                    if (s == slot_tag) {
+                        found = true;
+                        break;
+                    }
+                }
+                if (!found) {
+                    @compileError("Slot " ++ @tagName(slot_tag) ++ " not in writes for this CtxView");
+                }
+            }
+            
+            // Runtime: store the slot value
+            // TODO: implement actual slot storage
             _ = self;
             _ = value;
             return error.NotImplemented;
