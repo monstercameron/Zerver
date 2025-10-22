@@ -2,7 +2,6 @@
 ///
 /// This demonstrates how CtxView prevents invalid slot access at compile time.
 /// These examples show code that WOULD NOT COMPILE.
-
 const std = @import("std");
 const zerver = @import("zerver");
 
@@ -38,7 +37,7 @@ const zerver = @import("zerver");
 // EXAMPLE 3: Valid usage - all accesses allowed
 const GoodView = zerver.CtxView(.{
     .reads = &.{ .TodoId, .UserId },
-    .writes = &.{ .TodoItem },
+    .writes = &.{.TodoItem},
 });
 
 fn good_step(ctx: *GoodView) !zerver.Decision {
@@ -47,14 +46,14 @@ fn good_step(ctx: *GoodView) !zerver.Decision {
     // ✓ Can write TodoItem (in .writes)
     // ✗ Cannot write UserId (not in .writes)
     // ✗ Cannot read TodoItem before it's written (not in .writes yet)
-    
+
     _ = ctx;
     return .Continue;
 }
 
 // EXAMPLE 4: Optional reads work too
 const OptionalView = zerver.CtxView(.{
-    .reads = &.{ .TodoId },
+    .reads = &.{.TodoId},
 });
 
 fn optional_step(ctx: *OptionalView) !zerver.Decision {
@@ -63,7 +62,7 @@ fn optional_step(ctx: *OptionalView) !zerver.Decision {
     if (maybe_id) |id| {
         std.debug.print("Got ID: {s}\n", .{id});
     }
-    
+
     return .Continue;
 }
 

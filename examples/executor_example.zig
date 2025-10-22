@@ -6,7 +6,6 @@
 /// - Join strategies (all, any, first_success)
 /// - Required vs optional effect failures
 /// - Continuation semantics
-
 const std = @import("std");
 const zerver = @import("zerver");
 
@@ -85,19 +84,23 @@ fn step_parallel_effects(ctx: *zerver.CtxBase) !zerver.Decision {
             .token = 0,
             .required = true,
         } },
-        .{ .http_get = .{
-            .url = "https://example.com/api",
-            .token = 1,
-            .required = false, // Optional: failure won't fail pipeline
-        } },
+        .{
+            .http_get = .{
+                .url = "https://example.com/api",
+                .token = 1,
+                .required = false, // Optional: failure won't fail pipeline
+            },
+        },
     };
 
-    return .{ .need = .{
-        .effects = &effects,
-        .mode = .Parallel,
-        .join = .all_required, // Wait for all required (optional may fail)
-        .continuation = continuation_parallel,
-    } };
+    return .{
+        .need = .{
+            .effects = &effects,
+            .mode = .Parallel,
+            .join = .all_required, // Wait for all required (optional may fail)
+            .continuation = continuation_parallel,
+        },
+    };
 }
 
 /// Continuation after parallel effects

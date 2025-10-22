@@ -6,7 +6,6 @@
 /// - Route matching and parameter extraction
 /// - Pipeline execution (global before, route before, main steps)
 /// - Error handling with on_error callback
-
 const std = @import("std");
 const zerver = @import("zerver");
 
@@ -107,36 +106,28 @@ pub fn main() !void {
 
     // Test request handling
     std.debug.print("Test 1: GET /todos\n", .{});
-    const resp1 = try server.handleRequest(
-        "GET /todos HTTP/1.1\r\n" ++
-            "Host: localhost:8080\r\n" ++
-            "\r\n"
-    );
+    const resp1 = try server.handleRequest("GET /todos HTTP/1.1\r\n" ++
+        "Host: localhost:8080\r\n" ++
+        "\r\n");
     std.debug.print("Response: {s}\n\n", .{resp1});
 
     std.debug.print("Test 2: GET /todos/123\n", .{});
-    const resp2 = try server.handleRequest(
-        "GET /todos/123 HTTP/1.1\r\n" ++
-            "Host: localhost:8080\r\n" ++
-            "\r\n"
-    );
+    const resp2 = try server.handleRequest("GET /todos/123 HTTP/1.1\r\n" ++
+        "Host: localhost:8080\r\n" ++
+        "\r\n");
     std.debug.print("Response: {s}\n\n", .{resp2});
 
     std.debug.print("Test 3: POST /todos\n", .{});
-    const resp3 = try server.handleRequest(
-        "POST /todos HTTP/1.1\r\n" ++
-            "Host: localhost:8080\r\n" ++
-            "Content-Length: 0\r\n" ++
-            "\r\n"
-    );
+    const resp3 = try server.handleRequest("POST /todos HTTP/1.1\r\n" ++
+        "Host: localhost:8080\r\n" ++
+        "Content-Length: 0\r\n" ++
+        "\r\n");
     std.debug.print("Response: {s}\n\n", .{resp3});
 
     std.debug.print("Test 4: GET /unknown (404)\n", .{});
-    const resp4 = try server.handleRequest(
-        "GET /unknown HTTP/1.1\r\n" ++
-            "Host: localhost:8080\r\n" ++
-            "\r\n"
-    );
+    const resp4 = try server.handleRequest("GET /unknown HTTP/1.1\r\n" ++
+        "Host: localhost:8080\r\n" ++
+        "\r\n");
     std.debug.print("Response: {s}\n\n", .{resp4});
 
     std.debug.print("--- Server Features ---\n", .{});

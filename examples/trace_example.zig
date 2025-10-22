@@ -5,7 +5,6 @@
 /// - Exporting trace as JSON
 /// - Using Tracer to track request execution
 /// - Observability for debugging
-
 const std = @import("std");
 const zerver = @import("zerver");
 

@@ -1,8 +1,7 @@
 /// Example: Slot definitions for a Todo application
-/// 
+///
 /// This demonstrates how applications define their own Slot enum and SlotType mapping.
 /// Each application must provide these two declarations.
-
 const std = @import("std");
 
 /// Slot enum defines all per-request state that can be stored
@@ -20,13 +19,13 @@ pub const Slot = enum {
 /// This is called at compile-time to determine the storage type for each slot
 pub fn SlotType(comptime s: Slot) type {
     return switch (s) {
-        .TodoId => []const u8,                    // todo ID string
-        .TodoItem => TodoData,                     // full todo object
-        .UserId => []const u8,                     // user ID string
-        .UserRole => []const u8,                   // role string (admin, user, etc)
-        .DbResult => DbResultData,                 // generic DB result
-        .HttpResponse => HttpResponseData,         // HTTP response body
-        .ValidationError => []const u8,            // error message
+        .TodoId => []const u8, // todo ID string
+        .TodoItem => TodoData, // full todo object
+        .UserId => []const u8, // user ID string
+        .UserRole => []const u8, // role string (admin, user, etc)
+        .DbResult => DbResultData, // generic DB result
+        .HttpResponse => HttpResponseData, // HTTP response body
+        .ValidationError => []const u8, // error message
     };
 }
 

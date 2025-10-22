@@ -8,7 +8,6 @@
 /// - Error handling
 /// - Complete request/response cycle
 /// - All framework features working together
-
 const std = @import("std");
 const zerver = @import("zerver");
 
@@ -56,11 +55,13 @@ fn step_load_from_db(ctx: *zerver.CtxBase) !zerver.Decision {
         std.debug.print("  [DB Load] Fetching todo list\n", .{});
 
         const effects = [_]zerver.Effect{
-            .{ .db_get = .{
-                .key = "todos:*",
-                .token = 3, // TodoList slot
-                .required = true,
-            } },
+            .{
+                .db_get = .{
+                    .key = "todos:*",
+                    .token = 3, // TodoList slot
+                    .required = true,
+                },
+            },
         };
 
         return .{ .need = .{
@@ -75,11 +76,13 @@ fn step_load_from_db(ctx: *zerver.CtxBase) !zerver.Decision {
     std.debug.print("  [DB Load] Fetching todo {s}\n", .{todo_id});
 
     const effects = [_]zerver.Effect{
-        .{ .db_get = .{
-            .key = "todo:123", // In real app, use todo_id
-            .token = 2, // TodoItem slot
-            .required = true,
-        } },
+        .{
+            .db_get = .{
+                .key = "todo:123", // In real app, use todo_id
+                .token = 2, // TodoItem slot
+                .required = true,
+            },
+        },
     };
 
     return .{ .need = .{
@@ -118,12 +121,14 @@ fn step_create_todo(ctx: *zerver.CtxBase) !zerver.Decision {
     std.debug.print("  [Create] Storing new todo\n", .{});
 
     const effects = [_]zerver.Effect{
-        .{ .db_put = .{
-            .key = "todo:123",
-            .value = "{\"id\":1,\"title\":\"New todo\"}",
-            .token = 2, // TodoItem
-            .required = true,
-        } },
+        .{
+            .db_put = .{
+                .key = "todo:123",
+                .value = "{\"id\":1,\"title\":\"New todo\"}",
+                .token = 2, // TodoItem
+                .required = true,
+            },
+        },
     };
 
     return .{ .need = .{
@@ -154,13 +159,15 @@ fn step_update_todo(ctx: *zerver.CtxBase) !zerver.Decision {
     std.debug.print("  [Update] Updating todo {s}\n", .{todo_id});
 
     const effects = [_]zerver.Effect{
-        .{ .db_put = .{
-            .key = "todo:123",
-            .value = "{\"id\":1,\"title\":\"Updated todo\",\"done\":true}",
-            .token = 2, // TodoItem
-            .required = true,
-            .idem = "update-123", // Idempotency key
-        } },
+        .{
+            .db_put = .{
+                .key = "todo:123",
+                .value = "{\"id\":1,\"title\":\"Updated todo\",\"done\":true}",
+                .token = 2, // TodoItem
+                .required = true,
+                .idem = "update-123", // Idempotency key
+            },
+        },
     };
 
     return .{ .need = .{
@@ -191,11 +198,13 @@ fn step_delete_todo(ctx: *zerver.CtxBase) !zerver.Decision {
     std.debug.print("  [Delete] Deleting todo {s}\n", .{todo_id});
 
     const effects = [_]zerver.Effect{
-        .{ .db_del = .{
-            .key = "todo:123",
-            .token = 2, // TodoItem
-            .required = true,
-        } },
+        .{
+            .db_del = .{
+                .key = "todo:123",
+                .token = 2, // TodoItem
+                .required = true,
+            },
+        },
     };
 
     return .{ .need = .{
@@ -297,43 +306,33 @@ pub fn main() !void {
 
     // Test requests
     std.debug.print("Test 1: GET /todos (list)\n", .{});
-    const resp1 = try server.handleRequest(
-        "GET /todos HTTP/1.1\r\n" ++
-            "X-User-ID: user-123\r\n" ++
-            "\r\n"
-    );
+    const resp1 = try server.handleRequest("GET /todos HTTP/1.1\r\n" ++
+        "X-User-ID: user-123\r\n" ++
+        "\r\n");
     std.debug.print("Response: {s}\n\n", .{resp1});
 
     std.debug.print("Test 2: GET /todos/1 (get)\n", .{});
-    const resp2 = try server.handleRequest(
-        "GET /todos/1 HTTP/1.1\r\n" ++
-            "X-User-ID: user-123\r\n" ++
-            "\r\n"
-    );
+    const resp2 = try server.handleRequest("GET /todos/1 HTTP/1.1\r\n" ++
+        "X-User-ID: user-123\r\n" ++
+        "\r\n");
     std.debug.print("Response: {s}\n\n", .{resp2});
 
     std.debug.print("Test 3: POST /todos (create)\n", .{});
-    const resp3 = try server.handleRequest(
-        "POST /todos HTTP/1.1\r\n" ++
-            "X-User-ID: user-123\r\n" ++
-            "\r\n"
-    );
+    const resp3 = try server.handleRequest("POST /todos HTTP/1.1\r\n" ++
+        "X-User-ID: user-123\r\n" ++
+        "\r\n");
     std.debug.print("Response: {s}\n\n", .{resp3});
 
     std.debug.print("Test 4: PATCH /todos/1 (update)\n", .{});
-    const resp4 = try server.handleRequest(
-        "PATCH /todos/1 HTTP/1.1\r\n" ++
-            "X-User-ID: user-123\r\n" ++
-            "\r\n"
-    );
+    const resp4 = try server.handleRequest("PATCH /todos/1 HTTP/1.1\r\n" ++
+        "X-User-ID: user-123\r\n" ++
+        "\r\n");
     std.debug.print("Response: {s}\n\n", .{resp4});
 
     std.debug.print("Test 5: DELETE /todos/1 (delete)\n", .{});
-    const resp5 = try server.handleRequest(
-        "DELETE /todos/1 HTTP/1.1\r\n" ++
-            "X-User-ID: user-123\r\n" ++
-            "\r\n"
-    );
+    const resp5 = try server.handleRequest("DELETE /todos/1 HTTP/1.1\r\n" ++
+        "X-User-ID: user-123\r\n" ++
+        "\r\n");
     std.debug.print("Response: {s}\n\n", .{resp5});
 
     std.debug.print("--- Features Demonstrated ---\n", .{});

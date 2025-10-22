@@ -1,5 +1,4 @@
 /// Core type definitions for Zerver: Decision, Effect, Response, Error, etc.
-
 const std = @import("std");
 
 /// HTTP method.
@@ -39,8 +38,8 @@ pub const Header = struct {
 
 /// Error context for detailed diagnostics.
 pub const ErrorCtx = struct {
-    what: []const u8,  // domain: "todo", "auth", "db"
-    key: []const u8 = "",  // id or key associated with the error
+    what: []const u8, // domain: "todo", "auth", "db"
+    key: []const u8 = "", // id or key associated with the error
 };
 
 /// An error result with kind code and context.
@@ -57,7 +56,7 @@ pub const Retry = struct {
 /// HTTP GET effect.
 pub const HttpGet = struct {
     url: []const u8,
-    token: u32,  // Slot identifier (enum tag value) for result storage
+    token: u32, // Slot identifier (enum tag value) for result storage
     timeout_ms: u32 = 1000,
     retry: Retry = .{},
     required: bool = true,
@@ -68,7 +67,7 @@ pub const HttpPost = struct {
     url: []const u8,
     body: []const u8,
     headers: []const Header = &.{},
-    token: u32,  // Slot identifier (enum tag value) for result storage
+    token: u32, // Slot identifier (enum tag value) for result storage
     timeout_ms: u32 = 1000,
     retry: Retry = .{},
     required: bool = true,
@@ -77,7 +76,7 @@ pub const HttpPost = struct {
 /// Database GET effect.
 pub const DbGet = struct {
     key: []const u8,
-    token: u32,  // Slot identifier (enum tag value) for result storage
+    token: u32, // Slot identifier (enum tag value) for result storage
     timeout_ms: u32 = 300,
     retry: Retry = .{},
     required: bool = true,
@@ -87,11 +86,11 @@ pub const DbGet = struct {
 pub const DbPut = struct {
     key: []const u8,
     value: []const u8,
-    token: u32,  // Slot identifier (enum tag value) for result storage
+    token: u32, // Slot identifier (enum tag value) for result storage
     timeout_ms: u32 = 400,
     retry: Retry = .{},
     required: bool = true,
-    idem: []const u8 = "",  // idempotency key
+    idem: []const u8 = "", // idempotency key
 };
 
 /// Database DELETE effect.
@@ -125,16 +124,16 @@ pub const Effect = union(enum) {
 
 /// Mode for executing multiple effects.
 pub const Mode = enum {
-    Parallel,      // May execute concurrently
-    Sequential,    // Execute in strict order
+    Parallel, // May execute concurrently
+    Sequential, // Execute in strict order
 };
 
 /// Join strategy for waiting on multiple effects.
 pub const Join = enum {
-    all,              // Wait for all effects
-    all_required,     // Wait for all required; optional may complete in background
-    any,              // Resume on first completion
-    first_success,    // Resume on first success
+    all, // Wait for all effects
+    all_required, // Wait for all required; optional may complete in background
+    any, // Resume on first completion
+    first_success, // Resume on first success
 };
 
 /// Callback for continuation after effects complete.
@@ -158,9 +157,9 @@ pub const Decision = union(enum) {
 /// A Step represents a unit of logic in a pipeline.
 pub const Step = struct {
     name: []const u8,
-    call: *const fn (*anyopaque) anyerror!Decision,  // *CtxBase, re-trampolined to typed *CtxView
-    reads: []const u32 = &.{},  // Slot identifiers
-    writes: []const u32 = &.{},  // Slot identifiers
+    call: *const fn (*anyopaque) anyerror!Decision, // *CtxBase, re-trampolined to typed *CtxView
+    reads: []const u32 = &.{}, // Slot identifiers
+    writes: []const u32 = &.{}, // Slot identifiers
 };
 
 /// Route specification: before chain and main steps.

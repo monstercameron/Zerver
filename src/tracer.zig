@@ -7,7 +7,6 @@
 /// - Error details if any
 ///
 /// Exported as structured JSON for debugging and analysis.
-
 const std = @import("std");
 const types = @import("types.zig");
 

@@ -8,20 +8,19 @@
 ///
 /// MVP executes all effects sequentially, even when mode=Parallel.
 /// Trace semantics are preserved for Phase-2 migration.
-
 const std = @import("std");
 const types = @import("types.zig");
 const ctx_module = @import("ctx.zig");
 
 pub const ExecutionMode = enum {
     Synchronous, // Block on each effect
-    Async,       // Phase-2: async/await
+    Async, // Phase-2: async/await
 };
 
 /// Effect result: either success with data, or failure with error.
 pub const EffectResult = union(enum) {
-    success: []const u8,    // Result data (opaque bytes)
-    failure: types.Error,   // Failure details
+    success: []const u8, // Result data (opaque bytes)
+    failure: types.Error, // Failure details
 };
 
 /// Executor manages step execution and effect handling.

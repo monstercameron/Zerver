@@ -1,5 +1,4 @@
 /// Server: HTTP listener, routing, request handling.
-
 const std = @import("std");
 const types = @import("types.zig");
 const ctx_module = @import("ctx.zig");
@@ -39,7 +38,7 @@ pub const Server = struct {
     executor: executor_module.Executor,
     flows: std.ArrayList(Flow),
     global_before: std.ArrayList(types.Step),
-    
+
     pub fn init(
         allocator: std.mem.Allocator,
         cfg: Config,
@@ -54,23 +53,23 @@ pub const Server = struct {
             .global_before = try std.ArrayList(types.Step).initCapacity(allocator, 8),
         };
     }
-    
+
     pub fn deinit(self: *Server) void {
         self.router.deinit();
         self.flows.deinit(self.allocator);
         self.global_before.deinit(self.allocator);
     }
-    
+
     /// Register global middleware chain.
     pub fn use(self: *Server, chain: []const types.Step) !void {
         try self.global_before.appendSlice(chain);
     }
-    
+
     /// Register a REST route.
     pub fn addRoute(self: *Server, method: types.Method, path: []const u8, spec: types.RouteSpec) !void {
         try self.router.addRoute(method, path, spec);
     }
-    
+
     /// Register a Flow endpoint.
     pub fn addFlow(self: *Server, spec: types.FlowSpec) !void {
         try self.flows.append(.{
@@ -78,7 +77,7 @@ pub const Server = struct {
             .spec = spec,
         });
     }
-    
+
     /// Execute a pipeline for a request context.
     pub fn executePipeline(
         self: *Server,
@@ -140,7 +139,7 @@ pub const Server = struct {
         // Try to match flow (if method is POST to /flow/v1/<slug>)
         if (parsed.method == .POST and std.mem.startsWith(u8, parsed.path, "/flow/v1/")) {
             const slug = parsed.path[9..]; // Remove "/flow/v1/"
-            
+
             for (self.flows.items) |flow| {
                 if (std.mem.eql(u8, flow.slug, slug)) {
                     const decision = try self.executePipeline(&ctx, flow.spec);
@@ -234,7 +233,7 @@ pub const Server = struct {
         _ = _err;
         // Call on_error handler
         const response = try self.config.on_error(ctx);
-        
+
         return switch (response) {
             .Continue => self.httpResponse(.{ .status = 500, .body = "Error" }, arena),
             .Done => |resp| self.httpResponse(resp, arena),

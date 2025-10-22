@@ -5,7 +5,6 @@
 /// - The framework's generic interface: Step struct with *CtxBase pointers
 ///
 /// This allows you to write type-safe steps while the framework can call them generically.
-
 const std = @import("std");
 const zerver = @import("zerver");
 
@@ -26,7 +25,7 @@ pub fn SlotType(comptime s: Slot) type {
 
 // Define a CtxView spec: what this step can read/write
 const FetchTodoSpec = .{
-    .reads = &.{ .UserId },
+    .reads = &.{.UserId},
     .writes = &.{ .TodoId, .TodoItem },
 };
 
@@ -37,7 +36,7 @@ pub fn fetch_todo_step(ctx: *zerver.CtxView(FetchTodoSpec)) !zerver.Decision {
     // ✓ Can write TodoId (declared in .writes)
     // ✓ Can write TodoItem (declared in .writes)
     // ✗ Cannot read TodoItem (not in .reads or .writes)
-    
+
     // For this example, just return Continue
     _ = ctx;
     std.debug.print("fetch_todo_step: type-safe access confirmed\n", .{});
@@ -46,17 +45,17 @@ pub fn fetch_todo_step(ctx: *zerver.CtxView(FetchTodoSpec)) !zerver.Decision {
 
 /// Step 2: Another typed step with different requirements
 const RenderSpec = .{
-    .reads = &.{ .TodoItem },
+    .reads = &.{.TodoItem},
     .writes = &.{},
 };
 
 pub fn render_step(ctx: *zerver.CtxView(RenderSpec)) !zerver.Decision {
     // ✓ Can read TodoItem
     // ✗ Cannot write (no writes declared)
-    
+
     _ = ctx;
     std.debug.print("render_step: preparing response\n", .{});
-    
+
     return zerver.done(.{
         .status = 200,
         .body = "{}",
@@ -67,17 +66,16 @@ pub fn render_step(ctx: *zerver.CtxView(RenderSpec)) !zerver.Decision {
 pub fn main() void {
     std.debug.print("Step Trampoline Example\n", .{});
     std.debug.print("=======================\n\n", .{});
-    
+
     // The step() function wraps our typed functions
     // It extracts the spec from the function signature at comptime
     const fetch_step = zerver.step("fetch_todo", fetch_todo_step);
     const render_step_wrapped = zerver.step("render", render_step);
-    
+
     std.debug.print("Created step: {s}\n", .{fetch_step.name});
     std.debug.print("Created step: {s}\n", .{render_step_wrapped.name});
-    
+
     std.debug.print("\nBoth steps are now wrapped as Step structs.\n", .{});
     std.debug.print("The framework can call them via generic *CtxBase pointers.\n", .{});
     std.debug.print("But the type system still enforces slot access at compile-time.\n", .{});
 }
-
