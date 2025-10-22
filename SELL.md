@@ -593,4 +593,4 @@ A: Temporal is for long-running workflows (minutes/hours). Zerver is for low-lat
 
 **Ready to see what your code is actually doing?**
 
-**[Try Zerver →](https://github.com/yourorg/zerver)**
+**[Try Zerver →](https://github.com/monstercameron/Zerver)**
