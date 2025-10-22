@@ -40,7 +40,7 @@ pub fn listenAndServe(
         // Read request
         const req_data = try handler.readRequest(connection, request_arena.allocator());
         if (req_data.len == 0) {
-            slog.debug("Received empty request", &.{});  
+            slog.debug("Received empty request", &.{});
             continue;
         }
 
