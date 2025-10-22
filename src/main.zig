@@ -243,7 +243,7 @@ pub fn main() !void {
         };
 
         std.debug.print("Sending {d} bytes response\n", .{response.len});
-        
+
         // Send response
         if (builtin.os.tag == .windows) {
             // Use raw send to keep the connection on the same Winsock path as the reader.
