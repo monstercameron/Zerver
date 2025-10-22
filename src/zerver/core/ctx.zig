@@ -7,7 +7,6 @@ pub const ExitCallback = *const fn (*CtxBase) void;
 
 /// CtxBase contains all per-request state and helpers.
 pub const CtxBase = struct {
-    arena: std.heap.ArenaAllocator,
     allocator: std.mem.Allocator,
 
     // Request data
@@ -37,28 +36,29 @@ pub const CtxBase = struct {
     last_error: ?types.Error = null,
 
     pub fn init(allocator: std.mem.Allocator) !CtxBase {
-        var arena = std.heap.ArenaAllocator.init(allocator);
-        const arena_alloc = arena.allocator();
-
         return CtxBase{
-            .arena = arena,
-            .allocator = arena_alloc,
+            .allocator = allocator,
             .method_str = "",
             .path_str = "",
-            .headers = std.StringHashMap([]const u8).init(arena_alloc),
-            .params = std.StringHashMap([]const u8).init(arena_alloc),
-            .query = std.StringHashMap([]const u8).init(arena_alloc),
+            .headers = std.StringHashMap([]const u8).init(allocator),
+            .params = std.StringHashMap([]const u8).init(allocator),
+            .query = std.StringHashMap([]const u8).init(allocator),
             .body = "",
             .client_ip = "",
             .start_time = std.time.milliTimestamp(),
-            .slots = std.AutoHashMap(u32, *anyopaque).init(arena_alloc),
-            .exit_cbs = try std.ArrayList(ExitCallback).initCapacity(arena_alloc, 8),
-            .trace_events = try std.ArrayList(TraceEvent).initCapacity(arena_alloc, 32),
+            .slots = std.AutoHashMap(u32, *anyopaque).init(allocator),
+            .exit_cbs = try std.ArrayList(ExitCallback).initCapacity(allocator, 8),
+            .trace_events = try std.ArrayList(TraceEvent).initCapacity(allocator, 32),
         };
     }
 
     pub fn deinit(self: *CtxBase) void {
-        self.arena.deinit();
+        self.slots.deinit();
+        self.exit_cbs.deinit(self.allocator);
+        self.trace_events.deinit(self.allocator);
+        self.headers.deinit();
+        self.params.deinit();
+        self.query.deinit();
     }
 
     pub fn method(self: *CtxBase) []const u8 {
@@ -229,8 +229,9 @@ pub const CtxBase = struct {
 
     /// Store a string value in a slot (runtime token, used by executor for effect results)
     pub fn slotPutString(self: *CtxBase, token: u32, value: []const u8) !void {
+        const duped_value = try self.allocator.dupe(u8, value);
         const value_ptr = try self.allocator.create([]const u8);
-        value_ptr.* = value;
+        value_ptr.* = duped_value;
         try self.slots.put(token, @ptrCast(value_ptr));
     }
 

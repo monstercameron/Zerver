@@ -9,7 +9,7 @@
 /// - Complete request/response cycle
 /// - All framework features working together
 const std = @import("std");
-const zerver = @import("zerver");
+const zerver = @import("../src/zerver/root.zig");
 
 /// Application slots for Todo state
 pub const TodoSlot = enum(u32) {
@@ -29,8 +29,10 @@ pub fn TodoSlotType(comptime s: TodoSlot) type {
 }
 
 // Step 1: Extract and validate user from header
-fn step_auth(ctx: *zerver.CtxBase) !zerver.Decision {
+pub fn step_auth(ctx: *zerver.CtxBase) !zerver.Decision {
+    std.debug.print("  [Auth] Step auth called\n", .{});
     const user_id = ctx.header("X-User-ID") orelse {
+        std.debug.print("  [Auth] Missing X-User-ID header\n", .{});
         return zerver.fail(zerver.ErrorCode.Unauthorized, "auth", "missing_user");
     };
 
@@ -39,7 +41,7 @@ fn step_auth(ctx: *zerver.CtxBase) !zerver.Decision {
 }
 
 // Step 2: Extract todo ID from path parameter
-fn step_extract_id(ctx: *zerver.CtxBase) !zerver.Decision {
+pub fn step_extract_id(ctx: *zerver.CtxBase) !zerver.Decision {
     const todo_id = ctx.param("id") orelse {
         return zerver.continue_(); // OK if not present (LIST operation)
     };
@@ -49,7 +51,8 @@ fn step_extract_id(ctx: *zerver.CtxBase) !zerver.Decision {
 }
 
 // Step 3: Simulate database load
-fn step_load_from_db(ctx: *zerver.CtxBase) !zerver.Decision {
+pub fn step_load_from_db(ctx: *zerver.CtxBase) !zerver.Decision {
+    std.debug.print("  [Step] step_load_from_db called\n", .{});
     const todo_id = ctx.param("id") orelse {
         // LIST operation - return empty list effect
         std.debug.print("  [DB Load] Fetching todo list\n", .{});
@@ -94,29 +97,27 @@ fn step_load_from_db(ctx: *zerver.CtxBase) !zerver.Decision {
 }
 
 fn continuation_list(ctx: *anyopaque) !zerver.Decision {
-    const base: *zerver.CtxBase = @ptrCast(@alignCast(ctx));
-    _ = base;
-    std.debug.print("  [Continuation] List data loaded\n", .{});
+    _ = ctx;
+    std.debug.print("  [Continuation] List continuation called\n", .{});
 
     return zerver.done(.{
         .status = 200,
-        .body = "[{\"id\":1,\"title\":\"Buy milk\",\"done\":false},{\"id\":2,\"title\":\"Pay bills\",\"done\":true}]",
+        .body = "[{\"id\":\"1\",\"title\":\"Buy milk\",\"done\":false},{\"id\":\"2\",\"title\":\"Pay bills\",\"done\":true}]",
     });
 }
 
 fn continuation_get(ctx: *anyopaque) !zerver.Decision {
-    const base: *zerver.CtxBase = @ptrCast(@alignCast(ctx));
-    _ = base;
-    std.debug.print("  [Continuation] Item data loaded\n", .{});
+    _ = ctx;
+    std.debug.print("  [Continuation] Item continuation called\n", .{});
 
     return zerver.done(.{
         .status = 200,
-        .body = "{\"id\":1,\"title\":\"Buy milk\",\"done\":false}",
+        .body = "{\"id\":\"1\",\"title\":\"Buy milk\",\"done\":false}",
     });
 }
 
 // Step 4: Create todo
-fn step_create_todo(ctx: *zerver.CtxBase) !zerver.Decision {
+pub fn step_create_todo(ctx: *zerver.CtxBase) !zerver.Decision {
     _ = ctx;
     std.debug.print("  [Create] Storing new todo\n", .{});
 
@@ -140,18 +141,17 @@ fn step_create_todo(ctx: *zerver.CtxBase) !zerver.Decision {
 }
 
 fn continuation_create(ctx: *anyopaque) !zerver.Decision {
-    const base: *zerver.CtxBase = @ptrCast(@alignCast(ctx));
-    _ = base;
-    std.debug.print("  [Continuation] Todo created\n", .{});
+    _ = ctx;
+    std.debug.print("  [Continuation] Create continuation called\n", .{});
 
     return zerver.done(.{
         .status = 201,
-        .body = "{\"id\":1,\"title\":\"New todo\",\"done\":false}",
+        .body = "{\"id\":\"1\",\"title\":\"New todo\",\"done\":false}",
     });
 }
 
 // Step 5: Update todo
-fn step_update_todo(ctx: *zerver.CtxBase) !zerver.Decision {
+pub fn step_update_todo(ctx: *zerver.CtxBase) !zerver.Decision {
     const todo_id = ctx.param("id") orelse {
         return zerver.fail(zerver.ErrorCode.NotFound, "todo", "missing_id");
     };
@@ -179,18 +179,17 @@ fn step_update_todo(ctx: *zerver.CtxBase) !zerver.Decision {
 }
 
 fn continuation_update(ctx: *anyopaque) !zerver.Decision {
-    const base: *zerver.CtxBase = @ptrCast(@alignCast(ctx));
-    _ = base;
-    std.debug.print("  [Continuation] Todo updated\n", .{});
+    _ = ctx;
+    std.debug.print("  [Continuation] Update continuation called\n", .{});
 
     return zerver.done(.{
         .status = 200,
-        .body = "{\"id\":1,\"title\":\"Updated todo\",\"done\":true}",
+        .body = "{\"id\":\"1\",\"title\":\"Updated todo\",\"done\":true}",
     });
 }
 
 // Step 6: Delete todo
-fn step_delete_todo(ctx: *zerver.CtxBase) !zerver.Decision {
+pub fn step_delete_todo(ctx: *zerver.CtxBase) !zerver.Decision {
     const todo_id = ctx.param("id") orelse {
         return zerver.fail(zerver.ErrorCode.NotFound, "todo", "missing_id");
     };
@@ -227,26 +226,68 @@ fn continuation_delete(ctx: *anyopaque) !zerver.Decision {
 }
 
 // Global middleware
-fn middleware_logging(ctx: *zerver.CtxBase) !zerver.Decision {
+pub fn middleware_logging(ctx: *zerver.CtxBase) !zerver.Decision {
+    std.debug.print("  [Middleware] Logging middleware called\n", .{});
     _ = ctx;
     std.debug.print("→ Request received\n", .{});
     return zerver.continue_();
 }
 
 // Error handler
-fn onError(_ctx: *zerver.CtxBase) anyerror!zerver.Decision {
-    _ = _ctx;
-    return zerver.done(.{
-        .status = 500,
-        .body = "{\"error\":\"Internal server error\"}",
-    });
+pub fn onError(ctx: *zerver.CtxBase) anyerror!zerver.Decision {
+    std.debug.print("  [Error] onError called\n", .{});
+    if (ctx.last_error) |err| {
+        std.debug.print("  [Error] Last error: kind={}, what='{s}', key='{s}'\n", .{err.kind, err.ctx.what, err.ctx.key});
+        
+        // Return appropriate error message based on the error
+        if (std.mem.eql(u8, err.ctx.key, "missing_user")) {
+            return zerver.done(.{
+                .status = @intCast(err.kind),
+                .body = "{\"error\":\"Missing X-User-ID header\"}",
+            });
+        } else if (std.mem.eql(u8, err.ctx.key, "missing_id")) {
+            return zerver.done(.{
+                .status = @intCast(err.kind),
+                .body = "{\"error\":\"Missing todo ID\"}",
+            });
+        } else {
+            return zerver.done(.{
+                .status = @intCast(err.kind),
+                .body = "{\"error\":\"Unknown error\"}",
+            });
+        }
+    } else {
+        std.debug.print("  [Error] No last_error set\n", .{});
+        return zerver.done(.{
+            .status = 500,
+            .body = "{\"error\":\"Internal server error - no error details\"}",
+        });
+    }
 }
 
-// Effect handler (mock)
-fn effectHandler(_effect: *const zerver.Effect, _timeout_ms: u32) anyerror!zerver.executor.EffectResult {
-    _ = _effect;
+// Effect handler (mock database)
+pub fn effectHandler(effect: *const zerver.Effect, _timeout_ms: u32) anyerror!zerver.executor.EffectResult {
+    std.debug.print("  [Effect] Handling effect type: {}\n", .{@as(std.meta.Tag(zerver.Effect), effect.*)});
     _ = _timeout_ms;
-    return .{ .success = "" };
+    switch (effect.*) {
+        .db_get => |db_get| {
+            std.debug.print("  [Effect] DB GET: {s} (token {})\n", .{db_get.key, db_get.token});
+            // Don't store in slots for now
+            return .{ .success = "" };
+        },
+        .db_put => |db_put| {
+            std.debug.print("  [Effect] DB PUT: {s} = {s} (token {})\n", .{db_put.key, db_put.value, db_put.token});
+            return .{ .success = "" };
+        },
+        .db_del => |db_del| {
+            std.debug.print("  [Effect] DB DEL: {s} (token {})\n", .{db_del.key, db_del.token});
+            return .{ .success = "" };
+        },
+        else => {
+            std.debug.print("  [Effect] Unknown effect type\n", .{});
+            return .{ .success = "" };
+        },
+    }
 }
 
 pub fn main() !void {

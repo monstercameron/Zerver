@@ -2,7 +2,7 @@
 const std = @import("std");
 const types = @import("../core/types.zig");
 const ctx_module = @import("../core/ctx.zig");
-const router_module = @import("../../routes/router.zig");
+const router_module = @import("../routes/router.zig");
 const executor_module = @import("executor.zig");
 const tracer_module = @import("../observability/tracer.zig");
 
@@ -63,7 +63,7 @@ pub const Server = struct {
 
     /// Register global middleware chain.
     pub fn use(self: *Server, chain: []const types.Step) !void {
-        try self.global_before.appendSlice(chain);
+        try self.global_before.appendSlice(self.allocator, chain);
     }
 
     /// Register a REST route.
@@ -138,6 +138,13 @@ pub const Server = struct {
         // Try to match route
         if (try self.router.match(parsed.method, parsed.path, arena)) |route_match| {
             tracer.recordStepStart("route_match");
+            
+            // Copy route parameters into context
+            var param_iter = route_match.params.iterator();
+            while (param_iter.next()) |entry| {
+                try ctx.params.put(entry.key_ptr.*, entry.value_ptr.*);
+            }
+            
             tracer.recordStepEnd("route_match", "Continue");
 
             // Execute the pipeline
@@ -250,7 +257,9 @@ pub const Server = struct {
         _err: types.Error,
         arena: std.mem.Allocator,
     ) ![]const u8 {
-        _ = _err;
+        // Store the error in the context for the error handler
+        ctx.last_error = _err;
+        
         // Call on_error handler
         const response = try self.config.on_error(ctx);
 
@@ -271,7 +280,25 @@ pub const Server = struct {
 
         var buf = std.ArrayList(u8).initCapacity(arena, 512) catch unreachable;
         const w = buf.writer(arena);
-        try w.print("HTTP/1.1 {} OK\r\n", .{response.status});
+        
+        // Get status text
+        const status_text = switch (response.status) {
+            200 => "OK",
+            201 => "Created", 
+            204 => "No Content",
+            400 => "Bad Request",
+            401 => "Unauthorized",
+            403 => "Forbidden",
+            404 => "Not Found",
+            409 => "Conflict",
+            429 => "Too Many Requests",
+            500 => "Internal Server Error",
+            502 => "Bad Gateway",
+            504 => "Gateway Timeout",
+            else => "OK", // Default fallback
+        };
+        
+        try w.print("HTTP/1.1 {} {s}\r\n", .{response.status, status_text});
         try w.print("Content-Length: {}\r\n", .{response.body.len});
         try w.print("\r\n", .{});
         try w.writeAll(response.body);

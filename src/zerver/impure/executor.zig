@@ -88,10 +88,8 @@ pub const Executor = struct {
         need: types.Need,
         depth: usize,
     ) anyerror!types.Decision {
-        const arena = ctx_base.arena.allocator();
-
         // Track effect results by token (slot identifier)
-        var results = std.AutoHashMap(u32, EffectResult).init(arena);
+        var results = std.AutoHashMap(u32, EffectResult).init(ctx_base.allocator);
         defer results.deinit();
 
         var had_required_failure = false;

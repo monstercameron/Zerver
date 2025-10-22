@@ -3,6 +3,33 @@ const std = @import("std");
 const builtin = @import("builtin");
 const root = @import("src/zerver/root.zig");
 
+// Import the complete Todo CRUD example
+const todo_crud = @import("examples/todo_crud.zig");
+
+// Helper function to create a step that wraps a CtxBase function
+fn makeStep(comptime name: []const u8, comptime func: anytype) root.types.Step {
+    return root.types.Step{
+        .name = name,
+        .call = struct {
+            pub fn wrapper(ctx_opaque: *anyopaque) anyerror!root.types.Decision {
+                const ctx: *root.CtxBase = @ptrCast(@alignCast(ctx_opaque));
+                return func(ctx);
+            }
+        }.wrapper,
+        .reads = &.{},
+        .writes = &.{},
+    };
+}
+
+fn helloStep(ctx: *root.CtxBase) !root.Decision {
+    std.debug.print("  [Hello] Hello step called\n", .{});
+    _ = ctx;
+    return root.done(.{
+        .status = 200,
+        .body = "Hello from Zerver! Try /todos endpoints with X-User-ID header.",
+    });
+}
+
 fn defaultEffectHandler(_effect: *const root.Effect, _timeout_ms: u32) anyerror!root.executor.EffectResult {
     _ = _effect;
     _ = _timeout_ms;
@@ -129,28 +156,59 @@ pub fn main() !void {
             .ip = .{ 127, 0, 0, 1 },
             .port = 8080,
         },
-        .on_error = defaultErrorRenderer,
+        .on_error = todo_crud.onError,
     };
 
     // Create server with effect handler
-    var srv = try root.Server.init(allocator, config, defaultEffectHandler);
+    var srv = try root.Server.init(allocator, config, todo_crud.effectHandler);
     defer srv.deinit();
 
-    // Add a simple test route
-    try srv.addRoute(.GET, "/", .{
-        .before = &.{},
-        .steps = &.{},
+    // Register global middleware
+    try srv.use(&.{
+        makeStep("logging", todo_crud.middleware_logging),
     });
 
-    // Add a /hello route
-    try srv.addRoute(.GET, "/hello", .{
-        .before = &.{},
-        .steps = &.{},
-    });
+    // Register routes with actual step implementations
+    try srv.addRoute(.GET, "/todos", .{ .steps = &.{
+        makeStep("extract_id", todo_crud.step_extract_id),
+        makeStep("load", todo_crud.step_load_from_db),
+    } });
+
+    try srv.addRoute(.GET, "/todos/:id", .{ .steps = &.{
+        makeStep("extract_id", todo_crud.step_extract_id),
+        makeStep("load", todo_crud.step_load_from_db),
+    } });
+
+    try srv.addRoute(.POST, "/todos", .{ .steps = &.{
+        makeStep("create", todo_crud.step_create_todo),
+    } });
+
+    try srv.addRoute(.PATCH, "/todos/:id", .{ .steps = &.{
+        makeStep("extract_id", todo_crud.step_extract_id),
+        makeStep("update", todo_crud.step_update_todo),
+    } });
+
+    try srv.addRoute(.DELETE, "/todos/:id", .{ .steps = &.{
+        makeStep("extract_id", todo_crud.step_extract_id),
+        makeStep("delete", todo_crud.step_delete_todo),
+    } });
+
+    // Add a simple root route
+    try srv.addRoute(.GET, "/", .{ .steps = &.{
+        makeStep("hello", helloStep),
+    } });
+
+    std.debug.print("Todo CRUD Routes:\n", .{});
+    std.debug.print("  GET    /          - Hello World\n", .{});
+    std.debug.print("  GET    /todos     - List all todos\n", .{});
+    std.debug.print("  GET    /todos/:id - Get specific todo\n", .{});
+    std.debug.print("  POST   /todos     - Create todo\n", .{});
+    std.debug.print("  PATCH  /todos/:id - Update todo\n", .{});
+    std.debug.print("  DELETE /todos/:id - Delete todo\n\n", .{});
 
     // Start TCP listener
-    const addr = try std.net.Address.parseIp("127.0.0.1", 8080);
-    var listener = try addr.listen(.{
+    const server_addr = try std.net.Address.parseIp("127.0.0.1", 8080);
+    var listener = try server_addr.listen(.{
         .reuse_address = true,
     });
     defer listener.deinit();
@@ -158,6 +216,53 @@ pub fn main() !void {
     std.debug.print("Server listening on 127.0.0.1:8080\n", .{});
     std.debug.print("Try: curl http://localhost:8080/\n", .{});
     std.debug.print("Test with: Invoke-WebRequest http://127.0.0.1:8080/\n", .{});
+    std.debug.print("No authentication required for demo\n\n", .{});
+
+    // Test the API endpoints
+    std.debug.print("Testing API endpoints...\n\n", .{});
+
+    std.debug.print("Test 1: GET /\n", .{});
+    const resp1 = try srv.handleRequest("GET / HTTP/1.1\r\n\r\n", allocator);
+    std.debug.print("Response: {s}\n\n", .{resp1});
+
+    std.debug.print("Test 2: GET /todos (list)\n", .{});
+    const resp2 = try srv.handleRequest("GET /todos HTTP/1.1\r\n" ++
+        "\r\n", allocator);
+    std.debug.print("Response: {s}\n\n", .{resp2});
+
+    std.debug.print("Test 3: GET /todos/1 (get)\n", .{});
+    const resp3 = try srv.handleRequest("GET /todos/1 HTTP/1.1\r\n" ++
+        "\r\n", allocator);
+    std.debug.print("Response: {s}\n\n", .{resp3});
+
+    std.debug.print("Test 4: POST /todos (create)\n", .{});
+    const resp4 = try srv.handleRequest("POST /todos HTTP/1.1\r\n" ++
+        "\r\n", allocator);
+    std.debug.print("Response: {s}\n\n", .{resp4});
+
+    std.debug.print("Test 5: PATCH /todos/1 (update)\n", .{});
+    const resp5 = try srv.handleRequest("PATCH /todos/1 HTTP/1.1\r\n" ++
+        "\r\n", allocator);
+    std.debug.print("Response: {s}\n\n", .{resp5});
+
+    std.debug.print("Test 6: DELETE /todos/1 (delete)\n", .{});
+    const resp6 = try srv.handleRequest("DELETE /todos/1 HTTP/1.1\r\n" ++
+        "\r\n", allocator);
+    std.debug.print("Response: {s}\n\n", .{resp6});
+
+    std.debug.print("--- Features Demonstrated ---\n", .{});
+    std.debug.print("✓ Slot system for per-request state\n", .{});
+    std.debug.print("✓ Global middleware chain\n", .{});
+    std.debug.print("✓ Route matching with path parameters\n", .{});
+    std.debug.print("✓ Step-based orchestration\n", .{});
+    std.debug.print("✓ Effect handling (DB operations)\n", .{});
+    std.debug.print("✓ Continuations after effects\n", .{});
+    std.debug.print("✓ Error handling\n", .{});
+    std.debug.print("✓ Complete CRUD workflow\n", .{});
+    std.debug.print("✓ HTTP server with TCP listener\n\n", .{});
+
+    std.debug.print("Server ready for HTTP requests on port 8080!\n", .{});
+    std.debug.print("Use curl or your browser to test the endpoints.\n\n", .{});
 
     // Main server loop
     while (true) {
