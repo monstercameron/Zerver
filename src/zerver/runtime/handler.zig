@@ -8,36 +8,45 @@ const windows_sockets = @import("platform/windows_sockets.zig");
 const root = @import("../root.zig");
 const slog = @import("../observability/slog.zig");
 
-/// Read an HTTP request from a connection
-pub fn readRequest(
+/// Read an HTTP request from a connection with timeout
+pub fn readRequestWithTimeout(
     connection: std.net.Server.Connection,
     allocator: std.mem.Allocator,
+    timeout_ms: u32,
 ) ![]u8 {
     var req_buf = std.ArrayList(u8).initCapacity(allocator, 4096) catch unreachable;
 
     var read_buf: [256]u8 = undefined;
     const max_size = 4096;
+    const start_time = std.time.milliTimestamp();
 
     while (req_buf.items.len < max_size) {
+        // Check timeout
+        const now = std.time.milliTimestamp();
+        if (now - start_time > timeout_ms) {
+            return error.Timeout;
+        }
+
         var bytes_read: usize = 0;
 
         if (windows_sockets.isWindows()) {
-            // Windows: use raw Winsock
-            bytes_read = windows_sockets.recv(connection.stream.handle, &read_buf) catch |err| {
+            // Windows: use raw Winsock with timeout
+            bytes_read = windows_sockets.recvWithTimeout(connection.stream.handle, &read_buf, 1000) catch |err| {
                 if (req_buf.items.len > 0) {
-                    slog.debug("Winsock recv error after partial read", &.{
+                    slog.debug("Winsock recv timeout error after partial read", &.{
                         slog.Attr.uint("bytes_read", req_buf.items.len),
                         slog.Attr.string("error", @errorName(err)),
                     });
                     break;
                 }
+                if (err == error.Timeout) return error.Timeout;
                 slog.debug("Winsock recv error", &.{
                     slog.Attr.string("error", @errorName(err)),
                 });
-                break;
+                return error.ConnectionClosed;
             };
         } else {
-            // Unix: use standard stream read
+            // Unix: use standard stream read with timeout
             bytes_read = connection.stream.read(&read_buf) catch |err| {
                 if (req_buf.items.len > 0) {
                     slog.debug("Partial read before error", &.{
@@ -45,16 +54,21 @@ pub fn readRequest(
                     });
                     break;
                 }
+                if (err == error.WouldBlock) return error.Timeout;
                 slog.debug("Read error", &.{
                     slog.Attr.string("error", @errorName(err)),
                 });
-                break;
+                return error.ConnectionClosed;
             };
         }
 
         if (bytes_read == 0) {
+            if (req_buf.items.len > 0) {
+                // Partial read, treat as complete
+                break;
+            }
             slog.debug("Connection closed by client", &.{});
-            break;
+            return error.ConnectionClosed;
         }
 
         try req_buf.appendSlice(allocator, read_buf[0..bytes_read]);
@@ -64,7 +78,7 @@ pub fn readRequest(
         });
 
         // Check for HTTP request completion (double CRLF)
-        // TODO: RFC 9110/9112 - This simple check for \r\n\r\n is insufficient for robust HTTP/1.1 message framing. 
+        // TODO: RFC 9110/9112 - This simple check for \r\n\r\n is insufficient for robust HTTP/1.1 message framing.
         // It does not account for Transfer-Encoding (e.g., chunked) or Content-Length for request bodies (Section 6.4, RFC 9112 Section 6).
         if (req_buf.items.len >= 4) {
             const tail = req_buf.items[req_buf.items.len - 4 ..];

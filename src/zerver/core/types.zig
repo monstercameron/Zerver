@@ -3,26 +3,98 @@ const std = @import("std");
 
 /// HTTP method.
 pub const Method = enum {
-    // TODO: RFC 9110 - Expand to include all standard HTTP methods (Section 9) and consider method extensibility (Section 16.1).
+    // RFC 9110 Section 9 - Standard HTTP methods
     GET,
+    HEAD,
     POST,
-    PATCH,
     PUT,
     DELETE,
+    CONNECT,
+    OPTIONS,
+    TRACE,
+    // PATCH is not in RFC 9110 but widely supported
+    PATCH,
 };
+// TODO: RFC 9110 Section 16.1 - Consider a mechanism for method extensibility beyond the predefined enum.
 
 /// Common HTTP error codes (for convenience).
 pub const ErrorCode = struct {
-    // TODO: RFC 9110 - Expand to include a more comprehensive set of HTTP status codes (Section 15) for finer-grained error reporting.
-    pub const InvalidInput = 400;
+    // RFC 9110 Section 15 - Comprehensive HTTP status codes
+
+    // 1xx Informational
+    pub const Continue = 100;
+    pub const SwitchingProtocols = 101;
+    pub const Processing = 102;
+
+    // 2xx Successful
+    pub const OK = 200;
+    pub const Created = 201;
+    pub const Accepted = 202;
+    pub const NonAuthoritativeInformation = 203;
+    pub const NoContent = 204;
+    pub const ResetContent = 205;
+    pub const PartialContent = 206;
+    pub const MultiStatus = 207;
+    pub const AlreadyReported = 208;
+    pub const IMUsed = 226;
+
+    // 3xx Redirection
+    pub const MultipleChoices = 300;
+    pub const MovedPermanently = 301;
+    pub const Found = 302;
+    pub const SeeOther = 303;
+    pub const NotModified = 304;
+    pub const UseProxy = 305;
+    pub const TemporaryRedirect = 307;
+    pub const PermanentRedirect = 308;
+
+    // 4xx Client Error
+    pub const BadRequest = 400;
+    pub const InvalidInput = BadRequest; // Alias for backward compatibility
     pub const Unauthorized = 401;
+    pub const PaymentRequired = 402;
     pub const Forbidden = 403;
     pub const NotFound = 404;
+    pub const MethodNotAllowed = 405;
+    pub const NotAcceptable = 406;
+    pub const ProxyAuthenticationRequired = 407;
+    pub const RequestTimeout = 408;
     pub const Conflict = 409;
+    pub const Gone = 410;
+    pub const LengthRequired = 411;
+    pub const PreconditionFailed = 412;
+    pub const PayloadTooLarge = 413;
+    pub const URITooLong = 414;
+    pub const UnsupportedMediaType = 415;
+    pub const RangeNotSatisfiable = 416;
+    pub const ExpectationFailed = 417;
+    pub const ImATeapot = 418;
+    pub const MisdirectedRequest = 421;
+    pub const UnprocessableEntity = 422;
+    pub const Locked = 423;
+    pub const FailedDependency = 424;
+    pub const TooEarly = 425;
+    pub const UpgradeRequired = 426;
+    pub const PreconditionRequired = 428;
     pub const TooManyRequests = 429;
-    pub const UpstreamUnavailable = 502;
-    pub const Timeout = 504;
-    pub const InternalError = 500;
+    pub const RequestHeaderFieldsTooLarge = 431;
+    pub const UnavailableForLegalReasons = 451;
+
+    // 5xx Server Error
+    pub const InternalServerError = 500;
+    pub const InternalError = InternalServerError; // Alias for backward compatibility
+    pub const NotImplemented = 501;
+    pub const BadGateway = 502;
+    pub const UpstreamUnavailable = BadGateway; // Alias for backward compatibility
+    pub const ServiceUnavailable = 503;
+    pub const GatewayTimeout = 504;
+    pub const Timeout = GatewayTimeout; // Alias for backward compatibility
+    pub const HTTPVersionNotSupported = 505;
+    pub const VariantAlsoNegotiates = 506;
+    pub const InsufficientStorage = 507;
+    pub const LoopDetected = 508;
+    pub const NotExtended = 510;
+    pub const NetworkAuthenticationRequired = 511;
 };
 
 /// A response to send back to the client.
@@ -243,7 +315,7 @@ pub const FlowSpec = struct {
 pub const ParsedRequest = struct {
     method: []const u8,
     path: []const u8,
-    headers: std.StringHashMap([]const u8),
+    headers: std.StringHashMap(std.ArrayList([]const u8)),
     query: std.StringHashMap([]const u8),
     body: []const u8,
     client_ip: []const u8,

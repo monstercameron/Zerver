@@ -332,7 +332,7 @@ pub fn main() !void {
     // Test 1: Large dataset streaming
     std.debug.print("Test 1: GET /stream/large\n", .{});
     const start1 = std.time.milliTimestamp();
-    const resp1 = try server.handleRequest("GET /stream/large HTTP/1.1\r\n\r\n");
+    const resp1 = try server.handleRequest("GET /stream/large HTTP/1.1\r\n\r\n", allocator);
     const end1 = std.time.milliTimestamp();
     std.debug.print("Response size: {} bytes\n", .{resp1.len});
     std.debug.print("Time: {}ms\n\n", .{end1 - start1});
@@ -340,7 +340,7 @@ pub fn main() !void {
     // Test 2: Paginated streaming
     std.debug.print("Test 2: GET /stream/paged?page=2&limit=50\n", .{});
     const start2 = std.time.milliTimestamp();
-    const resp2 = try server.handleRequest("GET /stream/paged?page=2&limit=50 HTTP/1.1\r\n\r\n");
+    const resp2 = try server.handleRequest("GET /stream/paged?page=2&limit=50 HTTP/1.1\r\n\r\n", allocator);
     const end2 = std.time.milliTimestamp();
     std.debug.print("Response size: {} bytes\n", .{resp2.len});
     std.debug.print("Time: {}ms\n\n", .{end2 - start2});

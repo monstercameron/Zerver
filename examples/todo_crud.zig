@@ -9,7 +9,7 @@
 /// - Complete request/response cycle
 /// - All framework features working together
 const std = @import("std");
-const zerver = @import("../src/zerver/root.zig");
+const zerver = @import("zerver");
 
 /// Application slots for Todo state
 pub const TodoSlot = enum(u32) {
@@ -31,7 +31,7 @@ pub fn TodoSlotType(comptime s: TodoSlot) type {
 // Step 1: Extract and validate user from header
 pub fn step_auth(ctx: *zerver.CtxBase) !zerver.Decision {
     std.debug.print("  [Auth] Step auth called\n", .{});
-    const user_id = ctx.header("X-User-ID") orelse {
+    const user_id = ctx.header("x-user-id") orelse {
         std.debug.print("  [Auth] Missing X-User-ID header\n", .{});
         return zerver.fail(zerver.ErrorCode.Unauthorized, "auth", "missing_user");
     };
@@ -102,6 +102,9 @@ fn continuation_list(ctx: *anyopaque) !zerver.Decision {
 
     return zerver.done(.{
         .status = 200,
+        .headers = &[_]zerver.types.Header{
+            .{ .name = "Content-Type", .value = "application/json" },
+        },
         .body = "[{\"id\":\"1\",\"title\":\"Buy milk\",\"done\":false},{\"id\":\"2\",\"title\":\"Pay bills\",\"done\":true}]",
     });
 }
@@ -112,6 +115,9 @@ fn continuation_get(ctx: *anyopaque) !zerver.Decision {
 
     return zerver.done(.{
         .status = 200,
+        .headers = &[_]zerver.types.Header{
+            .{ .name = "Content-Type", .value = "application/json" },
+        },
         .body = "{\"id\":\"1\",\"title\":\"Buy milk\",\"done\":false}",
     });
 }
@@ -146,6 +152,9 @@ fn continuation_create(ctx: *anyopaque) !zerver.Decision {
 
     return zerver.done(.{
         .status = 201,
+        .headers = &[_]zerver.types.Header{
+            .{ .name = "Content-Type", .value = "application/json" },
+        },
         .body = "{\"id\":\"1\",\"title\":\"New todo\",\"done\":false}",
     });
 }
@@ -184,6 +193,9 @@ fn continuation_update(ctx: *anyopaque) !zerver.Decision {
 
     return zerver.done(.{
         .status = 200,
+        .headers = &[_]zerver.types.Header{
+            .{ .name = "Content-Type", .value = "application/json" },
+        },
         .body = "{\"id\":\"1\",\"title\":\"Updated todo\",\"done\":true}",
     });
 }
@@ -243,16 +255,25 @@ pub fn onError(ctx: *zerver.CtxBase) anyerror!zerver.Decision {
         if (std.mem.eql(u8, err.ctx.key, "missing_user")) {
             return zerver.done(.{
                 .status = @intCast(err.kind),
+                .headers = &[_]zerver.types.Header{
+                    .{ .name = "Content-Type", .value = "application/json" },
+                },
                 .body = "{\"error\":\"Missing X-User-ID header\"}",
             });
         } else if (std.mem.eql(u8, err.ctx.key, "missing_id")) {
             return zerver.done(.{
                 .status = @intCast(err.kind),
+                .headers = &[_]zerver.types.Header{
+                    .{ .name = "Content-Type", .value = "application/json" },
+                },
                 .body = "{\"error\":\"Missing todo ID\"}",
             });
         } else {
             return zerver.done(.{
                 .status = @intCast(err.kind),
+                .headers = &[_]zerver.types.Header{
+                    .{ .name = "Content-Type", .value = "application/json" },
+                },
                 .body = "{\"error\":\"Unknown error\"}",
             });
         }
@@ -260,6 +281,9 @@ pub fn onError(ctx: *zerver.CtxBase) anyerror!zerver.Decision {
         std.debug.print("  [Error] No last_error set\n", .{});
         return zerver.done(.{
             .status = 500,
+            .headers = &[_]zerver.types.Header{
+                .{ .name = "Content-Type", .value = "application/json" },
+            },
             .body = "{\"error\":\"Internal server error - no error details\"}",
         });
     }
@@ -347,34 +371,68 @@ pub fn main() !void {
 
     // Test requests
     std.debug.print("Test 1: GET /todos (list)\n", .{});
-    const resp1 = try server.handleRequest("GET /todos HTTP/1.1\r\n" ++
-        "X-User-ID: user-123\r\n" ++
-        "\r\n");
-    std.debug.print("Response: {s}\n\n", .{resp1});
+    {
+        var arena = std.heap.ArenaAllocator.init(allocator);
+        defer arena.deinit();
+        const arena_alloc = arena.allocator();
+        const resp1 = try server.handleRequest("GET /todos HTTP/1.1\r\n" ++
+            "Host: localhost\r\n" ++
+            "X-User-ID: user-123\r\n" ++
+            "\r\n", arena_alloc);
+        std.debug.print("Response: {s}\n\n", .{resp1});
+    }
 
     std.debug.print("Test 2: GET /todos/1 (get)\n", .{});
-    const resp2 = try server.handleRequest("GET /todos/1 HTTP/1.1\r\n" ++
-        "X-User-ID: user-123\r\n" ++
-        "\r\n");
-    std.debug.print("Response: {s}\n\n", .{resp2});
+    {
+        var arena = std.heap.ArenaAllocator.init(allocator);
+        defer arena.deinit();
+        const arena_alloc = arena.allocator();
+        const resp2 = try server.handleRequest("GET /todos/1 HTTP/1.1\r\n" ++
+            "Host: localhost\r\n" ++
+            "X-User-ID: user-123\r\n" ++
+            "\r\n", arena_alloc);
+        std.debug.print("Response: {s}\n\n", .{resp2});
+    }
 
     std.debug.print("Test 3: POST /todos (create)\n", .{});
-    const resp3 = try server.handleRequest("POST /todos HTTP/1.1\r\n" ++
-        "X-User-ID: user-123\r\n" ++
-        "\r\n");
-    std.debug.print("Response: {s}\n\n", .{resp3});
+    {
+        var arena = std.heap.ArenaAllocator.init(allocator);
+        defer arena.deinit();
+        const arena_alloc = arena.allocator();
+        const resp3 = try server.handleRequest("POST /todos HTTP/1.1\r\n" ++
+            "Host: localhost\r\n" ++
+            "X-User-ID: user-123\r\n" ++
+            "Content-Length: 20\r\n" ++
+            "\r\n" ++
+            "{\"title\":\"New todo\"}", arena_alloc);
+        std.debug.print("Response: {s}\n\n", .{resp3});
+    }
 
     std.debug.print("Test 4: PATCH /todos/1 (update)\n", .{});
-    const resp4 = try server.handleRequest("PATCH /todos/1 HTTP/1.1\r\n" ++
-        "X-User-ID: user-123\r\n" ++
-        "\r\n");
-    std.debug.print("Response: {s}\n\n", .{resp4});
+    {
+        var arena = std.heap.ArenaAllocator.init(allocator);
+        defer arena.deinit();
+        const arena_alloc = arena.allocator();
+        const resp4 = try server.handleRequest("PATCH /todos/1 HTTP/1.1\r\n" ++
+            "Host: localhost\r\n" ++
+            "X-User-ID: user-123\r\n" ++
+            "Content-Length: 36\r\n" ++
+            "\r\n" ++
+            "{\"title\":\"Updated todo\",\"done\":true}", arena_alloc);
+        std.debug.print("Response: {s}\n\n", .{resp4});
+    }
 
     std.debug.print("Test 5: DELETE /todos/1 (delete)\n", .{});
-    const resp5 = try server.handleRequest("DELETE /todos/1 HTTP/1.1\r\n" ++
-        "X-User-ID: user-123\r\n" ++
-        "\r\n");
-    std.debug.print("Response: {s}\n\n", .{resp5});
+    {
+        var arena = std.heap.ArenaAllocator.init(allocator);
+        defer arena.deinit();
+        const arena_alloc = arena.allocator();
+        const resp5 = try server.handleRequest("DELETE /todos/1 HTTP/1.1\r\n" ++
+            "Host: localhost\r\n" ++
+            "X-User-ID: user-123\r\n" ++
+            "\r\n", arena_alloc);
+        std.debug.print("Response: {s}\n\n", .{resp5});
+    }
 
     std.debug.print("--- Features Demonstrated ---\n", .{});
     std.debug.print("✓ Slot system for per-request state\n", .{});

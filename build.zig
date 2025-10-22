@@ -59,25 +59,25 @@ pub fn build(b: *std.Build) void {
         .root_source_file = b.path("src/zerver/root.zig"),
     });
 
-    // Streaming JSON example
-    const streaming_exe = b.addExecutable(.{
-        .name = "streaming_json_example",
+    // Todo CRUD example executable
+    const todo_exe = b.addExecutable(.{
+        .name = "todo_crud_example",
         .root_module = b.createModule(.{
-            .root_source_file = b.path("examples/advanced/05_streaming_json_in_steps.zig"),
+            .root_source_file = b.path("examples/todo_crud.zig"),
             .target = target,
             .optimize = optimize,
         }),
     });
 
-    streaming_exe.root_module.addImport("zerver", zerver_mod);
+    todo_exe.root_module.addImport("zerver", zerver_mod);
 
-    b.installArtifact(streaming_exe);
+    b.installArtifact(todo_exe);
 
-    const streaming_run_cmd = b.addRunArtifact(streaming_exe);
-    streaming_run_cmd.step.dependOn(b.getInstallStep());
+    const todo_run_cmd = b.addRunArtifact(todo_exe);
+    todo_run_cmd.step.dependOn(b.getInstallStep());
 
-    const streaming_run_step = b.step("run_streaming", "Run the streaming JSON example");
-    streaming_run_step.dependOn(&streaming_run_cmd.step);
+    const todo_run_step = b.step("run_todo", "Run the todo CRUD example");
+    todo_run_step.dependOn(&todo_run_cmd.step);
 
     // Teams example executable - commented out due to compilation errors
     // const teams_exe = b.addExecutable(.{
