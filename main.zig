@@ -3,8 +3,12 @@ const std = @import("std");
 const builtin = @import("builtin");
 const root = @import("src/zerver/root.zig");
 
-// Import the complete Todo CRUD example
-const todo_crud = @import("examples/todo_crud.zig");
+// Import features
+const todos = @import("src/features/todos/routes.zig");
+const hello = @import("src/features/hello/routes.zig");
+const todo_effects = @import("src/features/todos/effects.zig");
+const todo_steps = @import("src/features/todos/steps.zig");
+const todo_errors = @import("src/features/todos/errors.zig");
 
 // Helper function to create a step that wraps a CtxBase function
 fn makeStep(comptime name: []const u8, comptime func: anytype) root.types.Step {
@@ -27,21 +31,6 @@ fn helloStep(ctx: *root.CtxBase) !root.Decision {
     return root.done(.{
         .status = 200,
         .body = "Hello from Zerver! Try /todos endpoints with X-User-ID header.",
-    });
-}
-
-fn defaultEffectHandler(_effect: *const root.Effect, _timeout_ms: u32) anyerror!root.executor.EffectResult {
-    _ = _effect;
-    _ = _timeout_ms;
-    // MVP: return dummy success
-    return .{ .success = "" };
-}
-
-fn defaultErrorRenderer(ctx: *root.CtxBase) anyerror!root.Decision {
-    _ = ctx;
-    return root.done(.{
-        .status = 500,
-        .body = "Internal Server Error",
     });
 }
 
@@ -156,42 +145,16 @@ pub fn main() !void {
             .ip = .{ 127, 0, 0, 1 },
             .port = 8080,
         },
-        .on_error = todo_crud.onError,
+        .on_error = todo_errors.onError,
     };
 
     // Create server with effect handler
-    var srv = try root.Server.init(allocator, config, todo_crud.effectHandler);
+    var srv = try root.Server.init(allocator, config, todo_effects.effectHandler);
     defer srv.deinit();
 
-    // Register global middleware
-    try srv.use(&.{
-        makeStep("logging", todo_crud.middleware_logging),
-    });
-
-    // Register routes with actual step implementations
-    try srv.addRoute(.GET, "/todos", .{ .steps = &.{
-        makeStep("extract_id", todo_crud.step_extract_id),
-        makeStep("load", todo_crud.step_load_from_db),
-    } });
-
-    try srv.addRoute(.GET, "/todos/:id", .{ .steps = &.{
-        makeStep("extract_id", todo_crud.step_extract_id),
-        makeStep("load", todo_crud.step_load_from_db),
-    } });
-
-    try srv.addRoute(.POST, "/todos", .{ .steps = &.{
-        makeStep("create", todo_crud.step_create_todo),
-    } });
-
-    try srv.addRoute(.PATCH, "/todos/:id", .{ .steps = &.{
-        makeStep("extract_id", todo_crud.step_extract_id),
-        makeStep("update", todo_crud.step_update_todo),
-    } });
-
-    try srv.addRoute(.DELETE, "/todos/:id", .{ .steps = &.{
-        makeStep("extract_id", todo_crud.step_extract_id),
-        makeStep("delete", todo_crud.step_delete_todo),
-    } });
+    // Register features
+    try todos.registerRoutes(&srv);
+    // try hello.registerRoutes(&srv);
 
     // Add a simple root route
     try srv.addRoute(.GET, "/", .{ .steps = &.{
