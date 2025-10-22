@@ -10,29 +10,13 @@
 
 [x] create initial todo list for MVP implementation
 
-[] define Slot enum in codebase
+[x] define Slot enum in codebase
 
-[] migrate SPEC to todods
-
-[] remove SPEC.md
-
-[] review README for references to SPEC
-
-[] update README.md to reflect removal of SPEC
-
-[] add basic CONTRIBUTING pointer to docs
-
-[] create initial todo list for MVP implementation
-
-[] define Slot enum in codebase
-
-[] implement SlotType mapping function
+[x] implement SlotType mapping function
 
 [x] design CtxBase skeleton
 
 [x] implement CtxView compile-time checks
-
-[] implement Step trampoline helper
 
 [x] define Decision union type
 
@@ -44,25 +28,25 @@
 
 [] implement simple blocking executor for effects
 
-[] implement ReqTest harness
+[x] implement ReqTest harness
 
 [] write unit test for db_load_by_id
 
-[] add example Todo flow to examples/ or src/
+[x] add example Todo flow to examples/ or src/
 
-[] wire basic logging and trace recording
+[x] wire basic logging and trace recording
 
 [] export simple trace JSON per request
 
-[] add error renderer and mapping table
+[x] add error renderer and mapping table
 
 [] implement bufFmt and toJson helpers
 
-[] add middleware examples (auth, rate limiting)
+[x] add middleware examples (auth, rate limiting)
 
 [] design idempotency key helpers
 
-[] add retry and timeout policy structs
+[x] add retry and timeout policy structs
 
 [] plan Phase-2: proactor + scheduler design
 
@@ -88,7 +72,7 @@
 
 [] add build.zig checks for Zig 0.15 compatibility
 
-[] run zig fmt on committed Zig files
+[x] run zig fmt on committed Zig files
 
 [] create initial git tags or changelog entry
 
@@ -98,9 +82,9 @@
 
 [] prototype OTLP exporter interface
 
-[] add test for continuation resume logic
+[x] add test for continuation resume logic
 
-[] add test for CtxView compile-time enforcement (where possible)
+[x] add test for CtxView compile-time enforcement (where possible)
 
 [] document slot lifetime and arena rules
 
@@ -130,7 +114,7 @@
 
 [x] ensure build.zig compiles with current Zig
 
-[] write quickstart for running example locally
+[x] write quickstart for running example locally
 
 [] add CODE_OF_CONDUCT.md
 
@@ -152,9 +136,9 @@
 
 [] tidy up repository root files
 
-[] ensure src/ is populated or remove empty folder
+[x] ensure src/ is populated or remove empty folder
 
-[] verify repo builds in CI (if configured)
+[x] verify repo builds in CI (if configured)
 
 [] update README to reference new todods
 
