@@ -137,7 +137,7 @@ pub const Tracer = struct {
     /// Export trace as JSON.
     pub fn toJson(self: *Tracer, arena: std.mem.Allocator) ![]const u8 {
         var buf = std.ArrayList(u8).initCapacity(arena, 1024) catch unreachable;
-        const writer = buf.writer();
+        const writer = buf.writer(arena);
 
         try writer.writeAll("{\n");
         try writer.print("  \"events\": [\n", .{});

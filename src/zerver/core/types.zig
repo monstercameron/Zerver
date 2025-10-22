@@ -85,10 +85,7 @@ pub const AdvancedRetryPolicy = struct {
 
         return switch (self.backoff_strategy) {
             .NoBackoff => 0,
-            .Linear => std.math.min(
-                self.initial_delay_ms * attempt,
-                self.max_delay_ms,
-            ),
+            .Linear => if (self.initial_delay_ms * attempt > self.max_delay_ms) self.max_delay_ms else self.initial_delay_ms * attempt,
             .Exponential => calculateExponentialBackoff(attempt, self.initial_delay_ms, self.max_delay_ms),
             .Fibonacci => calculateFibonacciBackoff(attempt, self.initial_delay_ms, self.max_delay_ms),
         };

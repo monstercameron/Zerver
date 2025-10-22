@@ -160,9 +160,6 @@ pub fn main() !void {
     std.debug.print("Test with: Invoke-WebRequest http://127.0.0.1:8080/\n", .{});
 
     // Main server loop
-    var request_arena = std.heap.ArenaAllocator.init(allocator);
-    defer request_arena.deinit();
-
     while (true) {
         const connection = listener.accept() catch |err| {
             std.debug.print("Accept error: {}\n", .{err});
@@ -172,6 +169,10 @@ pub fn main() !void {
         defer connection.stream.close();
 
         std.debug.print("Accepted connection, waiting for data...\n", .{});
+
+        // Create a fresh arena for this request
+        var request_arena = std.heap.ArenaAllocator.init(allocator);
+        defer request_arena.deinit();
 
         // Try using writeAllreadAllArrayList for better compatibility
         var req_buf = std.ArrayList(u8).initCapacity(request_arena.allocator(), 4096) catch unreachable;
@@ -226,8 +227,8 @@ pub fn main() !void {
 
         std.debug.print("Received {d} bytes total\n", .{req_buf.items.len});
 
-        // Handle request
-        const response = srv.handleRequest(req_buf.items) catch |err| {
+        // Handle request - pass the request_arena so response is allocated there
+        const response = srv.handleRequest(req_buf.items, request_arena.allocator()) catch |err| {
             std.debug.print("Error handling request: {}\n", .{err});
             const error_response = "HTTP/1.1 500 Internal Server Error\r\nContent-Type: text/plain\r\nContent-Length: 21\r\n\r\nInternal Server Error\n";
             if (builtin.os.tag == .windows) {
@@ -243,12 +244,18 @@ pub fn main() !void {
         };
 
         std.debug.print("Sending {d} bytes response\n", .{response.len});
+        std.debug.print("Response content (first 50 bytes): {s}\n", .{if (response.len > 50) response[0..50] else response});
 
         // Send response
         if (builtin.os.tag == .windows) {
             // Use raw send to keep the connection on the same Winsock path as the reader.
             winsockSendAll(connection.stream.handle, response) catch |err| {
                 std.debug.print("Winsock send error: {s}\n", .{@errorName(err)});
+                // Try to send a simple error response
+                const fallback = "HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nOK";
+                winsockSendAll(connection.stream.handle, fallback) catch {
+                    std.debug.print("Fallback send also failed\n", .{});
+                };
                 continue;
             };
         } else {

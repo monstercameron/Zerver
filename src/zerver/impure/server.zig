@@ -115,28 +115,28 @@ pub const Server = struct {
     }
 
     /// Handle a single HTTP request: parse, route, execute.
+    /// The caller provides an arena that will be used for allocations.
+    /// The returned response slice is valid only while the arena is alive.
     pub fn handleRequest(
         self: *Server,
         request_text: []const u8,
+        arena: std.mem.Allocator,
     ) ![]const u8 {
-        var arena = std.heap.ArenaAllocator.init(self.allocator);
-        defer arena.deinit();
-
         // Create tracer for this request
-        var tracer = tracer_module.Tracer.init(arena.allocator());
+        var tracer = tracer_module.Tracer.init(arena);
         defer tracer.deinit();
 
         tracer.recordRequestStart();
 
         // Parse the HTTP request (simplified)
-        const parsed = try self.parseRequest(request_text, arena.allocator());
+        const parsed = try self.parseRequest(request_text, arena);
 
         // Create request context
-        var ctx = try ctx_module.CtxBase.init(arena.allocator());
+        var ctx = try ctx_module.CtxBase.init(arena);
         defer ctx.deinit();
 
         // Try to match route
-        if (try self.router.match(parsed.method, parsed.path, arena.allocator())) |route_match| {
+        if (try self.router.match(parsed.method, parsed.path, arena)) |route_match| {
             tracer.recordStepStart("route_match");
             tracer.recordStepEnd("route_match", "Continue");
 
@@ -146,7 +146,7 @@ pub const Server = struct {
             tracer.recordRequestEnd();
 
             // Render response based on decision
-            return self.renderResponse(&ctx, decision, arena.allocator());
+            return self.renderResponse(&ctx, decision, arena);
         }
 
         // Try to match flow (if method is POST to /flow/v1/<slug>)
@@ -162,7 +162,7 @@ pub const Server = struct {
 
                     tracer.recordRequestEnd();
 
-                    return self.renderResponse(&ctx, decision, arena.allocator());
+                    return self.renderResponse(&ctx, decision, arena);
                 }
             }
         }
@@ -172,7 +172,7 @@ pub const Server = struct {
         return self.renderError(&ctx, .{
             .kind = types.ErrorCode.NotFound,
             .ctx = .{ .what = "routing", .key = parsed.path },
-        }, arena.allocator());
+        }, arena);
     }
 
     /// Parse an HTTP request (MVP: very simplified).
