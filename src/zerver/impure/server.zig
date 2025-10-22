@@ -138,13 +138,13 @@ pub const Server = struct {
         // Try to match route
         if (try self.router.match(parsed.method, parsed.path, arena)) |route_match| {
             tracer.recordStepStart("route_match");
-            
+
             // Copy route parameters into context
             var param_iter = route_match.params.iterator();
             while (param_iter.next()) |entry| {
                 try ctx.params.put(entry.key_ptr.*, entry.value_ptr.*);
             }
-            
+
             tracer.recordStepEnd("route_match", "Continue");
 
             // Execute the pipeline
@@ -259,7 +259,7 @@ pub const Server = struct {
     ) ![]const u8 {
         // Store the error in the context for the error handler
         ctx.last_error = _err;
-        
+
         // Call on_error handler
         const response = try self.config.on_error(ctx);
 
@@ -280,11 +280,11 @@ pub const Server = struct {
 
         var buf = std.ArrayList(u8).initCapacity(arena, 512) catch unreachable;
         const w = buf.writer(arena);
-        
+
         // Get status text
         const status_text = switch (response.status) {
             200 => "OK",
-            201 => "Created", 
+            201 => "Created",
             204 => "No Content",
             400 => "Bad Request",
             401 => "Unauthorized",
@@ -297,8 +297,8 @@ pub const Server = struct {
             504 => "Gateway Timeout",
             else => "OK", // Default fallback
         };
-        
-        try w.print("HTTP/1.1 {} {s}\r\n", .{response.status, status_text});
+
+        try w.print("HTTP/1.1 {} {s}\r\n", .{ response.status, status_text });
         try w.print("Content-Length: {}\r\n", .{response.body.len});
         try w.print("\r\n", .{});
         try w.writeAll(response.body);

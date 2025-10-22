@@ -6,7 +6,7 @@ const zerver = @import("../../zerver/root.zig");
 pub fn onError(ctx: *zerver.CtxBase) anyerror!zerver.Decision {
     std.debug.print("  [Error] onError called\n", .{});
     if (ctx.last_error) |err| {
-        std.debug.print("  [Error] Last error: kind={}, what='{s}', key='{s}'\n", .{err.kind, err.ctx.what, err.ctx.key});
+        std.debug.print("  [Error] Last error: kind={}, what='{s}', key='{s}'\n", .{ err.kind, err.ctx.what, err.ctx.key });
 
         // Return appropriate error message based on the error
         if (std.mem.eql(u8, err.ctx.key, "missing_user")) {

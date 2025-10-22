@@ -8,16 +8,16 @@ pub fn effectHandler(effect: *const zerver.Effect, _timeout_ms: u32) anyerror!ze
     _ = _timeout_ms;
     switch (effect.*) {
         .db_get => |db_get| {
-            std.debug.print("  [Effect] DB GET: {s} (token {})\n", .{db_get.key, db_get.token});
+            std.debug.print("  [Effect] DB GET: {s} (token {})\n", .{ db_get.key, db_get.token });
             // Don't store in slots for now
             return .{ .success = "" };
         },
         .db_put => |db_put| {
-            std.debug.print("  [Effect] DB PUT: {s} = {s} (token {})\n", .{db_put.key, db_put.value, db_put.token});
+            std.debug.print("  [Effect] DB PUT: {s} = {s} (token {})\n", .{ db_put.key, db_put.value, db_put.token });
             return .{ .success = "" };
         },
         .db_del => |db_del| {
-            std.debug.print("  [Effect] DB DEL: {s} (token {})\n", .{db_del.key, db_del.token});
+            std.debug.print("  [Effect] DB DEL: {s} (token {})\n", .{ db_del.key, db_del.token });
             return .{ .success = "" };
         },
         else => {
