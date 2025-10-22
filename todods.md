@@ -8,7 +8,7 @@
 
 [] add basic CONTRIBUTING pointer to docs
 
-[] create initial todo list for MVP implementation
+[x] create initial todo list for MVP implementation
 
 [] define Slot enum in codebase
 
@@ -28,19 +28,19 @@
 
 [] implement SlotType mapping function
 
-[] design CtxBase skeleton
+[x] design CtxBase skeleton
 
-[] implement CtxView compile-time checks
+[x] implement CtxView compile-time checks
 
 [] implement Step trampoline helper
 
-[] define Decision union type
+[x] define Decision union type
 
-[] add Effect union with db/http variants
+[x] add Effect union with db/http variants
 
-[] create minimal Server.init stub
+[x] create minimal Server.init stub
 
-[] add routing for REST and flow namespace
+[x] add routing for REST and flow namespace
 
 [] implement simple blocking executor for effects
 
@@ -118,7 +118,7 @@
 
 [] ensure README links to todods instead of SPEC
 
-[] push changes to GitHub (main branch)
+[x] push changes to GitHub (main branch)
 
 [] open PR template for future contributors
 
@@ -128,7 +128,7 @@
 
 [] create a simple Makefile or run task for dev
 
-[] ensure build.zig compiles with current Zig
+[x] ensure build.zig compiles with current Zig
 
 [] write quickstart for running example locally
 
