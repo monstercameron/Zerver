@@ -87,7 +87,7 @@ pub const Executor = struct {
         ctx_base: *ctx_module.CtxBase,
         need: types.Need,
         depth: usize,
-    ) !types.Decision {
+    ) anyerror!types.Decision {
         const arena = ctx_base.arena.allocator();
 
         // Track effect results by token (slot identifier)

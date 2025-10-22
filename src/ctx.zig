@@ -102,7 +102,7 @@ pub const CtxBase = struct {
     }
 
     pub fn onExit(self: *CtxBase, cb: ExitCallback) void {
-        self.exit_cbs.append(cb) catch {};
+        self.exit_cbs.append(self.allocator, cb) catch {};
     }
 
     pub fn logDebug(self: *CtxBase, comptime fmt: []const u8, args: anytype) void {

@@ -121,12 +121,12 @@ pub const Tracer = struct {
         const elapsed = @as(u64, @intCast(std.time.milliTimestamp() - self.start_time));
         var e = event;
         e.timestamp_ms = elapsed;
-        self.events.append(e) catch {};
+        self.events.append(self.allocator, e) catch {};
     }
 
     /// Export trace as JSON.
     pub fn toJson(self: *Tracer, arena: std.mem.Allocator) ![]const u8 {
-        var buf = std.ArrayList(u8).init(arena);
+        var buf = std.ArrayList(u8).initCapacity(arena, 1024) catch unreachable;
         const writer = buf.writer();
 
         try writer.writeAll("{\n");

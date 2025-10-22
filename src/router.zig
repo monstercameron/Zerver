@@ -62,7 +62,7 @@ pub const Router = struct {
     ) !void {
         const pattern = try self.compilePattern(path);
 
-        try self.routes.append(.{
+        try self.routes.append(self.allocator, .{
             .method = method,
             .pattern = pattern,
             .spec = spec,
@@ -118,11 +118,11 @@ pub const Router = struct {
     /// Compile a path pattern into segments.
     /// "/todos/:id/items" → [literal("todos"), param("id"), literal("items")]
     fn compilePattern(self: *Router, path: []const u8) !Pattern {
-        var segments = std.ArrayList(Segment).init(self.allocator);
-        defer segments.deinit();
+        var segments = std.ArrayList(Segment).initCapacity(self.allocator, 16) catch unreachable;
+        defer segments.deinit(self.allocator);
 
-        var param_names = std.ArrayList([]const u8).init(self.allocator);
-        defer param_names.deinit();
+        var param_names = std.ArrayList([]const u8).initCapacity(self.allocator, 8) catch unreachable;
+        defer param_names.deinit(self.allocator);
 
         var literal_count: usize = 0;
 
@@ -132,10 +132,10 @@ pub const Router = struct {
 
             if (std.mem.startsWith(u8, seg, ":")) {
                 const param_name = seg[1..];
-                try segments.append(.{ .param = param_name });
-                try param_names.append(param_name);
+                try segments.append(self.allocator, .{ .param = param_name });
+                try param_names.append(self.allocator, param_name);
             } else {
-                try segments.append(.{ .literal = seg });
+                try segments.append(self.allocator, .{ .literal = seg });
                 literal_count += 1;
             }
         }
@@ -152,13 +152,13 @@ pub const Router = struct {
 
     /// Split a path into segments by "/", filtering empty segments.
     fn splitPath(_: *Router, path: []const u8, arena: std.mem.Allocator) ![][]const u8 {
-        var segments = std.ArrayList([]const u8).init(arena);
-        defer segments.deinit();
+        var segments = std.ArrayList([]const u8).initCapacity(arena, 16) catch unreachable;
+        defer segments.deinit(arena);
 
         var it = std.mem.splitSequence(u8, path, "/");
         while (it.next()) |seg| {
             if (seg.len > 0) {
-                try segments.append(seg);
+                try segments.append(arena, seg);
             }
         }
 

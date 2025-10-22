@@ -72,7 +72,7 @@ pub const Server = struct {
 
     /// Register a Flow endpoint.
     pub fn addFlow(self: *Server, spec: types.FlowSpec) !void {
-        try self.flows.append(.{
+        try self.flows.append(self.allocator, .{
             .slug = spec.slug,
             .spec = spec,
         });
@@ -82,7 +82,8 @@ pub const Server = struct {
     pub fn executePipeline(
         self: *Server,
         ctx_base: *ctx_module.CtxBase,
-        spec: types.RouteSpec,
+        before_steps: []const types.Step,
+        main_steps: []const types.Step,
     ) !types.Decision {
         // Execute global before chain
         for (self.global_before.items) |before_step| {
@@ -93,7 +94,7 @@ pub const Server = struct {
         }
 
         // Execute route-specific before chain
-        for (spec.before) |before_step| {
+        for (before_steps) |before_step| {
             const decision = try self.executor.executeStep(ctx_base, before_step.call);
             if (decision != .Continue) {
                 return decision;
@@ -101,7 +102,7 @@ pub const Server = struct {
         }
 
         // Execute main steps
-        for (spec.steps) |main_step| {
+        for (main_steps) |main_step| {
             const decision = try self.executor.executeStep(ctx_base, main_step.call);
             if (decision != .Continue) {
                 return decision;
@@ -124,13 +125,13 @@ pub const Server = struct {
         const parsed = try self.parseRequest(request_text, arena.allocator());
 
         // Create request context
-        var ctx = try ctx_module.CtxBase.init(self.allocator, arena.allocator());
+        var ctx = try ctx_module.CtxBase.init(arena.allocator());
         defer ctx.deinit();
 
         // Try to match route
         if (try self.router.match(parsed.method, parsed.path, arena.allocator())) |route_match| {
             // Execute the pipeline
-            const decision = try self.executePipeline(&ctx, route_match.spec);
+            const decision = try self.executePipeline(&ctx, route_match.spec.before, route_match.spec.steps);
 
             // Render response based on decision
             return self.renderResponse(&ctx, decision, arena.allocator());
@@ -142,7 +143,7 @@ pub const Server = struct {
 
             for (self.flows.items) |flow| {
                 if (std.mem.eql(u8, flow.slug, slug)) {
-                    const decision = try self.executePipeline(&ctx, flow.spec);
+                    const decision = try self.executePipeline(&ctx, flow.spec.before, flow.spec.steps);
                     return self.renderResponse(&ctx, decision, arena.allocator());
                 }
             }
@@ -249,11 +250,12 @@ pub const Server = struct {
     ) ![]const u8 {
         _ = self;
 
-        var buf = std.ArrayList(u8).init(arena);
-        try buf.writer().print("HTTP/1.1 {} OK\r\n", .{response.status});
-        try buf.writer().print("Content-Length: {}\r\n", .{response.body.len});
-        try buf.writer().print("\r\n", .{});
-        try buf.writer().writeAll(response.body);
+        var buf = std.ArrayList(u8).initCapacity(arena, 512) catch unreachable;
+        const w = buf.writer(arena);
+        try w.print("HTTP/1.1 {} OK\r\n", .{response.status});
+        try w.print("Content-Length: {}\r\n", .{response.body.len});
+        try w.print("\r\n", .{});
+        try w.writeAll(response.body);
 
         return buf.items;
     }
