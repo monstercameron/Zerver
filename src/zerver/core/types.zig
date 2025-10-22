@@ -50,39 +50,39 @@ pub const Error = struct {
 
 /// Retry policy with configurable parameters for fault tolerance.
 pub const Retry = struct {
-    max: u8 = 0,                          // Maximum number of retries
-    initial_backoff_ms: u32 = 10,         // Initial backoff in milliseconds
-    max_backoff_ms: u32 = 5000,           // Maximum backoff in milliseconds
-    backoff_multiplier: f32 = 1.5,        // Exponential backoff multiplier
-    jitter_enabled: bool = false,         // Add randomness to backoff
+    max: u8 = 0, // Maximum number of retries
+    initial_backoff_ms: u32 = 10, // Initial backoff in milliseconds
+    max_backoff_ms: u32 = 5000, // Maximum backoff in milliseconds
+    backoff_multiplier: f32 = 1.5, // Exponential backoff multiplier
+    jitter_enabled: bool = false, // Add randomness to backoff
 };
 
 /// Timeout policy for operations with configurable thresholds.
 pub const Timeout = struct {
-    deadline_ms: u32,                     // Hard deadline in milliseconds
-    warn_threshold_ms: u32 = 0,           // Warn if approaching deadline
+    deadline_ms: u32, // Hard deadline in milliseconds
+    warn_threshold_ms: u32 = 0, // Warn if approaching deadline
 };
 
 /// Backoff strategy for retry timing.
 pub const BackoffStrategy = enum {
-    NoBackoff,                            // Retry immediately
-    Linear,                               // Linear backoff: delay = attempt * base_ms
-    Exponential,                          // Exponential backoff: delay = base_ms * (multiplier ^ attempt)
-    Fibonacci,                            // Fibonacci backoff: delay = fib(attempt) * base_ms
+    NoBackoff, // Retry immediately
+    Linear, // Linear backoff: delay = attempt * base_ms
+    Exponential, // Exponential backoff: delay = base_ms * (multiplier ^ attempt)
+    Fibonacci, // Fibonacci backoff: delay = fib(attempt) * base_ms
 };
 
 /// Retry policy with advanced options (Phase-2 ready).
 pub const AdvancedRetryPolicy = struct {
-    max_attempts: u8 = 3,                 // Total attempts (including initial)
+    max_attempts: u8 = 3, // Total attempts (including initial)
     backoff_strategy: BackoffStrategy = .Exponential,
     initial_delay_ms: u32 = 50,
     max_delay_ms: u32 = 5000,
     timeout_per_attempt_ms: u32 = 1000,
-    
+
     /// Calculate delay for a specific attempt number
     pub fn calculateDelay(self: @This(), attempt: u8) u32 {
         if (attempt == 0) return 0;
-        
+
         return switch (self.backoff_strategy) {
             .NoBackoff => 0,
             .Linear => std.math.min(
@@ -93,7 +93,7 @@ pub const AdvancedRetryPolicy = struct {
             .Fibonacci => calculateFibonacciBackoff(attempt, self.initial_delay_ms, self.max_delay_ms),
         };
     }
-    
+
     fn calculateExponentialBackoff(attempt: u8, initial: u32, max: u32) u32 {
         var delay: u32 = initial;
         var i: u8 = 1;
@@ -103,7 +103,7 @@ pub const AdvancedRetryPolicy = struct {
         }
         return delay;
     }
-    
+
     fn calculateFibonacciBackoff(attempt: u8, initial: u32, max: u32) u32 {
         var fib_prev: u32 = 0;
         var fib_curr: u32 = 1;

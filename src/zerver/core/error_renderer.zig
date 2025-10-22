@@ -7,29 +7,29 @@ pub const ErrorRenderer = struct {
     /// Render an error as a formatted HTTP response with JSON body
     pub fn render(allocator: std.mem.Allocator, error_val: types.Error) !types.Response {
         const status = errorCodeToStatus(error_val.kind);
-        
+
         // Build JSON error response
         var buf = std.ArrayList(u8).initCapacity(allocator, 256) catch return types.Response{
             .status = 500,
             .body = "Internal Server Error",
         };
         defer buf.deinit();
-        
+
         const writer = buf.writer();
         try writer.print("{{\"error\":{{\"code\":{},\"what\":\"{s}\",\"key\":\"{s}\"}}}}", .{
             error_val.kind,
             error_val.ctx.what,
             error_val.ctx.key,
         });
-        
+
         const body = try allocator.dupe(u8, buf.items);
-        
+
         const headers = try allocator.alloc(types.Header, 1);
         headers[0] = .{
             .name = "Content-Type",
             .value = "application/json",
         };
-        
+
         return types.Response{
             .status = status,
             .headers = headers,

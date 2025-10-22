@@ -2,13 +2,12 @@
 ///
 /// Demonstrates how to write JSON incrementally to a buffer
 /// without loading the entire response into memory.
-/// 
+///
 /// This is useful for:
 /// - Large result sets (lists with hundreds of items)
 /// - Real-time data feeds
 /// - Progressive response rendering
 /// - Memory-efficient streaming
-
 const std = @import("std");
 const zerver = @import("../src/zerver/root.zig");
 

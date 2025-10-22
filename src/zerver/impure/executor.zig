@@ -138,7 +138,6 @@ pub const Executor = struct {
                 if (required) {
                     had_required_failure = true;
                     failure_error = error_result;
-                    // Continue to execute other effects for trace completeness
                 }
                 continue;
             };
@@ -149,7 +148,6 @@ pub const Executor = struct {
             if (required and result == .failure) {
                 had_required_failure = true;
                 failure_error = result.failure;
-                // Continue to execute other effects for trace completeness
             }
         }
 
@@ -171,10 +169,23 @@ pub const Executor = struct {
             return .{ .Fail = failure_error.? };
         }
 
-        // Store effect results in the context (so steps can read them)
-        // This is a placeholder: actual implementation would write to slots
-        // Phase-2: would map results to slots via slot identifiers
-        _ = &results;
+        // Store effect results in slots so steps can access them
+        var results_iter = results.iterator();
+        while (results_iter.next()) |entry| {
+            const token = entry.key_ptr.*;
+            const result = entry.value_ptr.*;
+
+            switch (result) {
+                .success => |data| {
+                    // Store success result as a string slice in the slot
+                    try ctx_base.slotPutString(token, data);
+                },
+                .failure => |err| {
+                    // Store error in last_error context
+                    ctx_base.last_error = err;
+                },
+            }
+        }
 
         // Call the continuation function
         return self.executeStepInternal(ctx_base, need.continuation, depth + 1);

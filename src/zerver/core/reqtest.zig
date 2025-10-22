@@ -45,6 +45,11 @@ pub const ReqTest = struct {
         try self.ctx.headers.put(name, value);
     }
 
+    /// Seed a slot with a string value for testing.
+    pub fn seedSlotString(self: *ReqTest, token: u32, value: []const u8) !void {
+        try self.ctx.slotPutString(token, value);
+    }
+
     /// Call a step directly.
     pub fn callStep(self: *ReqTest, step_fn: *const fn (*anyopaque) anyerror!types.Decision) !types.Decision {
         return step_fn(@ptrCast(&self.ctx));

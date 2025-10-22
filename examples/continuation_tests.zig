@@ -1,11 +1,10 @@
 /// Tests for continuation resume logic
-/// 
+///
 /// Verifies that:
 /// - Continuations properly receive the context
 /// - Results from effects are accessible in continuations
 /// - Multiple sequential continuations work correctly
 /// - Continuation chains can transition between states
-
 const std = @import("std");
 const zerver = @import("../src/zerver/root.zig");
 
@@ -44,14 +43,14 @@ pub fn test_basic_continuation() !void {
 
     // Step 1: Request effect
     var decision = try step_request_effect(&ctx);
-    
+
     // Verify: should return Need
     switch (decision) {
         .Need => |need| {
             std.debug.assert(need.effects.len == 1);
             // Simulate effect completion by storing result
             try ctx._put(2, "result_data"); // ResultData slot
-            
+
             // Step 2: Call continuation
             decision = try need.continuation(&ctx);
         },
@@ -70,33 +69,27 @@ pub fn test_basic_continuation() !void {
 }
 
 fn step_request_effect() !zerver.Decision {
-    return .{
-        .Need = .{
-            .effects = &.{
-                zerver.Effect{
-                    .db_get = .{
-                        .key = "test:123",
-                        .token = 2,
-                        .required = true,
-                    }
-                }
-            },
-            .mode = .Sequential,
-            .join = .all,
-            .continuation = @ptrCast(&continuation_handle_result),
-        }
-    };
+    return .{ .Need = .{
+        .effects = &.{zerver.Effect{ .db_get = .{
+            .key = "test:123",
+            .token = 2,
+            .required = true,
+        } }},
+        .mode = .Sequential,
+        .join = .all,
+        .continuation = @ptrCast(&continuation_handle_result),
+    } };
 }
 
 fn continuation_handle_result(ctx: *anyopaque) !zerver.Decision {
     const base: *zerver.CtxBase = @ptrCast(@alignCast(ctx));
-    
+
     // Retrieve the result from the effect
     const result_opt = try base._get(2, []const u8);
     const result = result_opt orelse "missing";
-    
+
     _ = result;
-    
+
     return zerver.done(zerver.Response{
         .status = 200,
         .body = "success",
@@ -153,48 +146,36 @@ pub fn test_sequential_continuations() !void {
 }
 
 fn step_first_effect() !zerver.Decision {
-    return .{
-        .Need = .{
-            .effects = &.{
-                zerver.Effect{
-                    .db_get = .{
-                        .key = "users:123",
-                        .token = 1,
-                        .required = true,
-                    }
-                }
-            },
-            .mode = .Sequential,
-            .join = .all,
-            .continuation = @ptrCast(&continuation_after_load_user),
-        }
-    };
+    return .{ .Need = .{
+        .effects = &.{zerver.Effect{ .db_get = .{
+            .key = "users:123",
+            .token = 1,
+            .required = true,
+        } }},
+        .mode = .Sequential,
+        .join = .all,
+        .continuation = @ptrCast(&continuation_after_load_user),
+    } };
 }
 
 fn continuation_after_load_user(ctx: *anyopaque) !zerver.Decision {
     const base: *zerver.CtxBase = @ptrCast(@alignCast(ctx));
-    
+
     // Verify we got the user
     const user_opt = try base._get(1, []const u8);
     _ = user_opt orelse return zerver.fail(404, "user", "not_found");
-    
+
     // Request second effect
-    return .{
-        .Need = .{
-            .effects = &.{
-                zerver.Effect{
-                    .db_get = .{
-                        .key = "data:processed",
-                        .token = 2,
-                        .required = true,
-                    }
-                }
-            },
-            .mode = .Sequential,
-            .join = .all,
-            .continuation = @ptrCast(&continuation_after_process),
-        }
-    };
+    return .{ .Need = .{
+        .effects = &.{zerver.Effect{ .db_get = .{
+            .key = "data:processed",
+            .token = 2,
+            .required = true,
+        } }},
+        .mode = .Sequential,
+        .join = .all,
+        .continuation = @ptrCast(&continuation_after_process),
+    } };
 }
 
 fn continuation_after_process(ctx: *anyopaque) !zerver.Decision {
@@ -219,7 +200,7 @@ pub fn test_continuation_context_preservation() !void {
 
     // Set initial context values
     try ctx._put(0, @as(u32, 42)); // State
-    try ctx._put(1, "test_user");  // UserId
+    try ctx._put(1, "test_user"); // UserId
 
     // Request effect
     var decision = try step_preserve_context();
@@ -245,31 +226,25 @@ pub fn test_continuation_context_preservation() !void {
 }
 
 fn step_preserve_context() !zerver.Decision {
-    return .{
-        .Need = .{
-            .effects = &.{
-                zerver.Effect{
-                    .db_get = .{
-                        .key = "test",
-                        .token = 2,
-                        .required = true,
-                    }
-                }
-            },
-            .mode = .Sequential,
-            .join = .all,
-            .continuation = @ptrCast(&continuation_verify_preserved),
-        }
-    };
+    return .{ .Need = .{
+        .effects = &.{zerver.Effect{ .db_get = .{
+            .key = "test",
+            .token = 2,
+            .required = true,
+        } }},
+        .mode = .Sequential,
+        .join = .all,
+        .continuation = @ptrCast(&continuation_verify_preserved),
+    } };
 }
 
 fn continuation_verify_preserved(ctx: *anyopaque) !zerver.Decision {
     const base: *zerver.CtxBase = @ptrCast(@alignCast(ctx));
-    
+
     // Verify original state is still there
     const state_opt = try base._get(0, u32);
     const user_opt = try base._get(1, []const u8);
-    
+
     if (state_opt == null or user_opt == null) {
         return zerver.fail(500, "context", "missing_values");
     }
@@ -316,27 +291,21 @@ pub fn test_continuation_error_handling() !void {
 }
 
 fn step_check_error() !zerver.Decision {
-    return .{
-        .Need = .{
-            .effects = &.{
-                zerver.Effect{
-                    .db_get = .{
-                        .key = "missing",
-                        .token = 2,
-                        .required = true,
-                    }
-                }
-            },
-            .mode = .Sequential,
-            .join = .all,
-            .continuation = @ptrCast(&continuation_check_missing),
-        }
-    };
+    return .{ .Need = .{
+        .effects = &.{zerver.Effect{ .db_get = .{
+            .key = "missing",
+            .token = 2,
+            .required = true,
+        } }},
+        .mode = .Sequential,
+        .join = .all,
+        .continuation = @ptrCast(&continuation_check_missing),
+    } };
 }
 
 fn continuation_check_missing(ctx: *anyopaque) !zerver.Decision {
     const base: *zerver.CtxBase = @ptrCast(@alignCast(ctx));
-    
+
     // Try to get result that should be missing
     const result_opt = try base._get(2, []const u8);
     if (result_opt == null) {

@@ -34,7 +34,7 @@ pub const TraceEvent = struct {
 pub const Tracer = struct {
     allocator: std.mem.Allocator,
     events: std.ArrayList(TraceEvent),
-    start_time: u64,
+    start_time: i64,
 
     pub fn init(allocator: std.mem.Allocator) Tracer {
         return .{
@@ -61,6 +61,7 @@ pub const Tracer = struct {
         self.recordEvent(.{
             .kind = .step_start,
             .step_name = step_name,
+            .timestamp_ms = 0,
         });
     }
 
@@ -74,6 +75,7 @@ pub const Tracer = struct {
             .kind = .step_end,
             .step_name = step_name,
             .status = outcome,
+            .timestamp_ms = 0,
         });
     }
 
@@ -85,6 +87,7 @@ pub const Tracer = struct {
         self.recordEvent(.{
             .kind = .effect_start,
             .effect_kind = effect_kind,
+            .timestamp_ms = 0,
         });
     }
 
@@ -98,14 +101,17 @@ pub const Tracer = struct {
             .kind = .effect_end,
             .effect_kind = effect_kind,
             .status = if (success) "success" else "failure",
+            .timestamp_ms = 0,
         });
     }
 
     /// Record request end.
     pub fn recordRequestEnd(self: *Tracer) void {
+        const now = std.time.milliTimestamp();
+        const elapsed = @as(u64, @intCast(now - self.start_time));
         self.recordEvent(.{
             .kind = .request_end,
-            .timestamp_ms = @intCast(std.time.milliTimestamp() - self.start_time),
+            .timestamp_ms = elapsed,
         });
     }
 
@@ -114,13 +120,17 @@ pub const Tracer = struct {
         self.recordEvent(.{
             .kind = .request_end,
             .error_msg = msg,
+            .timestamp_ms = 0,
         });
     }
 
     fn recordEvent(self: *Tracer, event: TraceEvent) void {
-        const elapsed = @as(u64, @intCast(std.time.milliTimestamp() - self.start_time));
+        const now = std.time.milliTimestamp();
+        const elapsed = @as(u64, @intCast(now - self.start_time));
         var e = event;
-        e.timestamp_ms = elapsed;
+        if (e.timestamp_ms == 0) {
+            e.timestamp_ms = elapsed;
+        }
         self.events.append(self.allocator, e) catch {};
     }
 

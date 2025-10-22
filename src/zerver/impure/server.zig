@@ -4,6 +4,7 @@ const types = @import("../core/types.zig");
 const ctx_module = @import("../core/ctx.zig");
 const router_module = @import("../../routes/router.zig");
 const executor_module = @import("executor.zig");
+const tracer_module = @import("../observability/tracer.zig");
 
 pub const Address = struct {
     ip: [4]u8,
@@ -121,6 +122,12 @@ pub const Server = struct {
         var arena = std.heap.ArenaAllocator.init(self.allocator);
         defer arena.deinit();
 
+        // Create tracer for this request
+        var tracer = tracer_module.Tracer.init(arena.allocator());
+        defer tracer.deinit();
+
+        tracer.recordRequestStart();
+
         // Parse the HTTP request (simplified)
         const parsed = try self.parseRequest(request_text, arena.allocator());
 
@@ -130,8 +137,13 @@ pub const Server = struct {
 
         // Try to match route
         if (try self.router.match(parsed.method, parsed.path, arena.allocator())) |route_match| {
+            tracer.recordStepStart("route_match");
+            tracer.recordStepEnd("route_match", "Continue");
+
             // Execute the pipeline
             const decision = try self.executePipeline(&ctx, route_match.spec.before, route_match.spec.steps);
+
+            tracer.recordRequestEnd();
 
             // Render response based on decision
             return self.renderResponse(&ctx, decision, arena.allocator());
@@ -143,13 +155,20 @@ pub const Server = struct {
 
             for (self.flows.items) |flow| {
                 if (std.mem.eql(u8, flow.slug, slug)) {
+                    tracer.recordStepStart("flow_match");
+                    tracer.recordStepEnd("flow_match", "Continue");
+
                     const decision = try self.executePipeline(&ctx, flow.spec.before, flow.spec.steps);
+
+                    tracer.recordRequestEnd();
+
                     return self.renderResponse(&ctx, decision, arena.allocator());
                 }
             }
         }
 
         // No route matched: 404
+        tracer.recordRequestEnd();
         return self.renderError(&ctx, .{
             .kind = types.ErrorCode.NotFound,
             .ctx = .{ .what = "routing", .key = parsed.path },

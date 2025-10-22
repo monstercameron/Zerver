@@ -1,8 +1,7 @@
 /// Middleware examples: auth, rate limiting, and other cross-cutting concerns
-/// 
+///
 /// Middleware in Zerver are just Steps that run before main business logic.
 /// They can read/write slots and return Continue to proceed or Fail to short-circuit.
-
 const std = @import("std");
 const zerver = @import("../src/zerver/root.zig");
 
@@ -33,7 +32,6 @@ pub const RateLimitData = struct {
 /// ============================================================================
 /// AUTH MIDDLEWARE
 /// ============================================================================
-
 /// Middleware step that parses an Authorization header
 /// Reads: nothing
 /// Writes: AuthToken
@@ -111,7 +109,6 @@ pub const auth_chain = &.{
 /// ============================================================================
 /// RATE LIMITING MIDDLEWARE
 /// ============================================================================
-
 /// Middleware step that checks rate limits
 /// Reads: nothing
 /// Writes: RateLimit
@@ -121,7 +118,7 @@ pub fn rate_limit_check(ctx: *zerver.CtxBase) !zerver.Decision {
     _ = client_ip; // Would use this as the rate limit key
 
     const now = std.time.milliTimestamp();
-    
+
     // Simple rate limit: 60 requests per minute
     const limit_data: RateLimitData = .{
         .requests_per_min = 60,
@@ -142,7 +139,6 @@ pub fn rate_limit_check(ctx: *zerver.CtxBase) !zerver.Decision {
 /// ============================================================================
 /// OPTIONAL MIDDLEWARE
 /// ============================================================================
-
 /// Optional auth middleware - doesn't fail if missing, just sets UserId to empty
 /// Useful for endpoints that support both authenticated and anonymous users
 pub fn optional_auth(ctx: *zerver.CtxBase) !zerver.Decision {
@@ -171,13 +167,12 @@ pub fn optional_auth(ctx: *zerver.CtxBase) !zerver.Decision {
 /// ============================================================================
 /// EXAMPLE USAGE
 /// ============================================================================
-
 /// Example showing how to use middleware with routes
 pub fn example_protected_route(ctx: *zerver.CtxBase) !zerver.Decision {
     // Retrieve UserId from slot
     const user_id_opt = try ctx._get(1, []const u8); // 1 = UserId slot id
     const user_id = user_id_opt orelse "anonymous";
-    
+
     const response_body = std.fmt.allocPrint(
         ctx.allocator,
         "Protected resource for user: {s}",
@@ -197,16 +192,16 @@ pub fn example_protected_route(ctx: *zerver.CtxBase) !zerver.Decision {
 // USAGE EXAMPLE:
 // To use in a server:
 // var server = try zerver.Server.init(allocator, config, effectHandler);
-// 
+//
 // // Global auth middleware
 // try server.use(auth_chain);
-// 
+//
 // // Protected route with rate limiting
 // try server.addRoute(.GET, "/protected", .{
 //     .before = &.{ zerver.step("rate_limit", rate_limit_check) },
 //     .steps = &.{ zerver.step("get_protected", example_protected_route) },
 // });
-// 
+//
 // // Optional auth - open endpoint with optional user
 // try server.addRoute(.GET, "/public", .{
 //     .before = &.{ zerver.step("optional_auth", optional_auth) },

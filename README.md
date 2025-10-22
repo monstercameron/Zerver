@@ -151,12 +151,10 @@ Zerver is designed as a **job scheduler with an HTTP frontend**.
 
 This architecture is designed for high throughput and excellent tail latency, ensuring that slow batch jobs can't block critical interactive requests.
 
-## Project Status: Ideation & Prototyping
+## Project Status: MVP Implementation Complete ✅
 
-Zerver is currently in the **design and specification phase**. The core concepts, API surface, and architectural roadmap are well-defined, but a full implementation does not yet exist.
+Zerver is now in **active development** with a working MVP. The core concepts, API surface, and architectural roadmap are implemented. The synchronous MVP proves the developer experience and debugging benefits.
 
-The immediate goal is to build a **synchronous MVP** that proves the developer experience and debugging benefits. This version will execute effects in a blocking manner but will produce the same detailed traces that are the hallmark of the Zerver design.
+Phase-2 will introduce the non-blocking I/O reactor and priority scheduler. The MVP API is fully compatible with Phase-2 enhancements.
 
-If the MVP is successful, development will proceed to a **Phase 2** implementation featuring the non-blocking I/O reactor and priority scheduler.
-
-We welcome discussion, feedback, and contributions on the design. Please review the `SPEC.md` and `INTERNAL.md` documents and open an issue to share your thoughts.
+We welcome discussion, feedback, and contributions on the design. Please review the documentation in `docs/` and open an issue to share your thoughts.

@@ -226,6 +226,22 @@ pub const CtxBase = struct {
         }
         return null;
     }
+
+    /// Store a string value in a slot (runtime token, used by executor for effect results)
+    pub fn slotPutString(self: *CtxBase, token: u32, value: []const u8) !void {
+        const value_ptr = try self.allocator.create([]const u8);
+        value_ptr.* = value;
+        try self.slots.put(token, @ptrCast(value_ptr));
+    }
+
+    /// Retrieve a string value from a slot (runtime token)
+    pub fn slotGetString(self: *CtxBase, token: u32) ?[]const u8 {
+        if (self.slots.get(token)) |ptr| {
+            const typed_ptr: *[]const u8 = @ptrCast(@alignCast(ptr));
+            return typed_ptr.*;
+        }
+        return null;
+    }
 };
 
 /// Event types for tracing.

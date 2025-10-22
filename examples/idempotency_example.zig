@@ -1,9 +1,8 @@
 /// Idempotency helpers: utilities for ensuring safe retries with idempotency keys
-/// 
+///
 /// Idempotency keys allow clients to safely retry write operations without
 /// accidentally duplicating side effects. The server must store results
 /// indexed by the idempotency key and return the cached result on retry.
-
 const std = @import("std");
 const zerver = @import("../src/zerver/root.zig");
 
@@ -13,19 +12,19 @@ pub const IdempotencyHelper = struct {
     pub fn generate(allocator: std.mem.Allocator) ![]const u8 {
         const now = std.time.nanoTimestamp();
         const random_bytes = try allocator.alloc(u8, 16);
-        
+
         // In production, use a proper CSPRNG
         for (random_bytes, 0..) |_, i| {
             random_bytes[i] = @intCast((now +% i) >> 8);
         }
-        
+
         const hex = try allocator.alloc(u8, 32);
         for (random_bytes, 0..) |byte, i| {
             const hex_str = try std.fmt.allocPrint(allocator, "{x:0>2}", .{byte});
             @memcpy(hex[i * 2 .. i * 2 + 2], hex_str);
             allocator.free(hex_str);
         }
-        
+
         allocator.free(random_bytes);
         return hex;
     }
@@ -124,7 +123,7 @@ pub const IdempotencyHelper = struct {
         // - Result was stored in cache with the idempotency key
         // - Future requests with the same key get the cached result
         // - Write effects are deduped automatically
-        
+
         return zerver.done(zerver.Response{
             .status = 201,
             .body = "{}",
@@ -195,7 +194,7 @@ pub fn testIdempotencyHelpers() !void {
 //                        std.mem.eql(u8, method, "PUT") or
 //                        std.mem.eql(u8, method, "PATCH") or
 //                        std.mem.eql(u8, method, "DELETE");
-//       
+//
 //       if (is_write) {
 //           if (IdempotencyHelper.fromRequest(ctx) == null) {
 //               return zerver.fail(
@@ -205,7 +204,6 @@ pub fn testIdempotencyHelpers() !void {
 //               );
 //           }
 //       }
-//       
+//
 //       return zerver.continue_();
 //   }
-
