@@ -11,6 +11,19 @@ pub const Method = enum {
     DELETE,
 };
 
+/// Common HTTP error codes (for convenience).
+pub const ErrorCode = struct {
+    pub const InvalidInput = 400;
+    pub const Unauthorized = 401;
+    pub const Forbidden = 403;
+    pub const NotFound = 404;
+    pub const Conflict = 409;
+    pub const TooManyRequests = 429;
+    pub const UpstreamUnavailable = 502;
+    pub const Timeout = 504;
+    pub const InternalError = 500;
+};
+
 /// A response to send back to the client.
 pub const Response = struct {
     status: u16 = 200,

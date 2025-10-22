@@ -101,15 +101,5 @@ pub fn fail(kind: u16, what: []const u8, key: []const u8) types.Decision {
     } };
 }
 
-/// Common HTTP error codes (for convenience).
-pub const ErrorCode = struct {
-    pub const InvalidInput = 400;
-    pub const Unauthorized = 401;
-    pub const Forbidden = 403;
-    pub const NotFound = 404;
-    pub const Conflict = 409;
-    pub const TooManyRequests = 429;
-    pub const UpstreamUnavailable = 502;
-    pub const Timeout = 504;
-    pub const InternalError = 500;
-};
+/// Re-export ErrorCode for convenience
+pub const ErrorCode = types.ErrorCode;
