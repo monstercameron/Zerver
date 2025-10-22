@@ -143,6 +143,23 @@ pub const Server = struct {
         var ctx = try ctx_module.CtxBase.init(arena);
         defer ctx.deinit();
 
+        // Populate context with parsed request data
+        ctx.method_str = try self.methodToString(parsed.method, arena);
+        ctx.path_str = parsed.path;
+        ctx.body = parsed.body;
+
+        // Copy headers to context
+        var header_iter = parsed.headers.iterator();
+        while (header_iter.next()) |entry| {
+            try ctx.headers.put(entry.key_ptr.*, entry.value_ptr.*);
+        }
+
+        // Copy query parameters to context (parsed.query is currently empty due to TODO)
+        var query_iter = parsed.query.iterator();
+        while (query_iter.next()) |entry| {
+            try ctx.query.put(entry.key_ptr.*, entry.value_ptr.*);
+        }
+
         // Try to match route
         if (try self.router.match(parsed.method, parsed.path, arena)) |route_match| {
             tracer.recordStepStart("route_match");
@@ -200,9 +217,23 @@ pub const Server = struct {
 
         const method_str = request_parts.next() orelse return error.InvalidRequest;
         const path_str = request_parts.next() orelse return error.InvalidRequest;
+        // TODO: RFC 9110 - Explicitly parse and validate HTTP version (e.g., HTTP/1.1) as per Section 2.5.
+        // TODO: RFC 9110 - Implement more robust Request-Line parsing to handle various Request-Target forms (absolute-form, authority-form, asterisk-form) as per Section 3.4 and RFC 9112 Section 3.1.
 
         const method = try self.parseMethod(method_str);
-        const path = try arena.dupe(u8, path_str);
+        const path_with_query = try arena.dupe(u8, path_str);
+
+        // Parse path and query string
+        var path = path_with_query;
+        var query = std.StringHashMap([]const u8).init(arena);
+
+        if (std.mem.indexOfScalar(u8, path_with_query, '?')) |query_start| {
+            path = path_with_query[0..query_start];
+            const query_str = path_with_query[query_start + 1 ..];
+            try self.parseQueryString(query_str, &query, arena);
+        }
+
+        path = try arena.dupe(u8, path);
 
         // Parse headers (until empty line)
         var headers = std.StringHashMap([]const u8).init(arena);
@@ -212,6 +243,7 @@ pub const Server = struct {
             if (std.mem.indexOfScalar(u8, line, ':')) |colon_idx| {
                 const header_name = line[0..colon_idx];
                 const header_value = std.mem.trim(u8, line[colon_idx + 1 ..], " ");
+                // TODO: RFC 9110 - Implement proper header field parsing, including handling of multiple header fields with the same name (Section 5.3) and parsing of quoted strings/comments in values (Section 5.6.4, 5.6.5).
                 try headers.put(header_name, header_value);
             }
         }
@@ -219,24 +251,54 @@ pub const Server = struct {
         // Body (remaining text after headers)
         const body_start = std.mem.indexOf(u8, text, "\r\n\r\n");
         const body = if (body_start) |idx| text[idx + 4 ..] else "";
+        // TODO: RFC 9110 - Implement proper message body framing using Content-Length or Transfer-Encoding (e.g., chunked encoding) as per Section 6.4 and RFC 9112 Section 6.
 
         return ParsedRequest{
             .method = method,
             .path = path,
             .headers = headers,
-            .query = std.StringHashMap([]const u8).init(arena), // TODO: parse query string
+            .query = query,
             .body = try arena.dupe(u8, body),
         };
     }
 
     fn parseMethod(self: *Server, text: []const u8) !types.Method {
         _ = self;
+        // TODO: RFC 9110 - Support all standard HTTP methods (Section 9) and consider method extensibility (Section 16.1).
         if (std.mem.eql(u8, text, "GET")) return .GET;
         if (std.mem.eql(u8, text, "POST")) return .POST;
         if (std.mem.eql(u8, text, "PATCH")) return .PATCH;
         if (std.mem.eql(u8, text, "PUT")) return .PUT;
         if (std.mem.eql(u8, text, "DELETE")) return .DELETE;
         return error.InvalidMethod;
+    }
+
+    fn methodToString(self: *Server, method: types.Method, arena: std.mem.Allocator) ![]const u8 {
+        _ = self;
+        return switch (method) {
+            .GET => try arena.dupe(u8, "GET"),
+            .POST => try arena.dupe(u8, "POST"),
+            .PATCH => try arena.dupe(u8, "PATCH"),
+            .PUT => try arena.dupe(u8, "PUT"),
+            .DELETE => try arena.dupe(u8, "DELETE"),
+        };
+    }
+
+    fn parseQueryString(self: *Server, query_str: []const u8, query_map: *std.StringHashMap([]const u8), arena: std.mem.Allocator) !void {
+        _ = self;
+        _ = arena; // TODO: Use for URL decoding
+        var it = std.mem.splitSequence(u8, query_str, "&");
+        while (it.next()) |param| {
+            if (std.mem.indexOfScalar(u8, param, '=')) |eq_idx| {
+                const key = param[0..eq_idx];
+                const value = param[eq_idx + 1 ..];
+                // TODO: URL decode key and value
+                try query_map.put(key, value);
+            } else if (param.len > 0) {
+                // Parameter without value (e.g., ?flag)
+                try query_map.put(param, "");
+            }
+        }
     }
 
     /// Render a successful response.
@@ -311,6 +373,7 @@ pub const Server = struct {
 
         try w.print("HTTP/1.1 {} {s}\r\n", .{ response.status, status_text });
 
+        // TODO: RFC 9110 - Include standard HTTP response headers like 'Date' (Section 6.6.1) and 'Server' (Section 10.2.4).
         // Export trace as JSON header
         const trace_json = tracer.toJson(arena) catch "";
         if (trace_json.len > 0) {

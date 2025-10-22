@@ -13,10 +13,10 @@ pub const CtxBase = struct {
     // Request data
     method_str: []const u8,
     path_str: []const u8,
-    headers: std.StringHashMap([]const u8),
+    headers: std.StringHashMap([]const u8), // TODO: RFC 9110 - Ensure robust parsing of headers (Section 5) in server.zig, including handling of multiple header fields and quoted strings.
     params: std.StringHashMap([]const u8), // path parameters like /todos/:id
     query: std.StringHashMap([]const u8),
-    body: []const u8,
+    body: []const u8, // TODO: RFC 9110 - Ensure robust parsing and framing of request body (Section 6.4) in handler.zig and server.zig.
     client_ip: []const u8,
 
     // Observability

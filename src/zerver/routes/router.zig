@@ -37,6 +37,8 @@ pub const Router = struct {
     allocator: std.mem.Allocator,
     routes: std.ArrayList(CompiledRoute),
 
+    // TODO: RFC 9110 - Consider implementing URI normalization (Section 4.2.3) and defining consistent behavior for trailing slashes in paths.
+
     pub fn init(allocator: std.mem.Allocator) Router {
         return .{
             .allocator = allocator,

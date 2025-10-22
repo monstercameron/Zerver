@@ -3,6 +3,7 @@ const std = @import("std");
 
 /// HTTP method.
 pub const Method = enum {
+    // TODO: RFC 9110 - Expand to include all standard HTTP methods (Section 9) and consider method extensibility (Section 16.1).
     GET,
     POST,
     PATCH,
@@ -12,6 +13,7 @@ pub const Method = enum {
 
 /// Common HTTP error codes (for convenience).
 pub const ErrorCode = struct {
+    // TODO: RFC 9110 - Expand to include a more comprehensive set of HTTP status codes (Section 15) for finer-grained error reporting.
     pub const InvalidInput = 400;
     pub const Unauthorized = 401;
     pub const Forbidden = 403;

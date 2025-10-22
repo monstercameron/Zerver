@@ -40,6 +40,7 @@ pub const ErrorRenderer = struct {
 
     /// Map error code to HTTP status
     fn errorCodeToStatus(code: u16) u16 {
+        // TODO: RFC 9110 - Expand error code to HTTP status mapping to cover a wider range of relevant status codes as defined in Section 15, beyond just the current set.
         return switch (code) {
             400 => 400, // InvalidInput
             401 => 401, // Unauthorized

@@ -64,6 +64,8 @@ pub fn readRequest(
         });
 
         // Check for HTTP request completion (double CRLF)
+        // TODO: RFC 9110/9112 - This simple check for \r\n\r\n is insufficient for robust HTTP/1.1 message framing. 
+        // It does not account for Transfer-Encoding (e.g., chunked) or Content-Length for request bodies (Section 6.4, RFC 9112 Section 6).
         if (req_buf.items.len >= 4) {
             const tail = req_buf.items[req_buf.items.len - 4 ..];
             if (std.mem.eql(u8, tail, "\r\n\r\n")) {
@@ -83,6 +85,7 @@ pub fn sendResponse(
     connection: std.net.Server.Connection,
     response: []const u8,
 ) !void {
+    // TODO: RFC 9110/9112 - Ensure proper HTTP/1.1 message framing for responses, including support for Transfer-Encoding (e.g., chunked encoding) if applicable (RFC 9112 Section 6).
     slog.debug("Sending HTTP response", &.{
         slog.Attr.uint("response_size", response.len),
     });

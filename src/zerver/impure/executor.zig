@@ -151,6 +151,8 @@ pub const Executor = struct {
                 .db_del => |e| e.timeout_ms,
                 .db_scan => |e| e.timeout_ms,
             };
+            // TODO: RFC 9110 - Consider how `timeout_ms` should explicitly influence HTTP-level timeout responses (e.g., 408 Request Timeout) or retry behavior as per RFC 9110 Section 2.4 and 15.5.9.
+
 
             const required = switch (effect) {
                 .http_get => |e| e.required,
