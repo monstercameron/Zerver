@@ -8,6 +8,8 @@ pub const types = @import("types.zig");
 pub const server = @import("server.zig");
 pub const router = @import("router.zig");
 pub const executor = @import("executor.zig");
+pub const tracer_module = @import("tracer.zig");
+pub const reqtest_module = @import("reqtest.zig");
 
 // Main types
 pub const CtxBase = ctx_module.CtxBase;
@@ -28,9 +30,11 @@ pub const continue_ = core.continue_;
 pub const done = core.done;
 pub const fail = core.fail;
 
-// Server & Router & Executor
+// Server & Router & Executor & Testing
 pub const Server = server.Server;
 pub const Config = server.Config;
 pub const Address = server.Address;
 pub const Router = router.Router;
 pub const Executor = executor.Executor;
+pub const Tracer = tracer_module.Tracer;
+pub const ReqTest = reqtest_module.ReqTest;
