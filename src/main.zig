@@ -3,6 +3,13 @@
 const std = @import("std");
 const root = @import("root.zig");
 
+fn defaultEffectHandler(_effect: *const root.Effect, _timeout_ms: u32) anyerror!root.executor.EffectResult {
+    _ = _effect;
+    _ = _timeout_ms;
+    // MVP: return dummy success
+    return .{ .success = "" };
+}
+
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
@@ -19,8 +26,8 @@ pub fn main() !void {
         .on_error = defaultErrorRenderer,
     };
     
-    // Create server
-    var srv = try root.Server.init(allocator, config);
+    // Create server with effect handler
+    var srv = try root.Server.init(allocator, config, defaultEffectHandler);
     defer srv.deinit();
     
     // TODO: Register routes and flows
