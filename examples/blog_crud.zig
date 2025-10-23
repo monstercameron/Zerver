@@ -71,7 +71,7 @@ pub fn onError(ctx: *zerver.CtxBase) anyerror!zerver.Decision {
 pub fn effectHandler(effect: *const zerver.Effect, _timeout_ms: u32) anyerror!zerver.executor.EffectResult {
     _ = _timeout_ms;
     std.debug.print("  [Blog Effect] Handling effect\n", .{});
-    
+
     switch (effect.*) {
         .db_get => |db_get| {
             std.debug.print("  [Blog Effect] DB GET: {s}\n", .{db_get.key});
@@ -82,14 +82,14 @@ pub fn effectHandler(effect: *const zerver.Effect, _timeout_ms: u32) anyerror!ze
                 return .{ .failure = zerver.types.Error{
                     .kind = zerver.types.ErrorCode.NotFound,
                     .ctx = .{ .what = "post", .key = "not_found" },
-                }};
+                } };
             } else if (std.mem.startsWith(u8, db_get.key, "comments/post/")) {
                 return .{ .success = "[]" }; // Empty array for comments
             }
             return .{ .success = "" };
         },
         .db_put => |db_put| {
-            std.debug.print("  [Blog Effect] DB PUT: {s} = {s}\n", .{db_put.key, db_put.value});
+            std.debug.print("  [Blog Effect] DB PUT: {s} = {s}\n", .{ db_put.key, db_put.value });
             return .{ .success = "" };
         },
         .db_del => |db_del| {
@@ -108,52 +108,52 @@ pub fn registerRoutes(srv: *zerver.Server) !void {
     try srv.addRoute(.GET, "/blog/posts", .{
         .steps = &.{list_posts_step},
     });
-    
+
     // Get single post
     try srv.addRoute(.GET, "/blog/posts/:id", .{
         .steps = &.{ extract_post_id_step, get_post_step },
     });
-    
+
     // Create post
     try srv.addRoute(.POST, "/blog/posts", .{
         .steps = &.{ parse_post_step, validate_post_step, create_post_step },
     });
-    
+
     // Update post
     try srv.addRoute(.PUT, "/blog/posts/:id", .{
         .steps = &.{ extract_post_id_step, parse_update_post_step, validate_post_step, update_post_step },
     });
-    
+
     // Update post (PATCH)
     try srv.addRoute(.PATCH, "/blog/posts/:id", .{
         .steps = &.{ extract_post_id_step, parse_update_post_step, validate_post_step, update_post_step },
     });
-    
+
     // Simple PATCH route for testing
     try srv.addRoute(.PATCH, "/blog/hello", .{
         .steps = &.{parse_update_post_step},
     });
-    
+
     // Simple POST route for testing
     try srv.addRoute(.POST, "/blog/hello", .{
         .steps = &.{parse_update_post_step},
     });
-    
+
     // Delete post
     try srv.addRoute(.DELETE, "/blog/posts/:id", .{
         .steps = &.{ extract_post_id_step, delete_post_step },
     });
-    
+
     // List comments for post
     try srv.addRoute(.GET, "/blog/posts/:post_id/comments", .{
         .steps = &.{ extract_post_id_for_comment_step, list_comments_step },
     });
-    
+
     // Create comment
     try srv.addRoute(.POST, "/blog/posts/:post_id/comments", .{
         .steps = &.{ extract_post_id_for_comment_step, parse_comment_step, validate_comment_step, create_comment_step },
     });
-    
+
     // Delete comment
     try srv.addRoute(.DELETE, "/blog/posts/:post_id/comments/:comment_id", .{
         .steps = &.{ extract_post_id_for_comment_step, extract_comment_id_step, delete_comment_step },
@@ -223,7 +223,7 @@ fn step_get_post(ctx: *zerver.CtxBase) !zerver.Decision {
         return zerver.fail(zerver.ErrorCode.NotFound, "post", "missing_id");
     };
     std.debug.print("  [Blog] Getting post {s}\n", .{id});
-    
+
     const effects = [_]zerver.Effect{
         .{
             .db_get = .{
@@ -308,7 +308,7 @@ fn step_update_post(ctx: *zerver.CtxBase) !zerver.Decision {
         return zerver.fail(zerver.ErrorCode.NotFound, "post", "missing_id");
     };
     std.debug.print("  [Blog] Updating post {s}\n", .{id});
-    
+
     const effects = [_]zerver.Effect{
         .{
             .db_put = .{
@@ -343,7 +343,7 @@ fn step_delete_post(ctx: *zerver.CtxBase) !zerver.Decision {
         return zerver.fail(zerver.ErrorCode.NotFound, "post", "missing_id");
     };
     std.debug.print("  [Blog] Deleting post {s}\n", .{id});
-    
+
     const effects = [_]zerver.Effect{
         .{
             .db_del = .{
@@ -382,7 +382,7 @@ fn step_list_comments(ctx: *zerver.CtxBase) !zerver.Decision {
         return zerver.fail(zerver.ErrorCode.NotFound, "comment", "missing_post_id");
     };
     std.debug.print("  [Blog] Listing comments for post {s}\n", .{post_id});
-    
+
     const effects = [_]zerver.Effect{
         .{
             .db_get = .{
@@ -428,7 +428,7 @@ fn step_create_comment(ctx: *zerver.CtxBase) !zerver.Decision {
         return zerver.fail(zerver.ErrorCode.NotFound, "comment", "missing_post_id");
     };
     std.debug.print("  [Blog] Creating comment for post {s}\n", .{post_id});
-    
+
     const effects = [_]zerver.Effect{
         .{
             .db_put = .{
@@ -471,7 +471,7 @@ fn step_delete_comment(ctx: *zerver.CtxBase) !zerver.Decision {
         return zerver.fail(zerver.ErrorCode.NotFound, "comment", "missing_comment_id");
     };
     std.debug.print("  [Blog] Deleting comment {s}\n", .{comment_id});
-    
+
     const effects = [_]zerver.Effect{
         .{
             .db_del = .{
