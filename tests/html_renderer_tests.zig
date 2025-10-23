@@ -3,13 +3,13 @@ const html = @import("html");
 const tags = html.tags;
 
 fn renderToString(node: anytype, allocator: std.mem.Allocator) ![]u8 {
-    var buffer = std.ArrayList(u8).init(allocator);
-    defer buffer.deinit();
+    var buffer = std.ArrayListUnmanaged(u8){};
+    defer buffer.deinit(allocator);
 
-    const writer = buffer.writer();
+    const writer = buffer.writer(allocator);
     try node.render(writer);
 
-    return buffer.toOwnedSlice();
+    return try buffer.toOwnedSlice(allocator);
 }
 
 test "html renderer: basic nesting produces expected markup" {
@@ -17,7 +17,7 @@ test "html renderer: basic nesting produces expected markup" {
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
-    const tree = tags.div(.{ .class = "container" }, .{
+    const tree = tags.div(.{ .class = "container"[0..] }, .{
         tags.h1(.{}, .{ html.text("Hello Zig!"){} }),
         tags.p(.{}, .{ html.text("Rendered at comptime."){} }),
     });
@@ -37,7 +37,7 @@ test "html renderer: attributes handle strings, numbers, and booleans" {
     const allocator = gpa.allocator();
 
     const tree = tags.input(.{
-        .type = "checkbox",
+        .type = "checkbox"[0..],
         .checked = true,
         .value = 42,
     }, .{});
@@ -59,7 +59,7 @@ test "html renderer: generated tag helpers cover diverse elements" {
     const tree = tags.section(.{}, .{
         tags.article(.{}, .{
             tags.h2(.{}, .{ html.text("Example"){} }),
-            tags.img(.{ .src = "/logo.png", .alt = "logo" }, .{}),
+            tags.img(.{ .src = "/logo.png"[0..], .alt = "logo"[0..] }, .{}),
             tags.br(.{}, .{}),
             tags.ul(.{}, .{
                 tags.li(.{}, .{ html.text("First"){} }),

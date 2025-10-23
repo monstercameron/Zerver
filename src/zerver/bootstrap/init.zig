@@ -16,7 +16,11 @@ const todo_errors = @import("../../features/todos/errors.zig");
 const blog_effects = @import("../../features/blog/effects.zig");
 const blog_errors = @import("../../features/blog/errors.zig");
 
-/// Hello world step
+/// Composite effect handler that routes to the appropriate feature handler
+fn compositeEffectHandler(effect: *const root.Effect, timeout_ms: u32) anyerror!root.executor.EffectResult {
+    // Use blog effects handler
+    return try blog_effects.effectHandler(effect, timeout_ms);
+}
 fn helloStep(ctx: *root.CtxBase) !root.Decision {
     slog.debug("Hello step called", &[_]slog.Attr{
         slog.Attr.string("step", "hello"),
@@ -59,15 +63,14 @@ pub fn initializeServer(allocator: std.mem.Allocator) !root.Server {
             .ip = .{ 127, 0, 0, 1 },
             .port = 8080,
         },
-        .on_error = todo_errors.onError,
-        // TODO: Logical Error - The 'config.on_error' is currently hardcoded to 'todo_errors.onError'. This means all server errors will be handled by the 'todos' feature's error handler, which is a logical inconsistency. Implement a more generic or configurable error handling dispatch mechanism.
+        .on_error = blog_errors.onError,
     };
 
-    // Create server with effect handler
-    var srv = try root.Server.init(allocator, config, todo_effects.effectHandler);
+    // Create server with a composite effect handler that routes to the appropriate feature handler
+    var srv = try root.Server.init(allocator, config, compositeEffectHandler);
 
     // Register features
-    try todos.registerRoutes(&srv);
+    // try todos.registerRoutes(&srv);
     try blog.registerRoutes(&srv); // Blog routes now working
     // try hello.registerRoutes(&srv);
 

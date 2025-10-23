@@ -32,16 +32,9 @@ fn Element(
         pub fn render(self: Self, writer: anytype) !void {
             try writer.print("<{s}", .{tag});
 
-            inline for (std.meta.fields(Attrs)) |field| {
-                const value = @field(self.attrs, field.name);
-                switch (@TypeOf(value)) {
-                    []const u8 => if (value.len > 0) try writer.print(" {s}=\"{s}\"", .{ field.name, value }),
-                    bool => if (value) try writer.print(" {s}", .{field.name}),
-                    comptime_int, comptime_float, usize, isize, u16, i16, u32, i32, u64, i64, u128, i128 => {
-                        try writer.print(" {s}=\"{}\"", .{ field.name, value });
-                    },
-                    else => {},
-                }
+            const attr_fields = std.meta.fields(Attrs);
+            inline for (attr_fields) |field| {
+                try renderAttr(writer, field.name, @field(self.attrs, field.name));
             }
 
             try writer.writeAll(">");
@@ -56,6 +49,45 @@ fn Element(
 
             try writer.print("</{s}>", .{tag});
         }
+
+        inline fn renderAttr(writer: anytype, name: []const u8, value: anytype) !void {
+            const ValueType = @TypeOf(value);
+            switch (@typeInfo(ValueType)) {
+                .bool => if (value) try writer.print(" {s}", .{name}),
+                .int, .comptime_int, .float, .comptime_float => try writer.print(" {s}=\"{}\"", .{ name, value }),
+                else => {
+                    if (asSlice(value)) |slice| {
+                        if (slice.len > 0) try writer.print(" {s}=\"{s}\"", .{ name, slice });
+                    }
+                },
+            }
+        }
+
+        inline fn asSlice(value: anytype) ?[]const u8 {
+            const info = @typeInfo(@TypeOf(value));
+            return switch (info) {
+                .pointer => |ptr| switch (ptr.size) {
+                    .slice => if (ptr.child == u8) value else null,
+                    .one => switch (@typeInfo(ptr.child)) {
+                        .array => |arr| if (arr.child == u8) blk: {
+                            if (arr.sentinel_ptr != null) {
+                                break :blk std.mem.sliceTo(value, 0);
+                            }
+                            break :blk value.*[0..];
+                        } else null,
+                        else => if (ptr.child == u8 and ptr.sentinel_ptr != null) std.mem.sliceTo(value, 0) else null,
+                    },
+                    else => if (ptr.child == u8 and ptr.sentinel_ptr != null) std.mem.sliceTo(value, 0) else null,
+                },
+                .array => |arr| if (arr.child == u8) blk: {
+                    if (arr.sentinel_ptr != null) {
+                        break :blk std.mem.sliceTo(&value, 0);
+                    }
+                    break :blk value[0..];
+                } else null,
+                else => null,
+            };
+        }
     };
 }
 
@@ -65,7 +97,7 @@ fn makeTags(comptime names: anytype) type {
 
     inline for (names, 0..) |name, idx| {
         const Factory = struct {
-            pub fn call(attrs: anytype, children: anytype) Element(name, @TypeOf(attrs), @TypeOf(children)) {
+            pub fn call(comptime attrs: anytype, comptime children: anytype) Element(name, @TypeOf(attrs), @TypeOf(children)) {
                 return Element(name, @TypeOf(attrs), @TypeOf(children)){
                     .attrs = attrs,
                     .children = children,

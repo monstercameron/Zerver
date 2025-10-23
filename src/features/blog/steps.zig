@@ -1,5 +1,6 @@
 const std = @import("std");
 const zerver = @import("../../zerver/root.zig");
+const slog = @import("../../zerver/observability/slog.zig");
 const blog_types = @import("types.zig");
 
 const Slot = blog_types.BlogSlot;
@@ -48,6 +49,7 @@ pub fn step_extract_comment_id(ctx: *zerver.CtxBase) !zerver.Decision {
 }
 
 pub fn step_list_posts(ctx: *zerver.CtxBase) !zerver.Decision {
+    slog.info("step_list_posts", &.{});
     const effects = try ctx.allocator.alloc(zerver.Effect, 1);
     effects[0] = .{
         .db_get = .{ .key = "posts", .token = slotId(.PostList), .required = true },
@@ -57,6 +59,10 @@ pub fn step_list_posts(ctx: *zerver.CtxBase) !zerver.Decision {
 
 fn continuation_list_posts(ctx: *zerver.CtxBase) !zerver.Decision {
     const post_list_json = (try ctx._get(slotId(.PostList), []const u8)) orelse "[]";
+    slog.info("continuation_list_posts", &.{
+        slog.Attr.string("body", post_list_json),
+        slog.Attr.int("len", @as(i64, @intCast(post_list_json.len))),
+    });
     return zerver.done(.{
         .status = 200,
         .body = .{ .complete = post_list_json },

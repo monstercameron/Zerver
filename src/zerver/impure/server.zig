@@ -659,10 +659,29 @@ pub const Server = struct {
             .Continue => types.Response{ .status = 200, .body = .{ .complete = "OK" } },
             .Done => |resp| resp,
             .Fail => |err| {
+                slog.debug("Decision failed", &.{
+                    slog.Attr.int("status", @intCast(err.kind)),
+                    slog.Attr.string("what", err.ctx.what),
+                    slog.Attr.string("key", err.ctx.key),
+                });
                 return self.renderError(ctx, err, arena, keep_alive);
             },
             .need => types.Response{ .status = 500, .body = .{ .complete = "Pipeline incomplete" } },
         };
+
+        switch (response.body) {
+            .complete => |body| {
+                slog.debug("Rendering response", &.{
+                    slog.Attr.int("status", @intCast(response.status)),
+                    slog.Attr.int("body_len", @intCast(body.len)),
+                });
+            },
+            .streaming => {
+                slog.debug("Rendering streaming response", &.{
+                    slog.Attr.int("status", @intCast(response.status)),
+                });
+            },
+        }
 
         // Check if this is a streaming response
         switch (response.body) {

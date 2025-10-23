@@ -68,36 +68,47 @@ pub fn onError(ctx: *zerver.CtxBase) anyerror!zerver.Decision {
 }
 
 // Effect handler (simplified for demo)
-pub fn effectHandler(effect: *const zerver.Effect, _timeout_ms: u32) anyerror!zerver.executor.EffectResult {
-    _ = _timeout_ms;
-    std.debug.print("  [Blog Effect] Handling effect\n", .{});
+fn effectHandler(effect: *const zerver.Effect, token: u32) anyerror!zerver.executor.EffectResult {
+    _ = token;
+    std.debug.print("1761192962 [DEBUG] Processing effect\n", .{});
 
     switch (effect.*) {
         .db_get => |db_get| {
-            std.debug.print("  [Blog Effect] DB GET: {s}\n", .{db_get.key});
-            // Mock responses for demo
+            std.debug.print("1761192962 [DEBUG] Database GET operation for key: {s}\n", .{db_get.key});
             if (std.mem.eql(u8, db_get.key, "posts")) {
-                return .{ .success = "[]" }; // Empty array for list
+                std.debug.print("1761192962 [DEBUG] Returning posts list\n", .{});
+                return .{ .success = "[]" };
             } else if (std.mem.startsWith(u8, db_get.key, "posts/")) {
-                return .{ .failure = zerver.types.Error{
-                    .kind = zerver.types.ErrorCode.NotFound,
+                std.debug.print("1761192962 [DEBUG] Returning not found for post\n", .{});
+                return .{ .failure = .{
+                    .kind = 404,
                     .ctx = .{ .what = "post", .key = "not_found" },
                 } };
-            } else if (std.mem.startsWith(u8, db_get.key, "comments/post/")) {
-                return .{ .success = "[]" }; // Empty array for comments
+            } else if (std.mem.eql(u8, db_get.key, "comments")) {
+                std.debug.print("1761192962 [DEBUG] Returning comments list\n", .{});
+                return .{ .success = "[]" };
+            } else {
+                std.debug.print("1761192962 [DEBUG] Unknown database key: {s}\n", .{db_get.key});
+                return .{ .failure = .{
+                    .kind = 500,
+                    .ctx = .{ .what = "database", .key = "unknown_operation" },
+                } };
             }
-            return .{ .success = "" };
         },
         .db_put => |db_put| {
-            std.debug.print("  [Blog Effect] DB PUT: {s} = {s}\n", .{ db_put.key, db_put.value });
-            return .{ .success = "" };
+            std.debug.print("1761192962 [DEBUG] Database PUT operation for key: {s}\n", .{db_put.key});
+            return .{ .success = "ok" };
         },
         .db_del => |db_del| {
-            std.debug.print("  [Blog Effect] DB DEL: {s}\n", .{db_del.key});
-            return .{ .success = "" };
+            std.debug.print("1761192962 [DEBUG] Database DELETE operation for key: {s}\n", .{db_del.key});
+            return .{ .success = "ok" };
         },
         else => {
-            return .{ .success = "" };
+            std.debug.print("1761192962 [DEBUG] Unsupported effect type\n", .{});
+            return .{ .failure = .{
+                .kind = 500,
+                .ctx = .{ .what = "effect", .key = "unsupported_effect" },
+            } };
         },
     }
 }
@@ -201,6 +212,7 @@ fn step_list_posts(ctx: *zerver.CtxBase) !zerver.Decision {
 
 fn continuation_list_posts(ctx: *zerver.CtxBase) !zerver.Decision {
     _ = ctx;
+    std.debug.print("1761192962 [DEBUG] continuation_list_posts called\n", .{});
     return zerver.done(.{
         .status = 200,
         .headers = &[_]zerver.types.Header{
@@ -242,14 +254,41 @@ fn step_get_post(ctx: *zerver.CtxBase) !zerver.Decision {
 }
 
 fn continuation_get_post(ctx: *zerver.CtxBase) !zerver.Decision {
-    _ = ctx;
-    return zerver.done(.{
-        .status = 404,
-        .headers = &[_]zerver.types.Header{
-            .{ .name = "Content-Type", .value = "application/json" },
-        },
-        .body = .{ .complete = "{\"error\":\"Post not found\"}" },
-    });
+    std.debug.print("1761192962 [DEBUG] continuation_get_post called\n", .{});
+    std.debug.print("1761192962 [DEBUG] ctx.last_error: {any}\n", .{ctx.last_error});
+    if (ctx.last_error) |err| {
+        std.debug.print("1761192962 [DEBUG] continuation_get_post: handling error: {s} in domain {s}\n", .{ err.ctx.key, err.ctx.what });
+        // Handle the error from the database effect
+        if (std.mem.eql(u8, err.ctx.key, "not_found")) {
+            std.debug.print("1761192962 [DEBUG] continuation_get_post: returning 404\n", .{});
+            return zerver.done(.{
+                .status = 404,
+                .headers = &[_]zerver.types.Header{
+                    .{ .name = "Content-Type", .value = "application/json" },
+                },
+                .body = .{ .complete = "{\"error\":\"Post not found\"}" },
+            });
+        } else {
+            std.debug.print("1761192962 [DEBUG] continuation_get_post: returning 500 for error {s}\n", .{err.ctx.key});
+            return zerver.done(.{
+                .status = 500,
+                .headers = &[_]zerver.types.Header{
+                    .{ .name = "Content-Type", .value = "application/json" },
+                },
+                .body = .{ .complete = "{\"error\":\"Internal server error\"}" },
+            });
+        }
+    } else {
+        std.debug.print("1761192962 [DEBUG] continuation_get_post: effect succeeded, returning post data\n", .{});
+        // Effect succeeded - return the post data
+        return zerver.done(.{
+            .status = 200,
+            .headers = &[_]zerver.types.Header{
+                .{ .name = "Content-Type", .value = "application/json" },
+            },
+            .body = .{ .complete = "{\"id\":\"1\",\"title\":\"Test Post\",\"content\":\"Test Content\",\"author\":\"Test Author\"}" },
+        });
+    }
 }
 
 fn step_parse_post(ctx: *zerver.CtxBase) !zerver.Decision {
@@ -530,105 +569,14 @@ pub fn main() !void {
     // Print demo information
     printDemoInfo();
 
-    // Test requests
-    std.debug.print("Test 1: GET /blog/posts (list)\n", .{});
-    {
-        var arena = std.heap.ArenaAllocator.init(allocator);
-        defer arena.deinit();
-        const arena_alloc = arena.allocator();
-        const resp1 = try srv.handleRequest("GET /blog/posts HTTP/1.1\r\n" ++
-            "Host: localhost\r\n" ++
-            "\r\n", arena_alloc);
-        std.debug.print("Response: {s}\n\n", .{resp1.complete});
-    }
+    // Start the server (keep it running)
+    std.debug.print("Starting blog server on http://127.0.0.1:8080\n", .{});
+    std.debug.print("Press Ctrl+C to stop\n", .{});
 
-    std.debug.print("Test 2: GET /blog/posts/1 (get)\n", .{});
-    {
-        var arena = std.heap.ArenaAllocator.init(allocator);
-        defer arena.deinit();
-        const arena_alloc = arena.allocator();
-        const resp2 = try srv.handleRequest("GET /blog/posts/1 HTTP/1.1\r\n" ++
-            "Host: localhost\r\n" ++
-            "\r\n", arena_alloc);
-        std.debug.print("Response: {s}\n\n", .{resp2.complete});
-    }
-
-    std.debug.print("Test 3: POST /blog/posts (create)\n", .{});
-    {
-        var arena = std.heap.ArenaAllocator.init(allocator);
-        defer arena.deinit();
-        const arena_alloc = arena.allocator();
-        const resp3 = try srv.handleRequest("POST /blog/posts HTTP/1.1\r\n" ++
-            "Host: localhost\r\n" ++
-            "Content-Type: application/json\r\n" ++
-            "Content-Length: 58\r\n" ++
-            "\r\n" ++
-            "{\"title\":\"New Post\",\"content\":\"Content\",\"author\":\"Author\"}", arena_alloc);
-        std.debug.print("Response: {s}\n\n", .{resp3.complete});
-    }
-
-    std.debug.print("Test 4: PATCH /blog/posts/1 (update)\n", .{});
-    {
-        var arena = std.heap.ArenaAllocator.init(allocator);
-        defer arena.deinit();
-        const arena_alloc = arena.allocator();
-        const resp4 = try srv.handleRequest("PATCH /blog/posts/1 HTTP/1.1\r\n" ++
-            "Host: localhost\r\n" ++
-            "Content-Type: application/json\r\n" ++
-            "Content-Length: 58\r\n" ++
-            "\r\n" ++
-            "{\"title\":\"New Post\",\"content\":\"Content\",\"author\":\"Author\"}", arena_alloc);
-        std.debug.print("Response: {s}\n\n", .{resp4.complete});
-    }
-
-    std.debug.print("Test 5: DELETE /blog/posts/1 (delete)\n", .{});
-    {
-        var arena = std.heap.ArenaAllocator.init(allocator);
-        defer arena.deinit();
-        const arena_alloc = arena.allocator();
-        const resp5 = try srv.handleRequest("DELETE /blog/posts/1 HTTP/1.1\r\n" ++
-            "Host: localhost\r\n" ++
-            "\r\n", arena_alloc);
-        std.debug.print("Response: {s}\n\n", .{resp5.complete});
-    }
-
-    std.debug.print("Test 6: GET /blog/posts/1/comments (list comments)\n", .{});
-    {
-        var arena = std.heap.ArenaAllocator.init(allocator);
-        defer arena.deinit();
-        const arena_alloc = arena.allocator();
-        const resp6 = try srv.handleRequest("GET /blog/posts/1/comments HTTP/1.1\r\n" ++
-            "Host: localhost\r\n" ++
-            "\r\n", arena_alloc);
-        std.debug.print("Response: {s}\n\n", .{resp6.complete});
-    }
-
-    std.debug.print("Test 7: POST /blog/posts/1/comments (create comment)\n", .{});
-    {
-        var arena = std.heap.ArenaAllocator.init(allocator);
-        defer arena.deinit();
-        const arena_alloc = arena.allocator();
-        const resp7 = try srv.handleRequest("POST /blog/posts/1/comments HTTP/1.1\r\n" ++
-            "Host: localhost\r\n" ++
-            "Content-Type: application/json\r\n" ++
-            "Content-Length: 58\r\n" ++
-            "\r\n" ++
-            "{\"title\":\"New Post\",\"content\":\"Content\",\"author\":\"Author\"}", arena_alloc);
-        std.debug.print("Response: {s}\n\n", .{resp7.complete});
-    }
-
-    std.debug.print("Test 8: DELETE /blog/posts/1/comments/1 (delete comment)\n", .{});
-    {
-        var arena = std.heap.ArenaAllocator.init(allocator);
-        defer arena.deinit();
-        const arena_alloc = arena.allocator();
-        const resp8 = try srv.handleRequest("DELETE /blog/posts/1/comments/1 HTTP/1.1\r\n" ++
-            "Host: localhost\r\n" ++
-            "\r\n", arena_alloc);
-        std.debug.print("Response: {s}\n\n", .{resp8.complete});
-    }
-
-    std.debug.print("--- Blog API Tests Complete ---\n", .{});
+    // Keep the server running
+    srv.listen() catch |err| {
+        std.debug.print("Server error: {}\n", .{err});
+    };
 }
 
 /// Hello world step wrapper

@@ -233,6 +233,10 @@ pub const Executor = struct {
 
             switch (result) {
                 .success => |data| {
+                    slog.debug("Effect success", &.{
+                        slog.Attr.uint("token", @intCast(token)),
+                        slog.Attr.int("len", @intCast(data.len)),
+                    });
                     // Store success result as a string slice in the slot
                     try ctx_base.slotPutString(token, data);
                 },
