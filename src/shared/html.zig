@@ -77,13 +77,13 @@ fn makeTags(comptime names: anytype) type {
         fields[idx] = .{
             .name = name,
             .type = @TypeOf(func),
-            .default_value = &func,
+            .default_value_ptr = &func,
             .is_comptime = true,
             .alignment = @alignOf(@TypeOf(func)),
         };
     }
 
-    return @Type(.{ .Struct = .{
+    return @Type(.{ .@"struct" = .{
         .layout = .auto,
         .fields = &fields,
         .decls = &.{},

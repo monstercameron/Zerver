@@ -234,7 +234,7 @@ pub const Server = struct {
                         .headers = &[_]types.Header{
                             .{ .name = "Content-Type", .value = "text/plain" },
                         },
-                    }, &tracer, arena, false, false) };
+                    }, arena, false, false) };
                 },
                 error.InvalidRequest, error.InvalidMethod, error.UnsupportedVersion, error.InvalidUri, error.UserinfoNotAllowed => {
                     tracer.recordRequestEnd();
@@ -244,7 +244,7 @@ pub const Server = struct {
                         .headers = &[_]types.Header{
                             .{ .name = "Content-Type", .value = "text/plain" },
                         },
-                    }, &tracer, arena, false, false) };
+                    }, arena, false, false) };
                 },
                 error.MultipleContentLength, error.InvalidContentLength, error.ContentLengthMismatch, error.UnexpectedBody, error.ContentLengthRequired, error.InvalidPercentEncoding => {
                     // RFC 9110 Section 6 - Message body framing errors and RFC 3986 - URL decoding errors
@@ -255,7 +255,7 @@ pub const Server = struct {
                         .headers = &[_]types.Header{
                             .{ .name = "Content-Type", .value = "text/plain" },
                         },
-                    }, &tracer, arena, false, false) };
+                    }, arena, false, false) };
                 },
                 else => {
                     tracer.recordRequestEnd();
@@ -265,7 +265,7 @@ pub const Server = struct {
                         .headers = &[_]types.Header{
                             .{ .name = "Content-Type", .value = "text/plain" },
                         },
-                    }, &tracer, arena, false, false) };
+                    }, arena, false, false) };
                 },
             }
         };
@@ -319,7 +319,7 @@ pub const Server = struct {
                 .headers = &[_]types.Header{
                     .{ .name = "Allow", .value = allowed_methods },
                 },
-            }, &tracer, arena, false, keep_alive) };
+            }, arena, false, keep_alive) };
         }
 
         // Try to match route
@@ -341,7 +341,7 @@ pub const Server = struct {
 
             // Render response based on decision
             const keep_alive = self.shouldKeepAlive(parsed.headers);
-            return try self.renderResponse(&ctx, decision, &tracer, arena, keep_alive);
+            return try self.renderResponse(&ctx, decision, arena, keep_alive);
         }
 
         // Try to match flow (if method is POST to /flow/v1/<slug>)
@@ -358,7 +358,7 @@ pub const Server = struct {
                     tracer.recordRequestEnd();
 
                     const keep_alive = self.shouldKeepAlive(parsed.headers);
-                    return try self.renderResponse(&ctx, decision, &tracer, arena, keep_alive);
+                    return try self.renderResponse(&ctx, decision, arena, keep_alive);
                 }
             }
         }
@@ -369,7 +369,7 @@ pub const Server = struct {
         return self.renderError(&ctx, .{
             .kind = types.ErrorCode.NotFound,
             .ctx = .{ .what = "routing", .key = parsed.path },
-        }, &tracer, arena, keep_alive);
+        }, arena, keep_alive);
     }
 
     /// Parse an HTTP request (MVP: very simplified).
@@ -652,7 +652,6 @@ pub const Server = struct {
         self: *Server,
         ctx: *ctx_module.CtxBase,
         decision: types.Decision,
-        tracer: *tracer_module.Tracer,
         arena: std.mem.Allocator,
         keep_alive: bool,
     ) !ResponseResult {
@@ -660,7 +659,7 @@ pub const Server = struct {
             .Continue => types.Response{ .status = 200, .body = .{ .complete = "OK" } },
             .Done => |resp| resp,
             .Fail => |err| {
-                return self.renderError(ctx, err, tracer, arena, keep_alive);
+                return self.renderError(ctx, err, arena, keep_alive);
             },
             .need => types.Response{ .status = 500, .body = .{ .complete = "Pipeline incomplete" } },
         };
@@ -673,7 +672,7 @@ pub const Server = struct {
                     .status = response.status,
                     .headers = response.headers,
                     .body = .{ .complete = "" }, // Empty body for headers-only
-                }, tracer, arena, false, keep_alive);
+                }, arena, false, keep_alive);
 
                 return ResponseResult{
                     .streaming = .{
@@ -685,18 +684,16 @@ pub const Server = struct {
             },
             .complete => {
                 // For complete responses, format normally
-                const formatted = try self.httpResponse(response, tracer, arena, false, keep_alive);
+                const formatted = try self.httpResponse(response, arena, false, keep_alive);
                 return ResponseResult{ .complete = formatted };
             },
         }
     }
 
-    /// Render an error response.
     fn renderError(
         self: *Server,
         ctx: *ctx_module.CtxBase,
         _err: types.Error,
-        tracer: *tracer_module.Tracer,
         arena: std.mem.Allocator,
         keep_alive: bool,
     ) !ResponseResult {
@@ -710,9 +707,9 @@ pub const Server = struct {
         const is_head = std.mem.eql(u8, ctx.method_str, "HEAD");
 
         return switch (response) {
-            .Continue => ResponseResult{ .complete = try self.httpResponse(.{ .status = 500, .body = .{ .complete = "Error" } }, tracer, arena, is_head, keep_alive) },
-            .Done => |resp| ResponseResult{ .complete = try self.httpResponse(resp, tracer, arena, is_head, keep_alive) },
-            else => ResponseResult{ .complete = try self.httpResponse(.{ .status = 500, .body = .{ .complete = "Error" } }, tracer, arena, is_head, keep_alive) },
+            .Continue => ResponseResult{ .complete = try self.httpResponse(.{ .status = 500, .body = .{ .complete = "Error" } }, arena, is_head, keep_alive) },
+            .Done => |resp| ResponseResult{ .complete = try self.httpResponse(resp, arena, is_head, keep_alive) },
+            else => ResponseResult{ .complete = try self.httpResponse(.{ .status = 500, .body = .{ .complete = "Error" } }, arena, is_head, keep_alive) },
         };
     }
 
@@ -807,11 +804,9 @@ pub const Server = struct {
         });
     }
 
-    /// Format an HTTP response as text.
     fn httpResponse(
         self: *Server,
         response: types.Response,
-        tracer: *tracer_module.Tracer,
         arena: std.mem.Allocator,
         is_head: bool,
         keep_alive: bool,
@@ -915,7 +910,8 @@ pub const Server = struct {
         }
 
         // Export trace as JSON header
-        const trace_json = tracer.toJson(arena) catch "";
+        // const trace_json = tracer.toJson(arena) catch "";
+        const trace_json = "";
         if (trace_json.len > 0) {
             try w.print("X-Zerver-Trace: {s}\r\n", .{trace_json});
         }

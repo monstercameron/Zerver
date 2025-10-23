@@ -79,34 +79,34 @@ pub fn build(b: *std.Build) void {
     const docs_cmd = b.addSystemCommand(&[_][]const u8{ "zig", "build", "docs" });
     docs_step.dependOn(&docs_cmd.step);
 
-    // Todo CRUD example executable
-    const todo_exe = b.addExecutable(.{
-        .name = "todo_crud_example",
+    // Blog CRUD example executable
+    const blog_exe = b.addExecutable(.{
+        .name = "blog_crud_example",
         .root_module = b.createModule(.{
-            .root_source_file = b.path("examples/todo_crud.zig"),
+            .root_source_file = b.path("examples/blog_crud.zig"),
             .target = target,
             .optimize = optimize,
         }),
     });
 
-    todo_exe.root_module.addImport("zerver", zerver_mod);
-    // Add SQLite to todo example
-    todo_exe.addCSourceFile(.{
+    blog_exe.root_module.addImport("zerver", zerver_mod);
+    // Add SQLite to blog example
+    blog_exe.addCSourceFile(.{
         .file = b.path("src/sqlite/sqlite3.c"),
         .flags = &[_][]const u8{
             "-DSQLITE_ENABLE_JSON1",
             "-DSQLITE_THREADSAFE=1",
         },
     });
-    todo_exe.linkLibC();
+    blog_exe.linkLibC();
 
-    b.installArtifact(todo_exe);
+    b.installArtifact(blog_exe);
 
-    const todo_run_cmd = b.addRunArtifact(todo_exe);
-    todo_run_cmd.step.dependOn(b.getInstallStep());
+    const blog_run_cmd = b.addRunArtifact(blog_exe);
+    blog_run_cmd.step.dependOn(b.getInstallStep());
 
-    const todo_run_step = b.step("run_todo", "Run the todo CRUD example");
-    todo_run_step.dependOn(&todo_run_cmd.step);
+    const blog_run_step = b.step("run_blog", "Run the blog CRUD example");
+    blog_run_step.dependOn(&blog_run_cmd.step);
 
     // Teams example executable - commented out due to compilation errors
     // const teams_exe = b.addExecutable(.{
