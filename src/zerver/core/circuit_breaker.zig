@@ -25,6 +25,8 @@ pub const CircuitBreaker = struct {
     name: []const u8,
     stats: CircuitBreakerStats = .{},
 
+    // TODO: Concurrency/Safety - CircuitBreaker state modifications (e.g., failure_count, success_count, state) are not synchronized. This can lead to race conditions if multiple threads access the same breaker instance concurrently. Consider using atomics or mutexes for thread-safe updates.
+
     // Configuration
     failure_threshold: u32, // Failures before opening
     success_threshold: u32, // Successes before closing from half-open
@@ -131,6 +133,7 @@ pub const CircuitBreaker = struct {
     // Private: Check if we've waited long enough to retry
     fn shouldAttemptReset(self: @This(), now: i64) bool {
         const elapsed = now - self.stats.last_state_change;
+        // TODO: Logical Error - In 'shouldAttemptReset', if 'now' is less than 'self.stats.last_state_change' (e.g., due to clock adjustments), 'elapsed' could be negative, leading to unexpected behavior when compared with 'timeout_ms' (u32). Consider handling negative elapsed time explicitly.
         return elapsed > self.timeout_ms;
     }
 
@@ -160,6 +163,8 @@ pub const CircuitBreaker = struct {
 pub const CircuitBreakerPool = struct {
     breakers: std.StringHashMap(CircuitBreaker),
     allocator: std.mem.Allocator,
+
+    // TODO: Concurrency/Safety - CircuitBreakerPool's 'breakers' hash map modifications (e.g., put) are not synchronized. This can lead to race conditions if multiple threads concurrently add or retrieve breakers. Consider using a mutex to protect access to the hash map.
 
     pub fn init(allocator: std.mem.Allocator) @This() {
         return .{

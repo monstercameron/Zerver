@@ -1,11 +1,5 @@
-/// Example: Server with HTTP listening and request dispatch
-///
-/// Demonstrates:
-/// - Creating a server with routes and flows
-/// - Handling HTTP requests
-/// - Route matching and parameter extraction
-/// - Pipeline execution (global before, route before, main steps)
-/// - Error handling with on_error callback
+/// This example demonstrates a basic Zerver HTTP server with routing and middleware.
+// TODO: Logging - Replace std.debug.print with slog for consistent structured logging.
 const std = @import("std");
 const zerver = @import("zerver");
 

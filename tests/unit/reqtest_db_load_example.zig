@@ -24,6 +24,7 @@ fn TodoSlotType(comptime slot: TodoSlot) type {
 /// Example: Load a todo by ID from the database
 fn step_load_todo_by_id(ctx_base: *zerver.CtxBase) !zerver.Decision {
     const LoadView = zerver.CtxView(.{
+        .slotTypeFn = TodoSlotType,
         .reads = &.{TodoSlot.TodoId},
         .writes = &.{TodoSlot.TodoItem},
     });
@@ -52,19 +53,18 @@ fn step_load_todo_by_id(ctx_base: *zerver.CtxBase) !zerver.Decision {
 }
 
 /// Continuation: Handle the loaded todo
-fn step_handle_todo_loaded(ctx_base: *anyopaque) !zerver.Decision {
-    const base: *zerver.CtxBase = @ptrCast(@alignCast(ctx_base));
-
+fn step_handle_todo_loaded(ctx: *zerver.CtxBase) !zerver.Decision {
     const HandleView = zerver.CtxView(.{
+        .slotTypeFn = TodoSlotType,
         .reads = &.{TodoSlot.TodoItem},
         .writes = &.{},
     });
 
-    var ctx: HandleView = .{ .base = base };
+    var ctx_view: HandleView = .{ .base = ctx };
 
     // In real code, would deserialize from DB result
     // For testing, the effect result is stored in the slot
-    const _item = try ctx.optional(TodoSlot.TodoItem);
+    const _item = try ctx_view.optional(TodoSlot.TodoItem);
 
     if (_item) |_| {
         return .{ .Done = .{

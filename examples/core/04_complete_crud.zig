@@ -1,13 +1,5 @@
 /// Complete Todo CRUD example: Full demonstration of Zerver capabilities
-///
-/// Demonstrates:
-/// - Slot system with typed per-request state
-/// - CtxView with compile-time slot access restrictions
-/// - Steps with effects (simulated DB operations)
-/// - Continuations and join strategies
-/// - Error handling
-/// - Complete request/response cycle
-/// - All framework features working together
+// TODO: Logging - Replace std.debug.print with slog for consistent structured logging.
 const std = @import("std");
 const zerver = @import("../src/zerver/root.zig");
 

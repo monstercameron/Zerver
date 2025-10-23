@@ -11,6 +11,7 @@ const ctx_module = @import("ctx.zig");
 pub fn step(comptime name: []const u8, comptime F: anytype) types.Step {
     // For now, assume all functions take *CtxBase directly
     // TODO: Support CtxView functions in the future
+    // TODO: Logical Error - The 'step' function currently sets 'reads' and 'writes' to empty arrays. This bypasses CtxView's compile-time access control. Implement a mechanism to extract 'reads' and 'writes' from the step function's CtxView specification.
     return types.Step{
         .name = name,
         .call = makeTrampolineForCtxBase(F),

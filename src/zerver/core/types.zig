@@ -1,5 +1,8 @@
 /// Core type definitions for Zerver: Decision, Effect, Response, Error, etc.
 const std = @import("std");
+const ctx_module = @import("ctx.zig");
+
+// TODO: Memory/Safety - Review all structs containing '[]const u8' fields to ensure that string slices are either duplicated into appropriate allocators or their lifetimes are carefully managed to prevent use-after-free issues.
 
 /// HTTP method.
 pub const Method = enum {
@@ -119,7 +122,6 @@ pub const StreamingBody = struct {
     is_sse: bool = false,
 };
 
-
 /// A header name-value pair.
 pub const Header = struct {
     name: []const u8,
@@ -173,6 +175,8 @@ pub const AdvancedRetryPolicy = struct {
     pub fn calculateDelay(self: @This(), attempt: u8) u32 {
         if (attempt == 0) return 0;
 
+        // TODO: Safety - Review arithmetic operations in retry/backoff calculations (e.g., calculateExponentialBackoff, calculateFibonacciBackoff) for potential integer overflows and use checked arithmetic (e.g., @add, @mul) or larger integer types if necessary.
+
         return switch (self.backoff_strategy) {
             .NoBackoff => 0,
             .Linear => if (self.initial_delay_ms * attempt > self.max_delay_ms) self.max_delay_ms else self.initial_delay_ms * attempt,
@@ -184,6 +188,7 @@ pub const AdvancedRetryPolicy = struct {
     fn calculateExponentialBackoff(attempt: u8, initial: u32, max: u32) u32 {
         var delay: u32 = initial;
         var i: u8 = 1;
+        // TODO: Logical Error - The 'calculateExponentialBackoff' function uses f32 for calculations, which can introduce floating-point precision errors. Consider using fixed-point arithmetic or a larger float type (f64) if precision is critical for backoff timing.
         while (i < attempt) : (i += 1) {
             delay = @as(u32, @intFromFloat(@as(f32, @floatFromInt(delay)) * 1.5));
             if (delay > max) return max;
@@ -195,6 +200,7 @@ pub const AdvancedRetryPolicy = struct {
         var fib_prev: u32 = 0;
         var fib_curr: u32 = 1;
         var i: u8 = 0;
+        // TODO: Logical Error - The Fibonacci sequence in 'calculateFibonacciBackoff' grows rapidly. For larger 'attempt' values, intermediate 'fib_curr' or 'delay' calculations might overflow u32, leading to incorrect backoff values. Consider using larger integer types or checked arithmetic.
         while (i < attempt) : (i += 1) {
             const temp = fib_curr;
             fib_curr = fib_prev + fib_curr;
@@ -326,7 +332,7 @@ pub const Decision = union(enum) {
 /// A Step represents a unit of logic in a pipeline.
 pub const Step = struct {
     name: []const u8,
-    call: *const fn (*anyopaque) anyerror!Decision, // *CtxBase, re-trampolined to typed *CtxView
+    call: *const fn (*anyopaque) anyerror!Decision, // Typed *CtxView
     reads: []const u32 = &.{}, // Slot identifiers
     writes: []const u32 = &.{}, // Slot identifiers
 };

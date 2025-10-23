@@ -6,6 +6,7 @@
 /// - Join strategies (all, any, first_success)
 /// - Required vs optional effect failures
 /// - Continuation semantics
+// TODO: Logging - Replace std.debug.print with slog for consistent structured logging.
 const std = @import("std");
 const zerver = @import("zerver");
 

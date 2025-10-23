@@ -121,7 +121,6 @@ pub const Server = struct {
         };
     }
 
-
     pub fn init(
         allocator: std.mem.Allocator,
         cfg: Config,
@@ -192,6 +191,11 @@ pub const Server = struct {
         // Execute main steps
         for (main_steps) |main_step| {
             tracer.recordStepStart(main_step.name);
+            const ptr = @intFromPtr(main_step.call);
+            slog.debug("Executing step", &.{
+                slog.Attr.string("step", main_step.name),
+                slog.Attr.int("ptr", @as(i64, @intCast(ptr))),
+            });
             const decision = try self.executor.executeStepWithTracer(ctx_base, main_step.call, tracer);
             tracer.recordStepEnd(main_step.name, @tagName(decision));
             if (decision != .Continue) {
@@ -926,15 +930,16 @@ pub const Server = struct {
             .complete => |body| {
                 // For complete responses, add Content-Length unless it's SSE
                 const is_sse = response.status == 200 and
-                              blk: {
-                                  for (response.headers) |header| {
-                                      if (std.ascii.eqlIgnoreCase(header.name, "content-type") and
-                                          std.mem.eql(u8, header.value, "text/event-stream")) {
-                                          break :blk true;
-                                      }
-                                  }
-                                  break :blk false;
-                              };
+                    blk: {
+                        for (response.headers) |header| {
+                            if (std.ascii.eqlIgnoreCase(header.name, "content-type") and
+                                std.mem.eql(u8, header.value, "text/event-stream"))
+                            {
+                                break :blk true;
+                            }
+                        }
+                        break :blk false;
+                    };
 
                 if (!is_sse) {
                     try w.print("Content-Length: {d}\r\n", .{body.len});
@@ -968,6 +973,7 @@ pub const Server = struct {
 
         // Check each method to see if there's a route for it
         const methods = [_]types.Method{ .GET, .HEAD, .POST, .PUT, .DELETE, .PATCH, .OPTIONS };
+        // TODO: Logical Error - The 'CONNECT' and 'TRACE' methods have specific behaviors (RFC 9110 Section 9.3.6, 9.3.8) that are not typically handled by generic routing. If supported, they require dedicated handlers beyond just being listed in the 'Allow' header.
 
         for (methods, 0..) |method, i| {
             if (self.router.match(method, path, arena) catch null) |_| {

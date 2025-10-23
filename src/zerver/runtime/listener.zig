@@ -86,6 +86,14 @@ fn handleConnection(
             slog.Attr.uint("bytes", req_data.len),
         });
 
+        if (req_data.len > 0) {
+            const line_end = std.mem.indexOf(u8, req_data, "\r\n") orelse req_data.len;
+            const request_line = req_data[0..line_end];
+            slog.debug("HTTP request line", &.{
+                slog.Attr.string("line", request_line),
+            });
+        }
+
         // Handle request
         const response_result = srv.handleRequest(req_data, request_arena.allocator()) catch |err| {
             slog.err("Failed to handle request", &.{
@@ -106,6 +114,7 @@ fn handleConnection(
                 try handler.sendStreamingResponse(connection, streaming_resp.headers, streaming_resp.writer, streaming_resp.context);
                 // For streaming responses, we typically don't keep the connection alive in the same way
                 // as the stream may run indefinitely
+                // TODO: Logical Error - For streaming responses (e.g., SSE), the 'shouldKeepConnectionAlive' check is currently skipped. Ensure streaming connections are properly managed for persistence, as they are typically long-lived.
                 return;
             },
         }
@@ -128,6 +137,7 @@ fn handleConnection(
 /// Check if connection should be kept alive based on Connection header
 /// RFC 9112 Section 9.1: "close" means close, "keep-alive" means keep alive
 fn shouldKeepConnectionAlive(request_data: []const u8) bool {
+    // TODO: Logical Error - The 'shouldKeepConnectionAlive' function re-parses the raw request data to find the 'Connection' header. It should ideally operate on the already parsed headers available in 'ParsedRequest' to avoid redundant parsing and potential inconsistencies.
     // Parse headers to find Connection header
     var lines = std.mem.splitSequence(u8, request_data, "\r\n");
 

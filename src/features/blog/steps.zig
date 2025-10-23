@@ -1,252 +1,327 @@
 const std = @import("std");
-const zerver = @import("../../../src/zerver/root.zig");
-const types = @import("types.zig");
+const zerver = @import("../../zerver/root.zig");
 const blog_types = @import("types.zig");
 
-// Helper to get current timestamp as string
-fn getTimestamp(allocator: std.mem.Allocator) ![]const u8 {
-    var buf: [32]u8 = undefined;
-    const now = std.time.timestamp();
-    return std.fmt.bufPrint(buf[0..], "{d}", .{now}) catch allocator.dupe(u8, "");
+const Slot = blog_types.BlogSlot;
+
+inline fn slotId(comptime slot: Slot) u32 {
+    return @intFromEnum(slot);
 }
 
-// --- Post Steps ---
-
-pub const ListPostsView = zerver.CtxView(.{
-    .reads = &.{},
-    .writes = &.{ blog_types.BlogSlot.PostList },
-});
-pub fn step_list_posts(ctx: *ListPostsView) !zerver.Decision {
-    std.debug.print("  [Blog] Step list posts called\n", .{});
-    const effects = [_]zerver.Effect{ {
-            .db_get = .{ .key = "post:*", .token = @intFromEnum(blog_types.BlogSlot.PostList), .required = true },
-        } };
-    return .{ .need = .{ .effects = &effects, .mode = .Sequential, .join = .all, .continuation = continuation_list_posts } };
-}
-pub fn continuation_list_posts(ctx_opaque: *anyopaque) !zerver.Decision {
-    const ctx: *zerver.CtxBase = @ptrCast(@alignCast(ctx_opaque));
-    const post_list_json = ctx.slotGetString(@intFromEnum(blog_types.BlogSlot.PostList)) orelse "[]";
-    return zerver.done(.{
-        .status = 200,
-        .body = post_list_json,
-        .headers = &[_]zerver.types.Header{ {
-            .name = "Content-Type", .value = "application/json" },
-        },
-    });
+fn storeSlot(ctx: *zerver.CtxBase, comptime slot: Slot, value: blog_types.BlogSlotType(slot)) !void {
+    try ctx._put(slotId(slot), value);
 }
 
-pub const GetPostView = zerver.CtxView(.{
-    .reads = &.{},
-    .writes = &.{ blog_types.BlogSlot.PostId, blog_types.BlogSlot.Post },
-});
-pub fn step_get_post(ctx: *GetPostView) !zerver.Decision {
-    std.debug.print("  [Blog] Step get post called\n", .{});
+fn loadSlot(ctx: *zerver.CtxBase, comptime slot: Slot) !blog_types.BlogSlotType(slot) {
+    if (try ctx._get(slotId(slot), blog_types.BlogSlotType(slot))) |value| {
+        return value;
+    }
+    return error.SlotMissing;
+}
+
+fn getTimestamp(_: *zerver.CtxBase) i64 {
+    return std.time.timestamp();
+}
+
+pub fn step_extract_post_id(ctx: *zerver.CtxBase) !zerver.Decision {
     const post_id = ctx.param("id") orelse {
         return zerver.fail(zerver.ErrorCode.NotFound, "post", "missing_id");
     };
-    try ctx.base.slotPutString(@intFromEnum(blog_types.BlogSlot.PostId), post_id);
-
-    const effects = [_]zerver.Effect{ {
-            .db_get = .{ .key = ctx.base.bufFmt("post:{s}", .{post_id}), .token = @intFromEnum(blog_types.BlogSlot.Post), .required = true },
-        } };
-    return .{ .need = .{ .effects = &effects, .mode = .Sequential, .join = .all, .continuation = continuation_get_post } };
+    try storeSlot(ctx, .PostId, post_id);
+    return zerver.continue_();
 }
-pub fn continuation_get_post(ctx_opaque: *anyopaque) !zerver.Decision {
-    const ctx: *zerver.CtxBase = @ptrCast(@alignCast(ctx_opaque));
-    const post_json = ctx.slotGetString(@intFromEnum(blog_types.BlogSlot.Post)) orelse {
+
+pub fn step_extract_post_id_for_comment(ctx: *zerver.CtxBase) !zerver.Decision {
+    const post_id = ctx.param("post_id") orelse {
+        return zerver.fail(zerver.ErrorCode.NotFound, "comment", "missing_post_id");
+    };
+    try storeSlot(ctx, .PostId, post_id);
+    return zerver.continue_();
+}
+
+pub fn step_extract_comment_id(ctx: *zerver.CtxBase) !zerver.Decision {
+    const comment_id = ctx.param("comment_id") orelse {
+        return zerver.fail(zerver.ErrorCode.NotFound, "comment", "missing_comment_id");
+    };
+    try storeSlot(ctx, .CommentId, comment_id);
+    return zerver.continue_();
+}
+
+pub fn step_list_posts(ctx: *zerver.CtxBase) !zerver.Decision {
+    const effects = try ctx.allocator.alloc(zerver.Effect, 1);
+    effects[0] = .{
+        .db_get = .{ .key = "posts", .token = slotId(.PostList), .required = true },
+    };
+    return .{ .need = .{ .effects = effects, .mode = .Sequential, .join = .all, .continuation = continuation_list_posts } };
+}
+
+fn continuation_list_posts(ctx_ptr: *anyopaque) !zerver.Decision {
+    const ctx: *zerver.CtxBase = @ptrCast(@alignCast(ctx_ptr));
+    const post_list_json = (try ctx._get(slotId(.PostList), []const u8)) orelse "[]";
+    return zerver.done(.{
+        .status = 200,
+        .body = .{ .complete = post_list_json },
+        .headers = &[_]zerver.types.Header{.{
+            .name = "Content-Type",
+            .value = "application/json",
+        }},
+    });
+}
+
+pub fn step_get_post(ctx: *zerver.CtxBase) !zerver.Decision {
+    std.debug.print("  [Blog] Step get post called\n", .{});
+    const post_id = try loadSlot(ctx, .PostId);
+
+    const effects = try ctx.allocator.alloc(zerver.Effect, 1);
+    effects[0] = .{
+        .db_get = .{ .key = ctx.bufFmt("posts/{s}", .{post_id}), .token = slotId(.Post), .required = true },
+    };
+    return .{ .need = .{ .effects = effects, .mode = .Sequential, .join = .all, .continuation = continuation_get_post } };
+}
+
+fn continuation_get_post(ctx_ptr: *anyopaque) !zerver.Decision {
+    const ctx: *zerver.CtxBase = @ptrCast(@alignCast(ctx_ptr));
+    const post_json = (try ctx._get(slotId(.Post), []const u8)) orelse {
         return zerver.fail(zerver.ErrorCode.NotFound, "post", "not_found");
     };
+    const parsed = try std.json.parseFromSlice(blog_types.Post, ctx.allocator, post_json, .{});
+    defer parsed.deinit();
+
     return zerver.done(.{
         .status = 200,
-        .body = post_json,
-        .headers = &[_]zerver.types.Header{ {
-            .name = "Content-Type", .value = "application/json" },
-        },
+        .body = .{ .complete = post_json },
+        .headers = &[_]zerver.types.Header{.{
+            .name = "Content-Type",
+            .value = "application/json",
+        }},
     });
 }
 
-pub const CreatePostView = zerver.CtxView(.{
-    .reads = &.{},
-    .writes = &.{ blog_types.BlogSlot.PostId, blog_types.BlogSlot.Post },
-});
-pub fn step_create_post(ctx: *CreatePostView) !zerver.Decision {
-    std.debug.print("  [Blog] Step create post called\n", .{});
-    const body = ctx.base.body;
-    // In a real app, parse body to Post struct
-    // For now, just mock a new post
-    const new_post_id = ctx.base.bufFmt("post-{d}", .{std.time.nanoTimestamp()});
-    const created_at = try getTimestamp(ctx.base.allocator);
-    const updated_at = created_at;
-    const mock_post_json = ctx.base.bufFmt("{{\"id\":\"{s}\",\"title\":\"New Post\",\"content\":\"{s}\",\"author\":\"Guest\",\"created_at\":\"{s}\",\"updated_at\":\"{s}\"}}", .{new_post_id, body, created_at, updated_at});
-
-    const effects = [_]zerver.Effect{ {
-            .db_put = .{ .key = ctx.base.bufFmt("post:{s}", .{new_post_id}), .value = mock_post_json, .token = @intFromEnum(blog_types.BlogSlot.Post), .required = true },
-        } };
-    return .{ .need = .{ .effects = &effects, .mode = .Sequential, .join = .all, .continuation = continuation_create_post } };
+pub fn step_parse_post(ctx: *zerver.CtxBase) !zerver.Decision {
+    const input_post = try ctx.json(blog_types.PostInput);
+    try storeSlot(ctx, .PostInput, input_post);
+    return zerver.continue_();
 }
-pub fn continuation_create_post(ctx_opaque: *anyopaque) !zerver.Decision {
-    const ctx: *zerver.CtxBase = @ptrCast(@alignCast(ctx_opaque));
-    const post_json = ctx.slotGetString(@intFromEnum(blog_types.BlogSlot.Post)) orelse {
-        return zerver.fail(zerver.ErrorCode.InternalError, "post", "create_failed");
+
+pub fn step_validate_post(ctx: *zerver.CtxBase) !zerver.Decision {
+    const post = try loadSlot(ctx, .PostInput);
+    if (post.title.len == 0) {
+        return zerver.fail(zerver.ErrorCode.InvalidInput, "post", "title_empty");
+    }
+    if (post.title.len > 200) {
+        return zerver.fail(zerver.ErrorCode.InvalidInput, "post", "title_too_long");
+    }
+    if (post.content.len == 0) {
+        return zerver.fail(zerver.ErrorCode.InvalidInput, "post", "content_empty");
+    }
+    if (post.author.len == 0) {
+        return zerver.fail(zerver.ErrorCode.InvalidInput, "post", "author_empty");
+    }
+    return zerver.continue_();
+}
+
+pub fn step_db_create_post(ctx: *zerver.CtxBase) !zerver.Decision {
+    const input_post = try loadSlot(ctx, .PostInput);
+    const new_post_id = ctx.newId();
+    const timestamp = getTimestamp(ctx);
+    const post = blog_types.Post{
+        .id = new_post_id,
+        .title = input_post.title,
+        .content = input_post.content,
+        .author = input_post.author,
+        .created_at = timestamp,
+        .updated_at = timestamp,
     };
+
+    try storeSlot(ctx, .PostId, new_post_id);
+    try storeSlot(ctx, .Post, post);
+
+    const post_json = try ctx.toJson(post);
+
+    const effects = try ctx.allocator.alloc(zerver.Effect, 1);
+    effects[0] = .{
+        .db_put = .{ .key = ctx.bufFmt("posts/{s}", .{new_post_id}), .value = post_json, .token = slotId(.Post), .required = true },
+    };
+    return .{ .need = .{ .effects = effects, .mode = .Sequential, .join = .all, .continuation = continuation_create_post } };
+}
+
+fn continuation_create_post(ctx_ptr: *anyopaque) !zerver.Decision {
+    const ctx: *zerver.CtxBase = @ptrCast(@alignCast(ctx_ptr));
+    const post = try loadSlot(ctx, .Post);
+    const post_json = try ctx.toJson(post);
+
     return zerver.done(.{
         .status = 201,
-        .body = post_json,
-        .headers = &[_]zerver.types.Header{ {
-            .name = "Content-Type", .value = "application/json" },
-        },
+        .body = .{ .complete = post_json },
+        .headers = &[_]zerver.types.Header{.{
+            .name = "Content-Type",
+            .value = "application/json",
+        }},
     });
 }
 
-pub const UpdatePostView = zerver.CtxView(.{
-    .reads = &.{},
-    .writes = &.{ blog_types.BlogSlot.PostId, blog_types.BlogSlot.Post },
-});
-pub fn step_update_post(ctx: *UpdatePostView) !zerver.Decision {
-    std.debug.print("  [Blog] Step update post called\n", .{});
-    const post_id = ctx.param("id") orelse {
-        return zerver.fail(zerver.ErrorCode.NotFound, "post", "missing_id");
-    };
-    try ctx.base.slotPutString(@intFromEnum(blog_types.BlogSlot.PostId), post_id);
-
-    const body = ctx.base.body;
-    // In a real app, parse body to update Post struct
-    const updated_at = try getTimestamp(ctx.base.allocator);
-    const mock_post_json = ctx.base.bufFmt("{{\"id\":\"{s}\",\"title\":\"Updated Post\",\"content\":\"{s}\",\"author\":\"Guest\",\"created_at\":\"...\",\"updated_at\":\"{s}\"}}", .{post_id, body, updated_at});
-
-    const effects = [_]zerver.Effect{ {
-            .db_put = .{ .key = ctx.base.bufFmt("post:{s}", .{post_id}), .value = mock_post_json, .token = @intFromEnum(blog_types.BlogSlot.Post), .required = true },
-        } };
-    return .{ .need = .{ .effects = &effects, .mode = .Sequential, .join = .all, .continuation = continuation_update_post } };
+pub fn step_parse_update_post(ctx: *zerver.CtxBase) !zerver.Decision {
+    const input_post = try ctx.json(blog_types.PostInput);
+    try storeSlot(ctx, .PostInput, input_post);
+    return zerver.continue_();
 }
-pub fn continuation_update_post(ctx_opaque: *anyopaque) !zerver.Decision {
-    const ctx: *zerver.CtxBase = @ptrCast(@alignCast(ctx_opaque));
-    const post_json = ctx.slotGetString(@intFromEnum(blog_types.BlogSlot.Post)) orelse {
-        return zerver.fail(zerver.ErrorCode.InternalError, "post", "update_failed");
+
+pub fn step_db_update_post(ctx: *zerver.CtxBase) !zerver.Decision {
+    const post_id = try loadSlot(ctx, .PostId);
+    const input_post = try loadSlot(ctx, .PostInput);
+    const timestamp = getTimestamp(ctx);
+    const post = blog_types.Post{
+        .id = post_id,
+        .title = input_post.title,
+        .content = input_post.content,
+        .author = input_post.author,
+        .created_at = timestamp,
+        .updated_at = timestamp,
     };
+
+    try storeSlot(ctx, .Post, post);
+
+    const post_json = try ctx.toJson(post);
+
+    const effects = try ctx.allocator.alloc(zerver.Effect, 1);
+    effects[0] = .{
+        .db_put = .{ .key = ctx.bufFmt("posts/{s}", .{post_id}), .value = post_json, .token = slotId(.Post), .required = true },
+    };
+    return .{ .need = .{ .effects = effects, .mode = .Sequential, .join = .all, .continuation = continuation_update_post } };
+}
+
+fn continuation_update_post(ctx_ptr: *anyopaque) !zerver.Decision {
+    const ctx: *zerver.CtxBase = @ptrCast(@alignCast(ctx_ptr));
+    const post = try loadSlot(ctx, .Post);
+    const post_json = try ctx.toJson(post);
+
     return zerver.done(.{
         .status = 200,
-        .body = post_json,
-        .headers = &[_]zerver.types.Header{ {
-            .name = "Content-Type", .value = "application/json" },
-        },
+        .body = .{ .complete = post_json },
+        .headers = &[_]zerver.types.Header{.{
+            .name = "Content-Type",
+            .value = "application/json",
+        }},
     });
 }
 
-pub const DeletePostView = zerver.CtxView(.{
-    .reads = &.{},
-    .writes = &.{ blog_types.BlogSlot.PostId },
-});
-pub fn step_delete_post(ctx: *DeletePostView) !zerver.Decision {
+pub fn step_delete_post(ctx: *zerver.CtxBase) !zerver.Decision {
     std.debug.print("  [Blog] Step delete post called\n", .{});
-    const post_id = ctx.param("id") orelse {
-        return zerver.fail(zerver.ErrorCode.NotFound, "post", "missing_id");
-    };
-    try ctx.base.slotPutString(@intFromEnum(blog_types.BlogSlot.PostId), post_id);
+    const post_id = try loadSlot(ctx, .PostId);
 
-    const effects = [_]zerver.Effect{ {
-            .db_del = .{ .key = ctx.base.bufFmt("post:{s}", .{post_id}), .token = @intFromEnum(blog_types.BlogSlot.PostId), .required = true },
-        } };
-    return .{ .need = .{ .effects = &effects, .mode = .Sequential, .join = .all, .continuation = continuation_delete_post } };
+    const effects = try ctx.allocator.alloc(zerver.Effect, 1);
+    effects[0] = .{
+        .db_del = .{ .key = ctx.bufFmt("posts/{s}", .{post_id}), .token = slotId(.PostId), .required = true },
+    };
+    return .{ .need = .{ .effects = effects, .mode = .Sequential, .join = .all, .continuation = continuation_delete_post } };
 }
-pub fn continuation_delete_post(ctx_opaque: *anyopaque) !zerver.Decision {
-    _ = ctx_opaque;
+
+fn continuation_delete_post(ctx_ptr: *anyopaque) !zerver.Decision {
+    _ = ctx_ptr;
     return zerver.done(.{
         .status = 204,
-        .body = "",
+        .body = .{ .complete = "" },
     });
 }
 
 // --- Comment Steps ---
 
-pub const ListCommentsView = zerver.CtxView(.{
-    .reads = &.{},
-    .writes = &.{ blog_types.BlogSlot.PostId, blog_types.BlogSlot.CommentList },
-});
-pub fn step_list_comments(ctx: *ListCommentsView) !zerver.Decision {
+pub fn step_list_comments(ctx: *zerver.CtxBase) !zerver.Decision {
     std.debug.print("  [Blog] Step list comments called\n", .{});
-    const post_id = ctx.param("post_id") orelse {
-        return zerver.fail(zerver.ErrorCode.NotFound, "comment", "missing_post_id");
-    };
-    try ctx.base.slotPutString(@intFromEnum(blog_types.BlogSlot.PostId), post_id);
+    const post_id = try loadSlot(ctx, .PostId);
 
-    const effects = [_]zerver.Effect{ {
-            .db_get = .{ .key = ctx.base.bufFmt("comment:post_{s}:*", .{post_id}), .token = @intFromEnum(blog_types.BlogSlot.CommentList), .required = true },
-        } };
-    return .{ .need = .{ .effects = &effects, .mode = .Sequential, .join = .all, .continuation = continuation_list_comments } };
+    const effects = try ctx.allocator.alloc(zerver.Effect, 1);
+    effects[0] = .{
+        .db_get = .{ .key = ctx.bufFmt("comments/post/{s}", .{post_id}), .token = slotId(.CommentList), .required = true },
+    };
+    return .{ .need = .{ .effects = effects, .mode = .Sequential, .join = .all, .continuation = continuation_list_comments } };
 }
-pub fn continuation_list_comments(ctx_opaque: *anyopaque) !zerver.Decision {
-    const ctx: *zerver.CtxBase = @ptrCast(@alignCast(ctx_opaque));
-    const comment_list_json = ctx.slotGetString(@intFromEnum(blog_types.BlogSlot.CommentList)) orelse "[]";
+
+fn continuation_list_comments(ctx_ptr: *anyopaque) !zerver.Decision {
+    const ctx: *zerver.CtxBase = @ptrCast(@alignCast(ctx_ptr));
+    const comment_list_json = (try ctx._get(slotId(.CommentList), []const u8)) orelse "[]";
     return zerver.done(.{
         .status = 200,
-        .body = comment_list_json,
-        .headers = &[_]zerver.types.Header{ {
-            .name = "Content-Type", .value = "application/json" },
-        },
+        .body = .{ .complete = comment_list_json },
+        .headers = &[_]zerver.types.Header{.{
+            .name = "Content-Type",
+            .value = "application/json",
+        }},
     });
 }
 
-pub const CreateCommentView = zerver.CtxView(.{
-    .reads = &.{},
-    .writes = &.{ blog_types.BlogSlot.PostId, blog_types.BlogSlot.Comment },
-});
-pub fn step_create_comment(ctx: *CreateCommentView) !zerver.Decision {
-    std.debug.print("  [Blog] Step create comment called\n", .{});
-    const post_id = ctx.param("post_id") orelse {
-        return zerver.fail(zerver.ErrorCode.NotFound, "comment", "missing_post_id");
-    };
-    try ctx.base.slotPutString(@intFromEnum(blog_types.BlogSlot.PostId), post_id);
-
-    const body = ctx.base.body;
-    // In a real app, parse body to Comment struct
-    const new_comment_id = ctx.base.bufFmt("comment-{d}", .{std.time.nanoTimestamp()});
-    const created_at = try getTimestamp(ctx.base.allocator);
-    const mock_comment_json = ctx.base.bufFmt("{{\"id\":\"{s}\",\"post_id\":\"{s}\",\"author\":\"Guest\",\"content\":\"{s}\",\"created_at\":\"{s}\"}}", .{new_comment_id, post_id, body, created_at});
-
-    const effects = [_]zerver.Effect{ {
-            .db_put = .{ .key = ctx.base.bufFmt("comment:post_{s}:{s}", .{post_id, new_comment_id}), .value = mock_comment_json, .token = @intFromEnum(blog_types.BlogSlot.Comment), .required = true },
-        } };
-    return .{ .need = .{ .effects = &effects, .mode = .Sequential, .join = .all, .continuation = continuation_create_comment } };
+pub fn step_parse_comment(ctx: *zerver.CtxBase) !zerver.Decision {
+    const input_comment = try ctx.json(blog_types.CommentInput);
+    try storeSlot(ctx, .CommentInput, input_comment);
+    return zerver.continue_();
 }
-pub fn continuation_create_comment(ctx_opaque: *anyopaque) !zerver.Decision {
-    const ctx: *zerver.CtxBase = @ptrCast(@alignCast(ctx_opaque));
-    const comment_json = ctx.slotGetString(@intFromEnum(blog_types.BlogSlot.Comment)) orelse {
-        return zerver.fail(zerver.ErrorCode.InternalError, "comment", "create_failed");
+
+pub fn step_validate_comment(ctx: *zerver.CtxBase) !zerver.Decision {
+    const comment = try loadSlot(ctx, .CommentInput);
+    if (comment.content.len == 0) {
+        return zerver.fail(zerver.ErrorCode.InvalidInput, "comment", "content_empty");
+    }
+    if (comment.author.len == 0) {
+        return zerver.fail(zerver.ErrorCode.InvalidInput, "comment", "author_empty");
+    }
+    return zerver.continue_();
+}
+
+pub fn step_db_create_comment(ctx: *zerver.CtxBase) !zerver.Decision {
+    const post_id = try loadSlot(ctx, .PostId);
+    const input_comment = try loadSlot(ctx, .CommentInput);
+    const new_comment_id = ctx.newId();
+    const timestamp = getTimestamp(ctx);
+    const comment = blog_types.Comment{
+        .id = new_comment_id,
+        .post_id = post_id,
+        .author = input_comment.author,
+        .content = input_comment.content,
+        .created_at = timestamp,
     };
+
+    try storeSlot(ctx, .CommentId, new_comment_id);
+    try storeSlot(ctx, .Comment, comment);
+
+    const comment_json = try ctx.toJson(comment);
+
+    const effects = try ctx.allocator.alloc(zerver.Effect, 1);
+    effects[0] = .{
+        .db_put = .{ .key = ctx.bufFmt("comments/{s}", .{new_comment_id}), .value = comment_json, .token = slotId(.Comment), .required = true },
+    };
+    return .{ .need = .{ .effects = effects, .mode = .Sequential, .join = .all, .continuation = continuation_create_comment } };
+}
+
+fn continuation_create_comment(ctx_ptr: *anyopaque) !zerver.Decision {
+    const ctx: *zerver.CtxBase = @ptrCast(@alignCast(ctx_ptr));
+    const comment = try loadSlot(ctx, .Comment);
+    const comment_json = try ctx.toJson(comment);
+
     return zerver.done(.{
         .status = 201,
-        .body = comment_json,
-        .headers = &[_]zerver.types.Header{ {
-            .name = "Content-Type", .value = "application/json" },
-        },
+        .body = .{ .complete = comment_json },
+        .headers = &[_]zerver.types.Header{.{
+            .name = "Content-Type",
+            .value = "application/json",
+        }},
     });
 }
 
-pub const DeleteCommentView = zerver.CtxView(.{
-    .reads = &.{},
-    .writes = &.{ blog_types.BlogSlot.PostId, blog_types.BlogSlot.CommentId },
-});
-pub fn step_delete_comment(ctx: *DeleteCommentView) !zerver.Decision {
+pub fn step_delete_comment(ctx: *zerver.CtxBase) !zerver.Decision {
     std.debug.print("  [Blog] Step delete comment called\n", .{});
-    const post_id = ctx.param("post_id") orelse {
-        return zerver.fail(zerver.ErrorCode.NotFound, "comment", "missing_post_id");
-    };
-    const comment_id = ctx.param("comment_id") orelse {
-        return zerver.fail(zerver.ErrorCode.NotFound, "comment", "missing_comment_id");
-    };
-    try ctx.base.slotPutString(@intFromEnum(blog_types.BlogSlot.PostId), post_id);
-    try ctx.base.slotPutString(@intFromEnum(blog_types.BlogSlot.CommentId), comment_id);
+    const comment_id = try loadSlot(ctx, .CommentId);
 
-    const effects = [_]zerver.Effect{ {
-            .db_del = .{ .key = ctx.base.bufFmt("comment:post_{s}:{s}", .{post_id, comment_id}), .token = @intFromEnum(blog_types.BlogSlot.CommentId), .required = true },
-        } };
-    return .{ .need = .{ .effects = &effects, .mode = .Sequential, .join = .all, .continuation = continuation_delete_comment } };
+    const effects = try ctx.allocator.alloc(zerver.Effect, 1);
+    effects[0] = .{
+        .db_del = .{ .key = ctx.bufFmt("comments/{s}", .{comment_id}), .token = slotId(.CommentId), .required = true },
+    };
+    return .{ .need = .{ .effects = effects, .mode = .Sequential, .join = .all, .continuation = continuation_delete_comment } };
 }
-pub fn continuation_delete_comment(ctx_opaque: *anyopaque) !zerver.Decision {
-    _ = ctx_opaque;
+
+fn continuation_delete_comment(ctx_ptr: *anyopaque) !zerver.Decision {
+    _ = ctx_ptr;
     return zerver.done(.{
         .status = 204,
-        .body = "",
+        .body = .{ .complete = "" },
     });
 }

@@ -28,6 +28,9 @@ pub const Timeout = types.Timeout;
 pub const BackoffStrategy = types.BackoffStrategy;
 pub const AdvancedRetryPolicy = types.AdvancedRetryPolicy;
 
+// Observability
+pub const slog = @import("observability/slog.zig");
+
 // Helpers
 pub const step = core.step;
 pub const continue_ = core.continue_;

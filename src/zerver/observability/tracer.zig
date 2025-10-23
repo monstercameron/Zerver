@@ -29,6 +29,7 @@ pub const TraceEvent = struct {
     effect_kind: ?[]const u8 = null,
     status: ?[]const u8 = null, // "Continue", "Done", "Fail", "Need"
     error_msg: ?[]const u8 = null,
+    // TODO: Memory/Safety - Ensure that string slices stored in TraceEvent (step_name, effect_kind, status, error_msg) have a lifetime at least as long as the Tracer itself, or are duplicated into the Tracer's allocator to prevent use-after-free issues.
 };
 
 /// Request tracer: records events during request execution.
@@ -118,6 +119,7 @@ pub const Tracer = struct {
 
     /// Record an error.
     pub fn recordError(self: *Tracer, msg: []const u8) void {
+        // TODO: Logical Error - The 'recordError' function currently records an event of kind '.request_end'. This might overwrite a legitimate request_end event or cause confusion in the trace. Consider a distinct event type for errors or adding error details to an existing event.
         self.recordEvent(.{
             .kind = .request_end,
             .error_msg = msg,
@@ -138,6 +140,7 @@ pub const Tracer = struct {
     /// Export trace as JSON.
     pub fn toJson(self: *Tracer, arena: std.mem.Allocator) ![]const u8 {
         var buf = std.ArrayList(u8).initCapacity(arena, 1024) catch unreachable;
+        // TODO: Safety - Replace 'catch unreachable' with proper error propagation or handling for allocation failures in toJson to prevent crashes.
         const writer = buf.writer(arena);
 
         try writer.writeAll("{\n");
@@ -161,6 +164,7 @@ pub const Tracer = struct {
             } else if (event.error_msg) |msg| {
                 try writer.print("      \"error\": \"{s}\"\n", .{msg});
             } else {
+                // TODO: Logical Error - In toJson, if both 'event.status' and 'event.error_msg' are null, it prints '"timestamp_ms": 0'. This seems like a logical inconsistency; consider what should be printed in this case.
                 try writer.writeAll("      \"timestamp_ms\": 0\n");
             }
 

@@ -8,7 +8,8 @@
 /// - Error handling with context
 /// - JSON parsing and rendering
 ///
-/// MVP: All effects are simulated with random delays; Phase 2 will use real async I/O.
+/// This example demonstrates a multi-team architecture with Zerver,
+// TODO: Logging - Replace std.debug.print with slog for consistent structured logging.
 const std = @import("std");
 const zerver = @import("zerver");
 

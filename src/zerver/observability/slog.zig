@@ -117,6 +117,7 @@ pub const Handler = union(enum) {
     pub fn enabled(self: Handler, level: Level) bool {
         _ = self;
         _ = level;
+        // TODO: Logical Error - The 'Handler.enabled' method currently always returns 'true', effectively disabling log level filtering. Implement proper log level enforcement based on a configurable threshold.
         return true; // Always enabled for now
     }
 };
@@ -175,6 +176,7 @@ pub const JSONHandler = struct {
         defer self.mutex.unlock();
 
         // Simple JSON format for now
+        // TODO: Logical Error - The JSON format in JSONHandler.handleRecord is too simple and does not include 'attrs'. Implement full structured JSON logging including all attributes.
         const msg = std.fmt.allocPrint(std.heap.page_allocator, "{{\"time\":{},\"level\":\"{s}\",\"msg\":\"{s}\"}}\n", .{
             record.time,
             record.level.string(),
@@ -200,6 +202,7 @@ pub const Logger = struct {
 
     pub fn with(self: Logger, attrs: []const Attr) Logger {
         var new_context = std.ArrayList(Attr).initCapacity(std.heap.page_allocator, self.context.len + attrs.len) catch unreachable;
+        // TODO: Safety - Replace 'catch unreachable' with proper error propagation or handling for allocation failures in Logger.with to prevent crashes.
         defer new_context.deinit();
 
         new_context.appendSliceAssumeCapacity(self.context);
@@ -208,6 +211,7 @@ pub const Logger = struct {
         return .{
             .handler = self.handler,
             .context = new_context.toOwnedSlice() catch unreachable,
+            // TODO: Safety - Replace 'catch unreachable' with proper error propagation or handling for allocation failures in Logger.with to prevent crashes.
         };
     }
 
@@ -256,6 +260,7 @@ pub const Logger = struct {
                 .function = "unknown",
                 .line = 0,
             },
+            // TODO: Logical Error - The 'record.source' fields (file, function, line) are hardcoded to "unknown" and 0. Implement capturing actual source location information for better debugging.
             .time = @intCast(std.time.nanoTimestamp()),
             .attrs = all_attrs.toOwnedSlice(std.heap.page_allocator) catch return,
         };

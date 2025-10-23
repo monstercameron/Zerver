@@ -1,10 +1,5 @@
-/// Example: Router with path params and route matching
-///
-/// Demonstrates:
-/// - Registering routes with path parameters (:id syntax)
-/// - Matching incoming requests to routes
-/// - Extracting path parameters from matches
-/// - Route priority (longest-literal first, then fewer params)
+/// This example demonstrates Zerver's routing capabilities, including path parameters and route priority.
+// TODO: Logging - Replace std.debug.print with slog for consistent structured logging.
 const std = @import("std");
 const zerver = @import("zerver");
 

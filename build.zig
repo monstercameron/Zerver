@@ -23,7 +23,15 @@ pub fn build(b: *std.Build) void {
         }),
     });
 
-    b.installArtifact(exe);
+    // Add SQLite as a C library
+    exe.addCSourceFile(.{
+        .file = b.path("src/sqlite/sqlite3.c"),
+        .flags = &[_][]const u8{
+            "-DSQLITE_ENABLE_JSON1",
+            "-DSQLITE_THREADSAFE=1",
+        },
+    });
+    exe.linkLibC();
 
     const run_cmd = b.addRunArtifact(exe);
     run_cmd.step.dependOn(b.getInstallStep());
@@ -32,15 +40,32 @@ pub fn build(b: *std.Build) void {
     run_step.dependOn(&run_cmd.step);
 
     // Development helper steps
+    // Create zerver module with proper paths
+    const zerver_mod = b.createModule(.{
+        .root_source_file = b.path("src/zerver/root.zig"),
+    });
+
+    // Development helper steps
     const test_step = b.step("test", "Run all tests");
-    test_step.dependOn(&b.addRunArtifact(b.addExecutable(.{
+    const test_exe = b.addExecutable(.{
         .name = "test_runner",
         .root_module = b.createModule(.{
             .root_source_file = b.path("src/zerver/core/reqtest.zig"),
             .target = target,
             .optimize = optimize,
         }),
-    })).step);
+    });
+    test_exe.root_module.addImport("zerver", zerver_mod);
+    // Add SQLite to test executable
+    test_exe.addCSourceFile(.{
+        .file = b.path("src/sqlite/sqlite3.c"),
+        .flags = &[_][]const u8{
+            "-DSQLITE_ENABLE_JSON1",
+            "-DSQLITE_THREADSAFE=1",
+        },
+    });
+    test_exe.linkLibC();
+    test_step.dependOn(&b.addRunArtifact(test_exe).step);
 
     const fmt_step = b.step("fmt", "Format all Zig files");
     const fmt_cmd = b.addSystemCommand(&[_][]const u8{ "zig", "fmt", "." });
@@ -54,11 +79,6 @@ pub fn build(b: *std.Build) void {
     const docs_cmd = b.addSystemCommand(&[_][]const u8{ "zig", "build", "docs" });
     docs_step.dependOn(&docs_cmd.step);
 
-    // Create zerver module with proper paths
-    const zerver_mod = b.createModule(.{
-        .root_source_file = b.path("src/zerver/root.zig"),
-    });
-
     // Todo CRUD example executable
     const todo_exe = b.addExecutable(.{
         .name = "todo_crud_example",
@@ -70,6 +90,15 @@ pub fn build(b: *std.Build) void {
     });
 
     todo_exe.root_module.addImport("zerver", zerver_mod);
+    // Add SQLite to todo example
+    todo_exe.addCSourceFile(.{
+        .file = b.path("src/sqlite/sqlite3.c"),
+        .flags = &[_][]const u8{
+            "-DSQLITE_ENABLE_JSON1",
+            "-DSQLITE_THREADSAFE=1",
+        },
+    });
+    todo_exe.linkLibC();
 
     b.installArtifact(todo_exe);
 

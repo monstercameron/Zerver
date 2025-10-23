@@ -12,7 +12,7 @@ pub const ErrorRenderer = struct {
         // Build JSON error response
         var buf = std.ArrayList(u8).initCapacity(allocator, 256) catch return types.Response{
             .status = 500,
-            .body = "Internal Server Error",
+            .body = .{ .complete = "Internal Server Error" }, // TODO: Logical Error - The fallback Response in ErrorRenderer.render returns a raw '[]const u8' for the body, but 'types.Response.body' expects a 'types.ResponseBody' union. This is a type mismatch and needs to be corrected to '.complete = "Internal Server Error"'.
         };
         defer buf.deinit();
 

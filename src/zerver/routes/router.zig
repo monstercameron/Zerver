@@ -43,6 +43,7 @@ pub const Router = struct {
         return .{
             .allocator = allocator,
             .routes = std.ArrayList(CompiledRoute).initCapacity(allocator, 32) catch unreachable,
+            // TODO: Safety - Replace 'catch unreachable' with proper error propagation or handling for allocation failures to prevent crashes.
         };
     }
 
@@ -122,9 +123,11 @@ pub const Router = struct {
     /// "/todos/:id/items" → [literal("todos"), param("id"), literal("items")]
     fn compilePattern(self: *Router, path: []const u8) !Pattern {
         var segments = std.ArrayList(Segment).initCapacity(self.allocator, 16) catch unreachable;
+        // TODO: Safety - Replace 'catch unreachable' with proper error propagation or handling for allocation failures to prevent crashes.
         defer segments.deinit(self.allocator);
 
         var param_names = std.ArrayList([]const u8).initCapacity(self.allocator, 8) catch unreachable;
+        // TODO: Safety - Replace 'catch unreachable' with proper error propagation or handling for allocation failures to prevent crashes.
         defer param_names.deinit(self.allocator);
 
         var literal_count: usize = 0;
@@ -156,6 +159,7 @@ pub const Router = struct {
     /// Split a path into segments by "/", filtering empty segments.
     fn splitPath(_: *Router, path: []const u8, arena: std.mem.Allocator) ![][]const u8 {
         var segments = std.ArrayList([]const u8).initCapacity(arena, 16) catch unreachable;
+        // TODO: Safety - Replace 'catch unreachable' with proper error propagation or handling for allocation failures to prevent crashes.
         defer segments.deinit(arena);
 
         var it = std.mem.splitSequence(u8, path, "/");

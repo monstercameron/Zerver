@@ -16,6 +16,8 @@ pub fn readRequestWithTimeout(
     timeout_ms: u32,
 ) ![]u8 {
     var req_buf = std.ArrayList(u8).initCapacity(allocator, 4096) catch unreachable;
+    // TODO: Safety - Replace 'catch unreachable' with proper error propagation or handling for allocation failures in readRequestWithTimeout to prevent crashes.
+    // TODO: Logical Error - The 'max_size' (4096 bytes) in readRequestWithTimeout is an arbitrary limit for headers. If headers exceed this, it results in 'error.InvalidRequest'. Consider handling this as a '413 Payload Too Large' or a more specific error, and ensure this limit is configurable or documented.
 
     var read_buf: [256]u8 = undefined;
     const max_size = 4096;
@@ -179,7 +181,10 @@ fn readChunkedBody(
             size_end = semicolon; // Ignore chunk extensions
         }
         const size_str = std.mem.trim(u8, chunk_line[0..size_end], " \t");
-        if (size_str.len == 0) continue; // Empty line, need more data
+        if (size_str.len == 0) {
+            // TODO: Logical Error - If 'size_str.len == 0' (empty chunk size line), it currently 'continue's. This might indicate a malformed chunk and could lead to an infinite loop if not handled as an error.
+            continue; // Empty line, need more data
+        }
         chunk_size = std.fmt.parseInt(usize, size_str, 16) catch return error.InvalidChunkedEncoding;
 
         if (chunk_size == 0) {
@@ -205,7 +210,8 @@ fn readChunkedBody(
         // Verify we have the trailing CRLF
         const expected_crlf_pos = chunk_data_start + chunk_size;
         if (expected_crlf_pos + 2 > req_buf.items.len or
-            !std.mem.eql(u8, req_buf.items[expected_crlf_pos..expected_crlf_pos + 2], "\r\n")) {
+            !std.mem.eql(u8, req_buf.items[expected_crlf_pos .. expected_crlf_pos + 2], "\r\n"))
+        {
             return error.InvalidChunkedEncoding;
         }
     }
@@ -327,6 +333,7 @@ pub fn sendErrorResponse(
     status: []const u8,
     message: []const u8,
 ) !void {
+    // TODO: Safety/Memory - The fixed-size buffer in sendErrorResponse might lead to truncation or errors for long status/message strings. Consider using an allocator for dynamic sizing.
     var buf: [512]u8 = undefined;
     const response = try std.fmt.bufPrint(&buf, "HTTP/1.1 {s}\r\nContent-Type: text/plain\r\nContent-Length: {d}\r\n\r\n{s}", .{
         status,

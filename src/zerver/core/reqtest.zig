@@ -43,6 +43,7 @@ pub const ReqTest = struct {
 
     /// Set a request header.
     pub fn setHeader(self: *ReqTest, name: []const u8, value: []const u8) !void {
+        // TODO: Logical Error - ReqTest.setHeader puts a single '[]const u8' into ctx.headers, but CtxBase.headers (and ParsedRequest.headers) expects 'std.ArrayList([]const u8)' for multiple header values. This needs to be consistent.
         try self.ctx.headers.put(name, value);
     }
 

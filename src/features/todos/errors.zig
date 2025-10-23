@@ -40,7 +40,7 @@ pub fn onError(ctx: *zerver.CtxBase) anyerror!zerver.Decision {
         });
         return zerver.done(.{
             .status = 500,
-                .body = .{ .complete = "{\"error\":\"Internal server error - no error details\"}" },
+            .body = .{ .complete = "{\"error\":\"Internal server error - no error details\"}" },
         });
     }
 }

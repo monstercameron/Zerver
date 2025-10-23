@@ -9,9 +9,12 @@ const slog = @import("../observability/slog.zig");
 // Import features
 const todos = @import("../../features/todos/routes.zig");
 const hello = @import("../../features/hello/routes.zig");
+const blog = @import("../../features/blog/routes.zig");
 const todo_effects = @import("../../features/todos/effects.zig");
 const todo_steps = @import("../../features/todos/steps.zig");
 const todo_errors = @import("../../features/todos/errors.zig");
+const blog_effects = @import("../../features/blog/effects.zig");
+const blog_errors = @import("../../features/blog/errors.zig");
 
 /// Hello world step wrapper
 fn helloStepWrapper(ctx_opaque: *anyopaque) anyerror!root.Decision {
@@ -36,6 +39,7 @@ fn helloStep(ctx: *root.CtxBase) !root.Decision {
 pub fn initializeServer(allocator: std.mem.Allocator) !root.Server {
     // Initialize structured logging with default logger
     _ = slog.default();
+    // TODO: Memory/Safety - Ensure proper deinitialization of the global slog.default() logger and its handler at program exit to prevent memory leaks.
 
     slog.info("Zerver MVP Server Starting", &[_]slog.Attr{
         slog.Attr.string("version", "mvp"),
@@ -49,6 +53,7 @@ pub fn initializeServer(allocator: std.mem.Allocator) !root.Server {
             .port = 8080,
         },
         .on_error = todo_errors.onError,
+        // TODO: Logical Error - The 'config.on_error' is currently hardcoded to 'todo_errors.onError'. This means all server errors will be handled by the 'todos' feature's error handler, which is a logical inconsistency. Implement a more generic or configurable error handling dispatch mechanism.
     };
 
     // Create server with effect handler
@@ -56,6 +61,7 @@ pub fn initializeServer(allocator: std.mem.Allocator) !root.Server {
 
     // Register features
     try todos.registerRoutes(&srv);
+    try blog.registerRoutes(&srv); // Blog routes now working
     // try hello.registerRoutes(&srv);
 
     // Add a simple root route
@@ -75,8 +81,9 @@ pub fn initializeServer(allocator: std.mem.Allocator) !root.Server {
 
 /// Print available routes for documentation
 fn printRoutes() void {
-    slog.info("Todo CRUD Routes registered", &[_]slog.Attr{
-        slog.Attr.string("routes", "GET /, GET /todos, GET /todos/:id, POST /todos, PATCH /todos/:id, DELETE /todos/:id"),
+    slog.info("Routes registered", &[_]slog.Attr{
+        slog.Attr.string("todo_routes", "GET /todos, GET /todos/:id, POST /todos, PATCH /todos/:id, DELETE /todos/:id"),
+        slog.Attr.string("blog_routes", "GET /blog/posts, GET /blog/posts/:id, POST /blog/posts, PUT /blog/posts/:id, PATCH /blog/posts/:id, DELETE /blog/posts/:id, GET /blog/posts/:id/comments, POST /blog/posts/:id/comments, DELETE /blog/posts/:id/comments/:cid"),
     });
 }
 

@@ -14,6 +14,7 @@ pub const CtxBase = struct {
     method_str: []const u8,
     path_str: []const u8,
     headers: std.StringHashMap([]const u8), // TODO: RFC 9110 - Ensure robust parsing of headers (Section 5) in server.zig, including handling of multiple header fields and quoted strings.
+    // TODO: Logical Error - The 'headers' field in CtxBase is 'std.StringHashMap([]const u8)', but ParsedRequest.headers (and server.zig's parsing) uses 'std.StringHashMap(std.ArrayList([]const u8))'. This type mismatch needs to be resolved for consistency.
     params: std.StringHashMap([]const u8), // path parameters like /todos/:id
     query: std.StringHashMap([]const u8),
     body: []const u8, // TODO: RFC 9110 - Ensure robust parsing and framing of request body (Section 6.4) in handler.zig and server.zig.
@@ -89,6 +90,7 @@ pub const CtxBase = struct {
     pub fn ensureRequestId(self: *CtxBase) void {
         if (self.request_id.len == 0) {
             var buf: [32]u8 = undefined;
+            // TODO: Safety/Memory - The fixed-size buffer in ensureRequestId might lead to truncation or errors for very long timestamps. Consider using an allocator for dynamic sizing or a larger buffer.
             self.request_id = std.fmt.bufPrint(&buf, "{d}", .{std.time.nanoTimestamp()}) catch "";
         }
     }
@@ -109,6 +111,7 @@ pub const CtxBase = struct {
     pub fn logDebug(self: *CtxBase, comptime fmt: []const u8, args: anytype) void {
         // Format the message using the provided format string and args
         var buf: [1024]u8 = undefined;
+        // TODO: Safety/Memory - The fixed-size buffer in logDebug might lead to truncation or errors for very long log messages. Consider using an allocator for dynamic sizing or a larger buffer.
         const message = std.fmt.bufPrint(&buf, fmt, args) catch fmt;
 
         // Create attributes for structured logging
@@ -151,15 +154,12 @@ pub const CtxBase = struct {
         return self.allocator.dupe(u8, formatted) catch return "";
     }
 
-    /// Serialize a value to JSON string (arena-backed)
-    /// Supports basic types: integers, floats, bools, strings, arrays
-    pub fn toJson(self: *CtxBase, value: anytype) ![]const u8 {
-        var buf = std.ArrayList(u8).initCapacity(self.allocator, 256) catch return "";
-        defer buf.deinit();
-        const writer = buf.writer();
-
-        try self.stringifyValue(writer, value);
-        return buf.items;
+    /// Generate a new unique ID (simple timestamp-based for now)
+    pub fn newId(self: *CtxBase) []const u8 {
+        var buf: [32]u8 = undefined;
+        // TODO: Logical Error - The 'newId' function's fixed-size buffer and 'catch "0"' fallback can lead to non-unique IDs if the timestamp string overflows the buffer. This needs to be handled more robustly to ensure ID uniqueness.
+        const id = std.fmt.bufPrint(&buf, "{d}", .{std.time.nanoTimestamp()}) catch "0";
+        return self.allocator.dupe(u8, id) catch "0";
     }
 
     fn stringifyValue(self: *CtxBase, writer: anytype, value: anytype) !void {
@@ -170,9 +170,9 @@ pub const CtxBase = struct {
             .int => try writer.print("{}", .{value}),
             .float => try writer.print("{d}", .{value}),
             .bool => try writer.writeAll(if (value) "true" else "false"),
-            .pointer => |ptr_info| {
-                if (ptr_info.size == .Slice and ptr_info.child == u8) {
-                    // String
+            .pointer => {
+                const ValueType = @TypeOf(value);
+                if (ValueType == []const u8 or ValueType == []u8) {
                     try writer.writeAll("\"");
                     try self.escapeJsonString(writer, value);
                     try writer.writeAll("\"");
@@ -195,17 +195,25 @@ pub const CtxBase = struct {
                 }
                 try writer.writeAll("]");
             },
-            .struct_ => {
+            .@"struct" => |struct_info| {
                 try writer.writeAll("{");
-                inline for (@typeInfo(T).struct_.fields, 0..) |field, idx| {
+                inline for (struct_info.fields, 0..) |field, idx| {
                     try writer.print("\"{s}\":", .{field.name});
                     try self.stringifyValue(writer, @field(value, field.name));
-                    if (idx < @typeInfo(T).struct_.fields.len - 1) try writer.writeAll(",");
+                    if (idx < struct_info.fields.len - 1) try writer.writeAll(",");
                 }
                 try writer.writeAll("}");
             },
             else => try writer.writeAll("null"),
         }
+    }
+
+    pub fn toJson(self: *CtxBase, value: anytype) ![]const u8 {
+        var buffer = try std.ArrayList(u8).initCapacity(self.allocator, 256);
+        errdefer buffer.deinit(self.allocator);
+        const writer = buffer.writer(self.allocator);
+        try self.stringifyValue(writer, value);
+        return buffer.toOwnedSlice(self.allocator);
     }
 
     fn escapeJsonString(self: *CtxBase, writer: anytype, str: []const u8) !void {
@@ -246,13 +254,10 @@ pub const CtxBase = struct {
         try self.slots.put(token, @ptrCast(value_ptr));
     }
 
-    /// Retrieve a string value from a slot (runtime token)
-    pub fn slotGetString(self: *CtxBase, token: u32) ?[]const u8 {
-        if (self.slots.get(token)) |ptr| {
-            const typed_ptr: *[]const u8 = @ptrCast(@alignCast(ptr));
-            return typed_ptr.*;
-        }
-        return null;
+    /// Parse request body as JSON into the given type
+    pub fn json(self: *CtxBase, comptime T: type) !T {
+        const parsed = try std.json.parseFromSlice(T, self.allocator, self.body, .{});
+        return parsed.value;
     }
 };
 
@@ -267,11 +272,13 @@ pub const TraceEvent = union(enum) {
 /// CtxView(spec) creates a typed view that enforces read/write permissions at compile time.
 ///
 /// The spec should contain:
+///   - slotTypeFn: fn(comptime slot_tag) type - maps slot enum to type
 ///   - reads: array of slot tags that can be read
 ///   - writes: array of slot tags that can be written
 ///
 /// Usage:
 ///   const MyView = CtxView(.{
+///       .slotTypeFn = MySlotType,
 ///       .reads = &.{ .TodoId, .TodoItem },
 ///       .writes = &.{ .TodoItem },
 ///   });
@@ -281,7 +288,8 @@ pub const TraceEvent = union(enum) {
 ///   var opt_value = try ctx.optional(.TodoId);  // Optional read
 ///   try ctx.put(.TodoItem, my_value);           // Write
 pub fn CtxView(comptime spec: anytype) type {
-    // Extract reads and writes from the spec at comptime
+    // Extract from spec
+    const SlotTypeFn = spec.slotTypeFn;
     const reads = if (@hasField(@TypeOf(spec), "reads")) spec.reads else &.{};
     const writes = if (@hasField(@TypeOf(spec), "writes")) spec.writes else &.{};
 
@@ -290,7 +298,7 @@ pub fn CtxView(comptime spec: anytype) type {
 
         /// Require a slot to be populated (must be in .reads or .writes)
         /// Returns error.SlotMissing if the slot was not previously written
-        pub fn require(self: @This(), comptime slot_tag: anytype) !@TypeOf(slot_tag) {
+        pub fn require(self: @This(), comptime slot_tag: anytype) !SlotTypeFn(slot_tag) {
             // Compile-time check: slot must be in reads or writes
             comptime {
                 var found = false;
@@ -314,14 +322,13 @@ pub fn CtxView(comptime spec: anytype) type {
             }
 
             // Runtime: retrieve the slot value
-            // TODO: implement actual slot storage and retrieval
-            _ = self;
-            return error.NotImplemented;
+            const T = SlotTypeFn(slot_tag);
+            return self.base._get(@intFromEnum(slot_tag), T) orelse error.SlotMissing;
         }
 
         /// Optionally read a slot (returns null if not set)
         /// Must be in .reads or .writes
-        pub fn optional(self: @This(), comptime slot_tag: anytype) !?@TypeOf(slot_tag) {
+        pub fn optional(self: @This(), comptime slot_tag: anytype) !?SlotTypeFn(slot_tag) {
             // Compile-time check: slot must be in reads or writes
             comptime {
                 var found = false;
@@ -345,13 +352,12 @@ pub fn CtxView(comptime spec: anytype) type {
             }
 
             // Runtime: retrieve slot or return null
-            // TODO: implement actual slot storage and retrieval
-            _ = self;
-            return error.NotImplemented;
+            const T = SlotTypeFn(slot_tag);
+            return self.base._get(@intFromEnum(slot_tag), T);
         }
 
         /// Write a value to a slot (must be in .writes)
-        pub fn put(self: @This(), comptime slot_tag: anytype, value: @TypeOf(slot_tag)) !void {
+        pub fn put(self: @This(), comptime slot_tag: anytype, value: SlotTypeFn(slot_tag)) !void {
             // Compile-time check: slot must be in writes
             comptime {
                 var found = false;
@@ -367,10 +373,7 @@ pub fn CtxView(comptime spec: anytype) type {
             }
 
             // Runtime: store the slot value
-            // TODO: implement actual slot storage
-            _ = self;
-            _ = value;
-            return error.NotImplemented;
+            try self.base._put(@intFromEnum(slot_tag), value);
         }
     };
 }

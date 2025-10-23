@@ -126,6 +126,7 @@ pub const Executor = struct {
 
         // MVP: execute sequentially regardless of mode
         // Phase-2 can parallelize this
+        // TODO: Logical Error - The 'mode' (Parallel/Sequential) and 'join' strategies (all_required, any) are currently not fully respected due to sequential MVP execution. Revisit this logic when parallel execution is implemented to ensure correct behavior and avoid unintended side effects.
         for (need.effects) |effect| {
             const effect_kind = @tagName(effect);
 
@@ -155,8 +156,8 @@ pub const Executor = struct {
                 .file_json_read => 1000, // Default 1s timeout for file reads
                 .file_json_write => 1000, // Default 1s timeout for file writes
             };
+            // TODO: Safety/Memory - The hardcoded 1s timeout for file_json_read/write might be insufficient or too long; consider adding a 'timeout_ms' field to FileJsonRead/Write structs.
             // TODO: RFC 9110 - Consider how `timeout_ms` should explicitly influence HTTP-level timeout responses (e.g., 408 Request Timeout) or retry behavior as per RFC 9110 Section 2.4 and 15.5.9.
-
 
             const required = switch (effect) {
                 .http_get => |e| e.required,
@@ -209,6 +210,7 @@ pub const Executor = struct {
             .all_required => true, // MVP: same as all (Phase-2: can resume early)
             .any => true, // MVP: same as all (Phase-2: would resume on first)
             .first_success => !had_required_failure, // resume if any success or no required fails
+            // TODO: Logical Error - The 'first_success' join strategy currently resumes if no *required* effect failed. This might not align with the typical 'first success' semantic (resume on any success). Revisit this logic for clarity and correctness.
         };
 
         if (!should_resume) {

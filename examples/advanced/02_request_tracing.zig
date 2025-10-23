@@ -1,10 +1,5 @@
-/// Example: Trace recording and JSON export
-///
-/// Demonstrates:
-/// - Recording step and effect events
-/// - Exporting trace as JSON
-/// - Using Tracer to track request execution
-/// - Observability for debugging
+/// This example demonstrates how to use the Zerver tracer for recording and exporting request traces.
+// TODO: Logging - Replace std.debug.print with slog for consistent structured logging.
 const std = @import("std");
 const zerver = @import("zerver");
 

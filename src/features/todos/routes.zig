@@ -156,7 +156,7 @@ fn continuation_list(ctx: *anyopaque) !zerver.Decision {
 
     return zerver.done(.{
         .status = 200,
-            .body = .{ .complete = "[{\"id\":\"1\",\"title\":\"Buy milk\",\"done\":false},{\"id\":\"2\",\"title\":\"Pay bills\",\"done\":true}]" },
+        .body = .{ .complete = "[{\"id\":\"1\",\"title\":\"Buy milk\",\"done\":false},{\"id\":\"2\",\"title\":\"Pay bills\",\"done\":true}]" },
     });
 }
 

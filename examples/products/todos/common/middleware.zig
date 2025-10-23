@@ -5,6 +5,7 @@
 /// - Rate limiting
 /// - Request/response logging
 /// - Operation latency simulation
+// TODO: Logging - Replace std.debug.print with slog for consistent structured logging.
 const std = @import("std");
 const zerver = @import("zerver");
 const domain = @import("../core/domain.zig");

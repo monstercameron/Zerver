@@ -6,7 +6,8 @@
 /// - Middleware composition (auth, rate limit, logging)
 /// - Simulated effects with realistic latencies
 ///
-/// Ready for Phase 2 async/await support
+/// This example demonstrates a complete Zerver application in a single file,
+// TODO: Logging - Replace std.debug.print with slog for consistent structured logging.
 const std = @import("std");
 const zerver = @import("src/zerver/root.zig");
 

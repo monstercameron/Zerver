@@ -1,8 +1,5 @@
-/// Idempotency helpers: utilities for ensuring safe retries with idempotency keys
-///
-/// Idempotency keys allow clients to safely retry write operations without
-/// accidentally duplicating side effects. The server must store results
-/// indexed by the idempotency key and return the cached result on retry.
+/// This example demonstrates how to implement idempotency keys in Zerver.
+// TODO: Logging - Replace std.debug.print with slog for consistent structured logging.
 const std = @import("std");
 const zerver = @import("../src/zerver/root.zig");
 

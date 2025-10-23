@@ -14,5 +14,7 @@ pub fn makeStep(comptime name: []const u8, comptime func: anytype) zerver.types.
         }.wrapper,
         .reads = &.{},
         .writes = &.{},
+        // TODO: Logical Error - The 'makeStep' function currently sets 'reads' and 'writes' to empty arrays. This bypasses CtxView's compile-time access control. Implement a mechanism to extract 'reads' and 'writes' from the step function's CtxView specification.
     };
+}
 }

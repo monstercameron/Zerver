@@ -11,6 +11,7 @@
 ///
 /// Simulated effects with realistic latencies demonstrate how Phase 2
 /// will handle actual async operations (DB, HTTP, etc.)
+// TODO: Logging - Replace std.debug.print with slog for consistent structured logging.
 const std = @import("std");
 const zerver = @import("zerver");
 

@@ -284,7 +284,7 @@ pub fn onError(ctx: *zerver.CtxBase) anyerror!zerver.Decision {
             .headers = &[_]zerver.types.Header{
                 .{ .name = "Content-Type", .value = "application/json" },
             },
-                .body = .{ .complete = "{\"error\":\"Internal server error - no error details\"}" },
+            .body = .{ .complete = "{\"error\":\"Internal server error - no error details\"}" },
         });
     }
 }
