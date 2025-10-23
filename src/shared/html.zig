@@ -19,15 +19,20 @@ pub fn text(comptime contents: []const u8) type {
 }
 
 /// HTML element representation generated per tag.
-fn Element(comptime tag: []const u8) type {
+fn Element(
+    comptime tag: []const u8,
+    comptime Attrs: type,
+    comptime Children: type,
+) type {
     return struct {
-        attrs: anytype,
-        children: anytype,
+        const Self = @This();
+        attrs: Attrs,
+        children: Children,
 
-        pub fn render(self: @This(), writer: anytype) !void {
+        pub fn render(self: Self, writer: anytype) !void {
             try writer.print("<{s}", .{tag});
 
-            inline for (std.meta.fields(@TypeOf(self.attrs))) |field| {
+            inline for (std.meta.fields(Attrs)) |field| {
                 const value = @field(self.attrs, field.name);
                 switch (@TypeOf(value)) {
                     []const u8 => if (value.len > 0) try writer.print(" {s}=\"{s}\"", .{ field.name, value }),
@@ -55,17 +60,19 @@ fn Element(comptime tag: []const u8) type {
 }
 
 /// Generate a struct containing helper functions for common tags.
-fn makeTags(comptime names: []const []const u8) type {
-    const FuncType = fn (attrs: anytype, children: anytype) anytype;
-    var fields: [names.len]std.builtin.TypeInfo.StructField = undefined;
+fn makeTags(comptime names: anytype) type {
+    var fields: [names.len]std.builtin.Type.StructField = undefined;
 
     inline for (names, 0..) |name, idx| {
-        const ElemType = Element(name);
-        const func = struct {
-            pub fn call(attrs: anytype, children: anytype) ElemType {
-                return ElemType{ .attrs = attrs, .children = children };
+        const Factory = struct {
+            pub fn call(attrs: anytype, children: anytype) Element(name, @TypeOf(attrs), @TypeOf(children)) {
+                return Element(name, @TypeOf(attrs), @TypeOf(children)){
+                    .attrs = attrs,
+                    .children = children,
+                };
             }
-        }.call;
+        };
+        const func = Factory.call;
 
         fields[idx] = .{
             .name = name,
@@ -76,14 +83,12 @@ fn makeTags(comptime names: []const []const u8) type {
         };
     }
 
-    return @Type(.{
-        .Struct = .{
-            .layout = .Auto,
-            .fields = &fields,
-            .decls = &.{},
-            .is_tuple = false,
-        },
-    });
+    return @Type(.{ .Struct = .{
+        .layout = .auto,
+        .fields = &fields,
+        .decls = &.{},
+        .is_tuple = false,
+    } });
 }
 
 pub const Tags = makeTags(.{

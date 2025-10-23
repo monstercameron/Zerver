@@ -46,8 +46,7 @@ pub fn main() !void {
 }
 
 /// Hello world step wrapper
-fn helloStepWrapper(ctx_opaque: *anyopaque) anyerror!zerver.Decision {
-    const ctx: *zerver.CtxBase = @ptrCast(@alignCast(ctx_opaque));
+fn helloStepWrapper(ctx: *zerver.CtxBase) anyerror!zerver.Decision {
     return helloStep(ctx);
 }
 

@@ -312,7 +312,7 @@ pub const Join = enum {
 };
 
 /// Callback for continuation after effects complete.
-pub const ResumeFn = *const fn (*anyopaque) anyerror!Decision;
+pub const ResumeFn = *const fn (*ctx_module.CtxBase) anyerror!Decision;
 
 /// A Decision represents the outcome of a step and tells the engine what to do next.
 pub const Need = struct {
@@ -332,7 +332,7 @@ pub const Decision = union(enum) {
 /// A Step represents a unit of logic in a pipeline.
 pub const Step = struct {
     name: []const u8,
-    call: *const fn (*anyopaque) anyerror!Decision, // Typed *CtxView
+    call: *const fn (*ctx_module.CtxBase) anyerror!Decision, // Typed *CtxBase
     reads: []const u32 = &.{}, // Slot identifiers
     writes: []const u32 = &.{}, // Slot identifiers
 };

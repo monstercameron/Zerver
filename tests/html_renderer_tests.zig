@@ -1,12 +1,12 @@
 const std = @import("std");
-const html = @import("../../src/shared/html.zig");
+const html = @import("html");
 const tags = html.tags;
 
 fn renderToString(node: anytype, allocator: std.mem.Allocator) ![]u8 {
     var buffer = std.ArrayList(u8).init(allocator);
     defer buffer.deinit();
 
-    var writer = buffer.writer();
+    const writer = buffer.writer();
     try node.render(writer);
 
     return buffer.toOwnedSlice();

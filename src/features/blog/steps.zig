@@ -55,8 +55,7 @@ pub fn step_list_posts(ctx: *zerver.CtxBase) !zerver.Decision {
     return .{ .need = .{ .effects = effects, .mode = .Sequential, .join = .all, .continuation = continuation_list_posts } };
 }
 
-fn continuation_list_posts(ctx_ptr: *anyopaque) !zerver.Decision {
-    const ctx: *zerver.CtxBase = @ptrCast(@alignCast(ctx_ptr));
+fn continuation_list_posts(ctx: *zerver.CtxBase) !zerver.Decision {
     const post_list_json = (try ctx._get(slotId(.PostList), []const u8)) orelse "[]";
     return zerver.done(.{
         .status = 200,
@@ -79,8 +78,7 @@ pub fn step_get_post(ctx: *zerver.CtxBase) !zerver.Decision {
     return .{ .need = .{ .effects = effects, .mode = .Sequential, .join = .all, .continuation = continuation_get_post } };
 }
 
-fn continuation_get_post(ctx_ptr: *anyopaque) !zerver.Decision {
-    const ctx: *zerver.CtxBase = @ptrCast(@alignCast(ctx_ptr));
+fn continuation_get_post(ctx: *zerver.CtxBase) !zerver.Decision {
     const post_json = (try ctx._get(slotId(.Post), []const u8)) orelse {
         return zerver.fail(zerver.ErrorCode.NotFound, "post", "not_found");
     };
@@ -145,8 +143,7 @@ pub fn step_db_create_post(ctx: *zerver.CtxBase) !zerver.Decision {
     return .{ .need = .{ .effects = effects, .mode = .Sequential, .join = .all, .continuation = continuation_create_post } };
 }
 
-fn continuation_create_post(ctx_ptr: *anyopaque) !zerver.Decision {
-    const ctx: *zerver.CtxBase = @ptrCast(@alignCast(ctx_ptr));
+fn continuation_create_post(ctx: *zerver.CtxBase) !zerver.Decision {
     const post = try loadSlot(ctx, .Post);
     const post_json = try ctx.toJson(post);
 
@@ -190,8 +187,7 @@ pub fn step_db_update_post(ctx: *zerver.CtxBase) !zerver.Decision {
     return .{ .need = .{ .effects = effects, .mode = .Sequential, .join = .all, .continuation = continuation_update_post } };
 }
 
-fn continuation_update_post(ctx_ptr: *anyopaque) !zerver.Decision {
-    const ctx: *zerver.CtxBase = @ptrCast(@alignCast(ctx_ptr));
+fn continuation_update_post(ctx: *zerver.CtxBase) !zerver.Decision {
     const post = try loadSlot(ctx, .Post);
     const post_json = try ctx.toJson(post);
 
@@ -216,8 +212,8 @@ pub fn step_delete_post(ctx: *zerver.CtxBase) !zerver.Decision {
     return .{ .need = .{ .effects = effects, .mode = .Sequential, .join = .all, .continuation = continuation_delete_post } };
 }
 
-fn continuation_delete_post(ctx_ptr: *anyopaque) !zerver.Decision {
-    _ = ctx_ptr;
+fn continuation_delete_post(ctx: *zerver.CtxBase) !zerver.Decision {
+    _ = ctx;
     return zerver.done(.{
         .status = 204,
         .body = .{ .complete = "" },
@@ -237,8 +233,7 @@ pub fn step_list_comments(ctx: *zerver.CtxBase) !zerver.Decision {
     return .{ .need = .{ .effects = effects, .mode = .Sequential, .join = .all, .continuation = continuation_list_comments } };
 }
 
-fn continuation_list_comments(ctx_ptr: *anyopaque) !zerver.Decision {
-    const ctx: *zerver.CtxBase = @ptrCast(@alignCast(ctx_ptr));
+fn continuation_list_comments(ctx: *zerver.CtxBase) !zerver.Decision {
     const comment_list_json = (try ctx._get(slotId(.CommentList), []const u8)) orelse "[]";
     return zerver.done(.{
         .status = 200,
@@ -292,8 +287,7 @@ pub fn step_db_create_comment(ctx: *zerver.CtxBase) !zerver.Decision {
     return .{ .need = .{ .effects = effects, .mode = .Sequential, .join = .all, .continuation = continuation_create_comment } };
 }
 
-fn continuation_create_comment(ctx_ptr: *anyopaque) !zerver.Decision {
-    const ctx: *zerver.CtxBase = @ptrCast(@alignCast(ctx_ptr));
+fn continuation_create_comment(ctx: *zerver.CtxBase) !zerver.Decision {
     const comment = try loadSlot(ctx, .Comment);
     const comment_json = try ctx.toJson(comment);
 
@@ -318,8 +312,8 @@ pub fn step_delete_comment(ctx: *zerver.CtxBase) !zerver.Decision {
     return .{ .need = .{ .effects = effects, .mode = .Sequential, .join = .all, .continuation = continuation_delete_comment } };
 }
 
-fn continuation_delete_comment(ctx_ptr: *anyopaque) !zerver.Decision {
-    _ = ctx_ptr;
+fn continuation_delete_comment(ctx: *zerver.CtxBase) !zerver.Decision {
+    _ = ctx;
     return zerver.done(.{
         .status = 204,
         .body = .{ .complete = "" },

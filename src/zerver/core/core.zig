@@ -14,7 +14,7 @@ pub fn step(comptime name: []const u8, comptime F: anytype) types.Step {
     // TODO: Logical Error - The 'step' function currently sets 'reads' and 'writes' to empty arrays. This bypasses CtxView's compile-time access control. Implement a mechanism to extract 'reads' and 'writes' from the step function's CtxView specification.
     return types.Step{
         .name = name,
-        .call = makeTrampolineForCtxBase(F),
+        .call = F,
         .reads = &.{},
         .writes = &.{},
     };
@@ -36,6 +36,7 @@ fn extractReadsWrites(comptime _CtxViewType: type) struct { reads: []const u32, 
 fn makeTrampolineFor(comptime F: anytype, comptime CtxViewPtr: anytype) *const fn (*anyopaque) anyerror!types.Decision {
     return struct {
         pub fn wrapper(base: *anyopaque) anyerror!types.Decision {
+            // Cast from *anyopaque back to *CtxBase, asserting the alignment is correct
             const ctx_base: *ctx_module.CtxBase = @ptrCast(@alignCast(base));
 
             // Create a CtxView instance - extract the type from the pointer
@@ -54,16 +55,6 @@ fn makeTrampolineFor(comptime F: anytype, comptime CtxViewPtr: anytype) *const f
 
             // Call the typed function with the view
             return F(&view);
-        }
-    }.wrapper;
-}
-
-/// Create a wrapper function that adapts from *anyopaque to *CtxBase for direct API.
-fn makeTrampolineForCtxBase(comptime F: anytype) *const fn (*anyopaque) anyerror!types.Decision {
-    return struct {
-        pub fn wrapper(base: *anyopaque) anyerror!types.Decision {
-            const ctx_base: *ctx_module.CtxBase = @ptrCast(@alignCast(base));
-            return F(ctx_base);
         }
     }.wrapper;
 }

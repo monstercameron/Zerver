@@ -66,7 +66,7 @@ pub const Executor = struct {
     pub fn executeStep(
         self: *Executor,
         ctx_base: *ctx_module.CtxBase,
-        step_fn: *const fn (*anyopaque) anyerror!types.Decision,
+        step_fn: *const fn (*ctx_module.CtxBase) anyerror!types.Decision,
     ) !types.Decision {
         return self.executeStepInternal(ctx_base, step_fn, 0);
     }
@@ -75,7 +75,7 @@ pub const Executor = struct {
     pub fn executeStepWithTracer(
         self: *Executor,
         ctx_base: *ctx_module.CtxBase,
-        step_fn: *const fn (*anyopaque) anyerror!types.Decision,
+        step_fn: *const fn (*ctx_module.CtxBase) anyerror!types.Decision,
         tracer: *tracer_module.Tracer,
     ) !types.Decision {
         // Set the tracer for this execution
@@ -87,7 +87,7 @@ pub const Executor = struct {
     fn executeStepInternal(
         self: *Executor,
         ctx_base: *ctx_module.CtxBase,
-        step_fn: *const fn (*anyopaque) anyerror!types.Decision,
+        step_fn: *const fn (*ctx_module.CtxBase) anyerror!types.Decision,
         depth: usize,
     ) !types.Decision {
         // Safety: prevent infinite recursion
@@ -98,8 +98,10 @@ pub const Executor = struct {
             } };
         }
 
-        // Call the step function (it will receive *CtxBase cast to *anyopaque)
-        var decision = try step_fn(@ptrCast(ctx_base));
+        // Call the step function (it will receive *CtxBase directly)
+        const ptr = @intFromPtr(step_fn);
+        std.debug.print("Calling step function at address: 0x{x}\n", .{ptr});
+        var decision = try step_fn(ctx_base);
 
         // Handle any Need decisions by executing effects
         while (decision == .need) {

@@ -16,12 +16,6 @@ const todo_errors = @import("../../features/todos/errors.zig");
 const blog_effects = @import("../../features/blog/effects.zig");
 const blog_errors = @import("../../features/blog/errors.zig");
 
-/// Hello world step wrapper
-fn helloStepWrapper(ctx_opaque: *anyopaque) anyerror!root.Decision {
-    const ctx: *root.CtxBase = @ptrCast(@alignCast(ctx_opaque));
-    return helloStep(ctx);
-}
-
 /// Hello world step
 fn helloStep(ctx: *root.CtxBase) !root.Decision {
     slog.debug("Hello step called", &[_]slog.Attr{
@@ -34,6 +28,19 @@ fn helloStep(ctx: *root.CtxBase) !root.Decision {
         .body = .{ .complete = "Hello from Zerver! Try /todos endpoints with X-User-ID header." },
     });
 }
+
+/// Hello world step wrapper
+fn helloStepWrapper(ctx: *root.CtxBase) anyerror!root.Decision {
+    return helloStep(ctx);
+}
+
+/// Hello world step definition
+const hello_world_step = root.types.Step{
+    .name = "hello",
+    .call = helloStepWrapper,
+    .reads = &.{},
+    .writes = &.{},
+};
 
 /// Initialize and configure the server
 pub fn initializeServer(allocator: std.mem.Allocator) !root.Server {
@@ -65,13 +72,7 @@ pub fn initializeServer(allocator: std.mem.Allocator) !root.Server {
     // try hello.registerRoutes(&srv);
 
     // Add a simple root route
-    const hello_step = root.types.Step{
-        .name = "hello",
-        .call = helloStepWrapper,
-        .reads = &.{},
-        .writes = &.{},
-    };
-    try srv.addRoute(.GET, "/", .{ .steps = &.{hello_step} });
+    try srv.addRoute(.GET, "/", .{ .steps = &.{hello_world_step} });
 
     // Print available routes
     printRoutes();

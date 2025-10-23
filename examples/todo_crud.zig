@@ -96,7 +96,7 @@ pub fn step_load_from_db(ctx: *zerver.CtxBase) !zerver.Decision {
     } };
 }
 
-fn continuation_list(ctx: *anyopaque) !zerver.Decision {
+fn continuation_list(ctx: *zerver.CtxBase) !zerver.Decision {
     _ = ctx;
     std.debug.print("  [Continuation] List continuation called\n", .{});
 
@@ -109,7 +109,7 @@ fn continuation_list(ctx: *anyopaque) !zerver.Decision {
     });
 }
 
-fn continuation_get(ctx: *anyopaque) !zerver.Decision {
+fn continuation_get(ctx: *zerver.CtxBase) !zerver.Decision {
     _ = ctx;
     std.debug.print("  [Continuation] Item continuation called\n", .{});
 
@@ -146,7 +146,7 @@ pub fn step_create_todo(ctx: *zerver.CtxBase) !zerver.Decision {
     } };
 }
 
-fn continuation_create(ctx: *anyopaque) !zerver.Decision {
+fn continuation_create(ctx: *zerver.CtxBase) !zerver.Decision {
     _ = ctx;
     std.debug.print("  [Continuation] Create continuation called\n", .{});
 
@@ -187,7 +187,7 @@ pub fn step_update_todo(ctx: *zerver.CtxBase) !zerver.Decision {
     } };
 }
 
-fn continuation_update(ctx: *anyopaque) !zerver.Decision {
+fn continuation_update(ctx: *zerver.CtxBase) !zerver.Decision {
     _ = ctx;
     std.debug.print("  [Continuation] Update continuation called\n", .{});
 
@@ -226,9 +226,8 @@ pub fn step_delete_todo(ctx: *zerver.CtxBase) !zerver.Decision {
     } };
 }
 
-fn continuation_delete(ctx: *anyopaque) !zerver.Decision {
-    const base: *zerver.CtxBase = @ptrCast(@alignCast(ctx));
-    _ = base;
+fn continuation_delete(ctx: *zerver.CtxBase) !zerver.Decision {
+    _ = ctx;
     std.debug.print("  [Continuation] Todo deleted\n", .{});
 
     return zerver.done(.{

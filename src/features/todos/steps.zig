@@ -96,7 +96,7 @@ pub fn step_load_from_db(ctx: *zerver.CtxBase) !zerver.Decision {
     } };
 }
 
-fn continuation_list(ctx: *anyopaque) !zerver.Decision {
+fn continuation_list(ctx: *zerver.CtxBase) !zerver.Decision {
     _ = ctx;
     slog.debug("List continuation called", &.{
         slog.Attr.string("continuation", "list"),
@@ -109,7 +109,7 @@ fn continuation_list(ctx: *anyopaque) !zerver.Decision {
     });
 }
 
-fn continuation_get(ctx: *anyopaque) !zerver.Decision {
+fn continuation_get(ctx: *zerver.CtxBase) !zerver.Decision {
     _ = ctx;
     slog.debug("Item continuation called", &.{
         slog.Attr.string("continuation", "get"),
@@ -149,7 +149,7 @@ pub fn step_create_todo(ctx: *zerver.CtxBase) !zerver.Decision {
     } };
 }
 
-fn continuation_create(ctx: *anyopaque) !zerver.Decision {
+fn continuation_create(ctx: *zerver.CtxBase) !zerver.Decision {
     _ = ctx;
     slog.debug("Create continuation called", &.{
         slog.Attr.string("continuation", "create"),
@@ -194,7 +194,7 @@ pub fn step_update_todo(ctx: *zerver.CtxBase) !zerver.Decision {
     } };
 }
 
-fn continuation_update(ctx: *anyopaque) !zerver.Decision {
+fn continuation_update(ctx: *zerver.CtxBase) !zerver.Decision {
     _ = ctx;
     slog.debug("Update continuation called", &.{
         slog.Attr.string("continuation", "update"),
@@ -237,9 +237,8 @@ pub fn step_delete_todo(ctx: *zerver.CtxBase) !zerver.Decision {
     } };
 }
 
-fn continuation_delete(ctx: *anyopaque) !zerver.Decision {
-    const base: *zerver.CtxBase = @ptrCast(@alignCast(ctx));
-    _ = base;
+fn continuation_delete(ctx: *zerver.CtxBase) !zerver.Decision {
+    _ = ctx;
     slog.debug("Todo deleted", &.{
         slog.Attr.string("continuation", "delete"),
         slog.Attr.string("feature", "todos"),
