@@ -208,6 +208,7 @@ fn isRenderable(comptime T: type) bool {
 }
 
 inline fn writeEscaped(writer: anytype, value: []const u8) !void {
+    @setEvalBranchQuota(100_000);
     var start: usize = 0;
     for (value, 0..) |c, idx| {
         const replacement = switch (c) {

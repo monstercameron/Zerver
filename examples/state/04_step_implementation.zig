@@ -4,6 +4,7 @@
 const std = @import("std");
 const zerver = @import("zerver");
 const slots_mod = @import("./slots_example.zig");
+const slog = @import("src/zerver/observability/slog.zig");
 
 // Import the slot definitions from your app
 pub const Slot = slots_mod.Slot;
@@ -25,7 +26,7 @@ pub fn step_extract_todo_id(ctx: *zerver.CtxBase) !zerver.Decision {
     // In the full implementation:
     // try ctx.put(.TodoId, todo_id);
 
-    std.debug.print("Extracted todo ID: {s}\n", .{todo_id});
+    slog.infof("Extracted todo ID: {s}", .{todo_id});
     return .Continue;
 }
 
@@ -42,7 +43,7 @@ pub fn step_load_from_db(ctx: *zerver.CtxBase) !zerver.Decision {
     // 2. Create a DbGet effect
     // 3. Return .Need with the effect and resume function
 
-    std.debug.print("Would load todo from database\n", .{});
+    slog.infof("Would load todo from database", .{});
     return .Continue;
 }
 
@@ -55,7 +56,7 @@ pub fn step_check_permission(ctx: *zerver.CtxBase) !zerver.Decision {
 
     // Would validate: user can only see their own todos
 
-    std.debug.print("Would check permissions\n", .{});
+    slog.infof("Would check permissions", .{});
     return .Continue;
 }
 
@@ -75,6 +76,6 @@ pub fn step_render_response(ctx: *zerver.CtxBase) !zerver.Decision {
 }
 
 pub fn main() void {
-    std.debug.print("This file demonstrates the slot pattern.\n", .{});
-    std.debug.print("To use: Import slots_example.zig and define steps using the Slot enum.\n", .{});
+    slog.infof("This file demonstrates the slot pattern.", .{});
+    slog.infof("To use: Import slots_example.zig and define steps using the Slot enum.", .{});
 }

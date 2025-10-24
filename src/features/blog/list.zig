@@ -220,18 +220,18 @@ fn continuation_render_blog_list_page(ctx: *zerver.CtxBase) !zerver.Decision {
         const head_el = html_lib.head(Attrs{}, .{
             html_lib.meta(Attrs{ .charset = "UTF-8" }, .{}),
             html_lib.meta(Attrs{ .name = "viewport", .content = "width=device-width, initial-scale=1.0" }, .{}),
-            html_lib.title(Attrs{}, .{ html_lib.text("Earl Cameron | Blog") }),
+            html_lib.title(Attrs{}, .{html_lib.text("Earl Cameron | Blog")}),
             html_lib.script(Attrs{ .src = "https://cdn.tailwindcss.com" }, .{}),
             html_lib.script(Attrs{ .src = "https://cdn.jsdelivr.net/npm/htmx.org@2.0.7/dist/htmx.min.js" }, .{}),
         });
 
         const body_el = html_lib.body(Attrs{ .class = "bg-gradient-to-b from-sky-50 to-sky-100 text-sky-800" }, .{
             BlogNavbar.init(.{ .hx_target = "#main-content" }),
-            html_lib.div(Attrs{ .id = "main-content" }, .{ content }),
+            html_lib.div(Attrs{ .id = "main-content" }, .{content}),
             BlogFooter.init(.List),
         });
 
-    try html_lib.writeDoctype(writer);
+        try html_lib.writeDoctype(writer);
         try html_lib.html(Attrs{ .lang = "en" }, .{ head_el, body_el }).render(writer);
     } else {
         try content.render(writer);
@@ -247,9 +247,6 @@ fn continuation_render_blog_list_page(ctx: *zerver.CtxBase) !zerver.Decision {
             .value = "text/html; charset=utf-8",
         }},
     });
-}
-}
-}
 }
 
 pub fn step_load_blog_post_cards(ctx: *zerver.CtxBase) !zerver.Decision {
@@ -415,13 +412,13 @@ fn continuation_render_blog_post_page(ctx: *zerver.CtxBase) !zerver.Decision {
         .image_url = null,
     });
 
-    const main_content = html_lib.div(Attrs{ .id = "main-content", .class = "pt-24" }, .{ post_component });
+    const main_content = html_lib.div(Attrs{ .id = "main-content", .class = "pt-24" }, .{post_component});
 
     if (!is_htmx) {
         const head_el = html_lib.head(Attrs{}, .{
             html_lib.meta(Attrs{ .charset = "UTF-8" }, .{}),
             html_lib.meta(Attrs{ .name = "viewport", .content = "width=device-width, initial-scale=1.0" }, .{}),
-            html_lib.title(Attrs{}, .{ html_lib.textDynamic(post.title) }),
+            html_lib.title(Attrs{}, .{html_lib.textDynamic(post.title)}),
             html_lib.script(Attrs{ .src = "https://cdn.tailwindcss.com" }, .{}),
             html_lib.script(Attrs{ .src = "https://cdn.jsdelivr.net/npm/htmx.org@2.0.7/dist/htmx.min.js" }, .{}),
         });
@@ -432,7 +429,7 @@ fn continuation_render_blog_post_page(ctx: *zerver.CtxBase) !zerver.Decision {
             BlogFooter.init(.Post),
         });
 
-    try html_lib.writeDoctype(writer);
+        try html_lib.writeDoctype(writer);
         try html_lib.html(Attrs{ .lang = "en" }, .{ head_el, body_el }).render(writer);
     } else if (is_body_target) {
         try BlogNavbar.init(.{ .hx_target = "body" }).render(writer);

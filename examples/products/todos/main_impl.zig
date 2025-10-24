@@ -12,13 +12,13 @@
 ///
 /// Simulated effects with realistic latencies demonstrate how Phase 2
 /// will handle actual async operations (DB, HTTP, etc.)
-// TODO: Logging - Replace std.debug.print with slog for consistent structured logging.
 const std = @import("std");
 const zerver = @import("../../../src/zerver/root.zig");
 const domain = @import("core/domain.zig");
 const middleware = @import("common/middleware.zig");
 const queries = @import("queries/operations.zig");
 const mutations = @import("mutations/operations.zig");
+const slog = @import("../../../src/zerver/observability/slog.zig");
 
 // ─────────────────────────────────────────────────────────────────────────────
 // ERROR HANDLER
@@ -51,7 +51,7 @@ fn error_handler(ctx: *zerver.CtxBase) !zerver.Decision {
         .CompletedTodosImmutable => 409,
     };
 
-    std.debug.print("[error] {s} - {s} on {s} -> {d}\n", .{
+    slog.errf("[error] {s} - {s} on {s} -> {d}", .{
         @tagName(error_ctx.error_code),
         error_ctx.message,
         error_ctx.resource,
@@ -88,23 +88,23 @@ pub fn main() !void {
     const allocator = gpa.allocator();
 
     // Display banner
-    std.debug.print("\n", .{});
-    std.debug.print("╔══════════════════════════════════════════════════════╗\n", .{});
-    std.debug.print("║        Todos Product: Advanced Example              ║\n", .{});
-    std.debug.print("║                                                      ║\n", .{});
-    std.debug.print("║  Professional Structure:                             ║\n", .{});
-    std.debug.print("║    core/      Domain models & business rules         ║\n", .{});
-    std.debug.print("║    queries/   Read-only operations                   ║\n", .{});
-    std.debug.print("║    mutations/ Write operations                       ║\n", .{});
-    std.debug.print("║    common/    Shared middleware & utilities          ║\n", .{});
-    std.debug.print("║                                                      ║\n", .{});
-    std.debug.print("║  Features:                                            ║\n", .{});
-    std.debug.print("║    • Domain-Driven Design (DDD) structure            ║\n", .{});
-    std.debug.print("║    • CQRS pattern for read/write separation          ║\n", .{});
-    std.debug.print("║    • Auth & rate limiting middleware                 ║\n", .{});
-    std.debug.print("║    • Realistic DB operation latencies                ║\n", .{});
-    std.debug.print("║    • Simulated async effects ready for Phase 2       ║\n", .{});
-    std.debug.print("╚══════════════════════════════════════════════════════╝\n\n", .{});
+    slog.infof("", .{});
+    slog.infof("╔══════════════════════════════════════════════════════╗", .{});
+    slog.infof("║        Todos Product: Advanced Example              ║", .{});
+    slog.infof("║                                                      ║", .{});
+    slog.infof("║  Professional Structure:                             ║", .{});
+    slog.infof("║    core/      Domain models & business rules         ║", .{});
+    slog.infof("║    queries/   Read-only operations                   ║", .{});
+    slog.infof("║    mutations/ Write operations                       ║", .{});
+    slog.infof("║    common/    Shared middleware & utilities          ║", .{});
+    slog.infof("║                                                      ║", .{});
+    slog.infof("║  Features:                                            ║", .{});
+    slog.infof("║    • Domain-Driven Design (DDD) structure            ║", .{});
+    slog.infof("║    • CQRS pattern for read/write separation          ║", .{});
+    slog.infof("║    • Auth & rate limiting middleware                 ║", .{});
+    slog.infof("║    • Realistic DB operation latencies                ║", .{});
+    slog.infof("║    • Simulated async effects ready for Phase 2       ║", .{});
+    slog.infof("╚══════════════════════════════════════════════════════╝\n", .{});
 
     // Initialize server
     const config = zerver.Config{
@@ -142,7 +142,7 @@ pub fn main() !void {
     // ROUTE DEFINITIONS
     // ─────────────────────────────────────────────────────────────────────────
 
-    std.debug.print("Registering routes...\n\n", .{});
+    slog.infof("Registering routes...\n", .{});
 
     // ── Read Operations (GET)
 
@@ -200,91 +200,91 @@ pub fn main() !void {
     // ROUTE SUMMARY
     // ─────────────────────────────────────────────────────────────────────────
 
-    std.debug.print("╔══════════════════════════════════════════════════════╗\n", .{});
-    std.debug.print("║              Registered Routes                       ║\n", .{});
-    std.debug.print("╠══════════════════════════════════════════════════════╣\n", .{});
-    std.debug.print("║ QUERIES (Read-Only):                                 ║\n", .{});
-    std.debug.print("║   GET  /todos              - List all todos         ║\n", .{});
-    std.debug.print("║   GET  /todos/:id          - Get todo by ID         ║\n", .{});
-    std.debug.print("║                                                      ║\n", .{});
-    std.debug.print("║ MUTATIONS (Write):                                   ║\n", .{});
-    std.debug.print("║   POST   /todos            - Create new todo        ║\n", .{});
-    std.debug.print("║   PATCH  /todos/:id        - Update todo            ║\n", .{});
-    std.debug.print("║   DELETE /todos/:id        - Delete todo            ║\n", .{});
-    std.debug.print("╚══════════════════════════════════════════════════════╝\n\n", .{});
+    slog.infof("╔══════════════════════════════════════════════════════╗", .{});
+    slog.infof("║              Registered Routes                       ║", .{});
+    slog.infof("╠══════════════════════════════════════════════════════╣", .{});
+    slog.infof("║ QUERIES (Read-Only):                                 ║", .{});
+    slog.infof("║   GET  /todos              - List all todos         ║", .{});
+    slog.infof("║   GET  /todos/:id          - Get todo by ID         ║", .{});
+    slog.infof("║                                                      ║", .{});
+    slog.infof("║ MUTATIONS (Write):                                   ║", .{});
+    slog.infof("║   POST   /todos            - Create new todo        ║", .{});
+    slog.infof("║   PATCH  /todos/:id        - Update todo            ║", .{});
+    slog.infof("║   DELETE /todos/:id        - Delete todo            ║", .{});
+    slog.infof("╚══════════════════════════════════════════════════════╝\n", .{});
 
     // ─────────────────────────────────────────────────────────────────────────
     // TEST REQUESTS
     // ─────────────────────────────────────────────────────────────────────────
 
-    std.debug.print("Running test requests...\n\n", .{});
+    slog.infof("Running test requests...\n", .{});
 
     // Test 1: List todos
-    std.debug.print("╔══════════════════════════════════════════════════════╗\n", .{});
-    std.debug.print("║ TEST 1: GET /todos - List all todos                 ║\n", .{});
-    std.debug.print("╚══════════════════════════════════════════════════════╝\n", .{});
+    slog.infof("╔══════════════════════════════════════════════════════╗", .{});
+    slog.infof("║ TEST 1: GET /todos - List all todos                 ║", .{});
+    slog.infof("╚══════════════════════════════════════════════════════╝", .{});
     const test1 = try server.handleRequest(
         "GET /todos HTTP/1.1\r\nAuthorization: Bearer test_user_123\r\nHost: localhost:8081\r\n\r\n",
         allocator,
     );
-    std.debug.print("Status: {d}\nBody: {s}\n\n", .{ 200, test1 });
+    slog.infof("Status: {d}\nBody: {s}\n", .{ 200, test1 });
 
     // Test 2: Get specific todo
-    std.debug.print("╔══════════════════════════════════════════════════════╗\n", .{});
-    std.debug.print("║ TEST 2: GET /todos/abc123 - Get specific todo       ║\n", .{});
-    std.debug.print("╚══════════════════════════════════════════════════════╝\n", .{});
+    slog.infof("╔══════════════════════════════════════════════════════╗", .{});
+    slog.infof("║ TEST 2: GET /todos/abc123 - Get specific todo       ║", .{});
+    slog.infof("╚══════════════════════════════════════════════════════╝", .{});
     const test2 = try server.handleRequest(
         "GET /todos/abc123 HTTP/1.1\r\nAuthorization: Bearer test_user_123\r\nHost: localhost:8081\r\n\r\n",
         allocator,
     );
-    std.debug.print("Status: {d}\nBody: {s}\n\n", .{ 200, test2 });
+    slog.infof("Status: {d}\nBody: {s}\n", .{ 200, test2 });
 
     // Test 3: Create todo
-    std.debug.print("╔══════════════════════════════════════════════════════╗\n", .{});
-    std.debug.print("║ TEST 3: POST /todos - Create new todo               ║\n", .{});
-    std.debug.print("╚══════════════════════════════════════════════════════╝\n", .{});
+    slog.infof("╔══════════════════════════════════════════════════════╗", .{});
+    slog.infof("║ TEST 3: POST /todos - Create new todo               ║", .{});
+    slog.infof("╚══════════════════════════════════════════════════════╝", .{});
     const test3 = try server.handleRequest(
         "POST /todos HTTP/1.1\r\nAuthorization: Bearer test_user_123\r\nContent-Length: 0\r\nHost: localhost:8081\r\n\r\n",
         allocator,
     );
-    std.debug.print("Status: {d}\nBody: {s}\n\n", .{ 201, test3 });
+    slog.infof("Status: {d}\nBody: {s}\n", .{ 201, test3 });
 
     // Test 4: Update todo
-    std.debug.print("╔══════════════════════════════════════════════════════╗\n", .{});
-    std.debug.print("║ TEST 4: PATCH /todos/abc123 - Update todo           ║\n", .{});
-    std.debug.print("╚══════════════════════════════════════════════════════╝\n", .{});
+    slog.infof("╔══════════════════════════════════════════════════════╗", .{});
+    slog.infof("║ TEST 4: PATCH /todos/abc123 - Update todo           ║", .{});
+    slog.infof("╚══════════════════════════════════════════════════════╝", .{});
     const test4 = try server.handleRequest(
         "PATCH /todos/abc123 HTTP/1.1\r\nAuthorization: Bearer test_user_123\r\nContent-Length: 0\r\nHost: localhost:8081\r\n\r\n",
         allocator,
     );
-    std.debug.print("Status: {d}\nBody: {s}\n\n", .{ 200, test4 });
+    slog.infof("Status: {d}\nBody: {s}\n", .{ 200, test4 });
 
     // Test 5: Delete todo
-    std.debug.print("╔══════════════════════════════════════════════════════╗\n", .{});
-    std.debug.print("║ TEST 5: DELETE /todos/abc123 - Delete todo          ║\n", .{});
-    std.debug.print("╚══════════════════════════════════════════════════════╝\n", .{});
+    slog.infof("╔══════════════════════════════════════════════════════╗", .{});
+    slog.infof("║ TEST 5: DELETE /todos/abc123 - Delete todo          ║", .{});
+    slog.infof("╚══════════════════════════════════════════════════════╝", .{});
     const test5 = try server.handleRequest(
         "DELETE /todos/abc123 HTTP/1.1\r\nAuthorization: Bearer test_user_123\r\nHost: localhost:8081\r\n\r\n",
         allocator,
     );
-    std.debug.print("Status: {d}\nBody: {s}\n\n", .{ 204, test5 });
+    slog.infof("Status: {d}\nBody: {s}\n", .{ 204, test5 });
 
     // Summary
-    std.debug.print("\n╔══════════════════════════════════════════════════════╗\n", .{});
-    std.debug.print("║           Example Complete                           ║\n", .{});
-    std.debug.print("║                                                      ║\n", .{});
-    std.debug.print("║  ✓ Professional folder-based organization           ║\n", .{});
-    std.debug.print("║  ✓ Domain-Driven Design patterns                    ║\n", .{});
-    std.debug.print("║  ✓ CQRS pattern implementation                      ║\n", .{});
-    std.debug.print("║  ✓ Auth & rate limiting                             ║\n", .{});
-    std.debug.print("║  ✓ Realistic operation latencies                    ║\n", .{});
-    std.debug.print("║  ✓ Ready for Phase 2 async/await                    ║\n", .{});
-    std.debug.print("║                                                      ║\n", .{});
-    std.debug.print("║  Structure: examples/products/todos/                ║\n", .{});
-    std.debug.print("║    • core/       - Domain models                    ║\n", .{});
-    std.debug.print("║    • queries/    - Read operations                  ║\n", .{});
-    std.debug.print("║    • mutations/  - Write operations                 ║\n", .{});
-    std.debug.print("║    • common/     - Middleware & utilities           ║\n", .{});
-    std.debug.print("║    • main.zig    - Server initialization            ║\n", .{});
-    std.debug.print("╚══════════════════════════════════════════════════════╝\n", .{});
+    slog.infof("\n╔══════════════════════════════════════════════════════╗", .{});
+    slog.infof("║           Example Complete                           ║", .{});
+    slog.infof("║                                                      ║", .{});
+    slog.infof("║  ✓ Professional folder-based organization           ║", .{});
+    slog.infof("║  ✓ Domain-Driven Design patterns                    ║", .{});
+    slog.infof("║  ✓ CQRS pattern implementation                      ║", .{});
+    slog.infof("║  ✓ Auth & rate limiting                             ║", .{});
+    slog.infof("║  ✓ Realistic operation latencies                    ║", .{});
+    slog.infof("║  ✓ Ready for Phase 2 async/await                    ║", .{});
+    slog.infof("║                                                      ║", .{});
+    slog.infof("║  Structure: examples/products/todos/                ║", .{});
+    slog.infof("║    • core/       - Domain models                    ║", .{});
+    slog.infof("║    • queries/    - Read operations                  ║", .{});
+    slog.infof("║    • mutations/  - Write operations                 ║", .{});
+    slog.infof("║    • common/     - Middleware & utilities           ║", .{});
+    slog.infof("║    • main.zig    - Server initialization            ║", .{});
+    slog.infof("╚══════════════════════════════════════════════════════╝", .{});
 }

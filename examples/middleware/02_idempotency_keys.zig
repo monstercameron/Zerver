@@ -1,7 +1,7 @@
 /// This example demonstrates how to implement idempotency keys in Zerver.
-// TODO: Logging - Replace std.debug.print with slog for consistent structured logging.
 const std = @import("std");
 const zerver = @import("../src/zerver/root.zig");
+const slog = @import("../src/zerver/observability/slog.zig");
 
 pub const IdempotencyHelper = struct {
     /// Generate a new idempotency key for this request
@@ -137,25 +137,25 @@ pub fn testIdempotencyHelpers() !void {
     // Test key generation
     const key1 = try IdempotencyHelper.generate(allocator);
     defer allocator.free(key1);
-    std.debug.print("Generated key: {s}\n", .{key1});
+    slog.infof("Generated key: {s}", .{key1});
 
     // Test validation
     const valid = IdempotencyHelper.isValid(key1);
-    std.debug.print("Key valid: {}\n", .{valid});
+    slog.infof("Key valid: {}", .{valid});
 
     // Test hashing
     const h = IdempotencyHelper.hash(key1);
-    std.debug.print("Key hash: {}\n", .{h});
+    slog.infof("Key hash: {}", .{h});
 
     // Test cache key generation
     const cache_key = try IdempotencyHelper.cacheKey(allocator, "create_todo", key1);
     defer allocator.free(cache_key);
-    std.debug.print("Cache key: {s}\n", .{cache_key});
+    slog.infof("Cache key: {s}", .{cache_key});
 
     // Test invalid keys
     const invalid_key = "";
     const is_valid = IdempotencyHelper.isValid(invalid_key);
-    std.debug.print("Invalid key valid: {}\n", .{is_valid});
+    slog.infof("Invalid key valid: {}", .{is_valid});
 }
 
 // ============================================================================

@@ -5,10 +5,10 @@
 /// - Rate limiting
 /// - Request/response logging
 /// - Operation latency simulation
-// TODO: Logging - Replace std.debug.print with slog for consistent structured logging.
 const std = @import("std");
 const zerver = @import("zerver");
 const domain = @import("../core/domain.zig");
+const slog = @import("src/zerver/observability/slog.zig");
 
 // Slot IDs for request context storage (typed state)
 pub const Slot = enum(u32) {
@@ -23,7 +23,7 @@ pub const Slot = enum(u32) {
 /// Middleware: Authenticate request with bearer token
 pub fn mw_authenticate(ctx: *zerver.CtxBase) !zerver.Decision {
     const auth_header = ctx.header("authorization") orelse {
-        std.debug.print("[auth] ✗ Missing authorization header\n", .{});
+        slog.warnf("[auth] ✗ Missing authorization header", .{});
         return zerver.fail(domain.makeError(
             .Unauthorized,
             "Missing authorization header",
@@ -33,7 +33,7 @@ pub fn mw_authenticate(ctx: *zerver.CtxBase) !zerver.Decision {
 
     // Validate bearer token format
     if (!std.mem.startsWith(u8, auth_header, "Bearer ")) {
-        std.debug.print("[auth] ✗ Invalid token format\n", .{});
+        slog.warnf("[auth] ✗ Invalid token format", .{});
         return zerver.fail(domain.makeError(
             .Unauthorized,
             "Invalid token format",
@@ -46,7 +46,7 @@ pub fn mw_authenticate(ctx: *zerver.CtxBase) !zerver.Decision {
     // Simulate token validation latency
     const latency_config = domain.OperationLatency{ .min_ms = 10, .max_ms = 50 };
     const latency = latency_config.random();
-    std.debug.print("[auth] Validating token... ({d}ms)\n", .{latency});
+    slog.infof("[auth] Validating token... ({d}ms)", .{latency});
     std.time.sleep(latency * 1_000_000);
 
     // Store token for downstream use
@@ -56,7 +56,7 @@ pub fn mw_authenticate(ctx: *zerver.CtxBase) !zerver.Decision {
     const user_id = token[0..std.math.min(token.len, 10)];
     try ctx.slotPutString(@intFromEnum(Slot.user_id), user_id);
 
-    std.debug.print("[auth] ✓ User {s} authenticated\n", .{user_id});
+    slog.infof("[auth] ✓ User {s} authenticated", .{user_id});
     return .Continue;
 }
 
@@ -69,7 +69,7 @@ pub fn mw_rate_limit(ctx: *zerver.CtxBase) !zerver.Decision {
 
     // BTS: In real implementation, check Redis counter
     // For MVP, accept all requests
-    std.debug.print("[rate_limit] ✓ {s} - OK\n", .{user_id});
+    slog.infof("[rate_limit] ✓ {s} - OK", .{user_id});
     return .Continue;
 }
 
@@ -82,13 +82,13 @@ pub fn mw_operation_latency(ctx: *zerver.CtxBase) !zerver.Decision {
     const latency_str = std.fmt.bufPrint(&latency_buf, "{d}", .{latency}) catch unreachable;
     try ctx.slotPutString(@intFromEnum(Slot.operation_latency), latency_str);
 
-    std.debug.print("[latency] Baseline: {d}ms\n", .{latency});
+    slog.infof("[latency] Baseline: {d}ms", .{latency});
     return .Continue;
 }
 
 /// Middleware: Request logging
 pub fn mw_logging(ctx: *zerver.CtxBase) !zerver.Decision {
-    std.debug.print("\n[request] → {s} {s}\n", .{ ctx.method(), ctx.path() });
+    slog.infof("\n[request] → {s} {s}", .{ ctx.method(), ctx.path() });
     return .Continue;
 }
 

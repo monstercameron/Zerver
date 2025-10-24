@@ -2,6 +2,7 @@
 /// Tests the full request/response cycle with real HTTP
 const std = @import("std");
 const builtin = @import("builtin");
+const slog = @import("src/zerver/observability/slog.zig");
 
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
@@ -10,9 +11,9 @@ pub fn main() !void {
 
     const root = @import("src/zerver/root.zig");
 
-    std.debug.print("\n╔════════════════════════════════════════════════════╗\n", .{});
-    std.debug.print("║    Zerver MVP - Server Integration Test Suite     ║\n", .{});
-    std.debug.print("╚════════════════════════════════════════════════════╝\n\n", .{});
+    slog.infof("\n╔════════════════════════════════════════════════════╗", .{});
+    slog.infof("║    Zerver MVP - Server Integration Test Suite     ║", .{});
+    slog.infof("╚════════════════════════════════════════════════════╝\n", .{});
 
     // Effect handler
     const defaultEffectHandler = struct {
@@ -61,69 +62,69 @@ pub fn main() !void {
         .steps = &.{},
     });
 
-    std.debug.print("[INFO] Server initialized with 3 routes\n", .{});
+    slog.infof("[INFO] Server initialized with 3 routes", .{});
 
     // Test 1: Root path
-    std.debug.print("\n[TEST 1] GET / (root path)\n", .{});
+    slog.infof("\n[TEST 1] GET / (root path)", .{});
     const req1 = "GET / HTTP/1.1\r\nHost: localhost\r\n\r\n";
     const resp1 = try srv.handleRequest(req1);
     const len1 = if (resp1.len > 100) 100 else resp1.len;
-    std.debug.print("Response: {s}\n", .{resp1[0..len1]});
+    slog.infof("Response: {s}", .{resp1[0..len1]});
     if (std.mem.containsAtLeast(u8, resp1, 1, "200")) {
-        std.debug.print("[PASS] Returned 200 status\n", .{});
+        slog.infof("[PASS] Returned 200 status", .{});
     } else {
-        std.debug.print("[FAIL] Expected 200 status\n", .{});
+        slog.warnf("[FAIL] Expected 200 status", .{});
     }
 
     // Test 2: /hello endpoint
-    std.debug.print("\n[TEST 2] GET /hello (simple endpoint)\n", .{});
+    slog.infof("\n[TEST 2] GET /hello (simple endpoint)", .{});
     const req2 = "GET /hello HTTP/1.1\r\nHost: localhost\r\n\r\n";
     const resp2 = try srv.handleRequest(req2);
     const len2 = if (resp2.len > 100) 100 else resp2.len;
-    std.debug.print("Response: {s}\n", .{resp2[0..len2]});
+    slog.infof("Response: {s}", .{resp2[0..len2]});
     if (std.mem.containsAtLeast(u8, resp2, 1, "200")) {
-        std.debug.print("[PASS] Returned 200 status\n", .{});
+        slog.infof("[PASS] Returned 200 status", .{});
     } else {
-        std.debug.print("[FAIL] Expected 200 status\n", .{});
+        slog.warnf("[FAIL] Expected 200 status", .{});
     }
 
     // Test 3: Parameterized route
-    std.debug.print("\n[TEST 3] GET /todos/42 (parameterized route)\n", .{});
+    slog.infof("\n[TEST 3] GET /todos/42 (parameterized route)", .{});
     const req3 = "GET /todos/42 HTTP/1.1\r\nHost: localhost\r\n\r\n";
     const resp3 = try srv.handleRequest(req3);
     const len3 = if (resp3.len > 100) 100 else resp3.len;
-    std.debug.print("Response: {s}\n", .{resp3[0..len3]});
+    slog.infof("Response: {s}", .{resp3[0..len3]});
     if (std.mem.containsAtLeast(u8, resp3, 1, "200")) {
-        std.debug.print("[PASS] Returned 200 status\n", .{});
+        slog.infof("[PASS] Returned 200 status", .{});
     } else {
-        std.debug.print("[FAIL] Expected 200 status\n", .{});
+        slog.warnf("[FAIL] Expected 200 status", .{});
     }
 
     // Test 4: 404 not found
-    std.debug.print("\n[TEST 4] GET /notfound (404 not found)\n", .{});
+    slog.infof("\n[TEST 4] GET /notfound (404 not found)", .{});
     const req4 = "GET /notfound HTTP/1.1\r\nHost: localhost\r\n\r\n";
     const resp4 = try srv.handleRequest(req4);
     const len4 = if (resp4.len > 100) 100 else resp4.len;
-    std.debug.print("Response: {s}\n", .{resp4[0..len4]});
+    slog.infof("Response: {s}", .{resp4[0..len4]});
     if (std.mem.containsAtLeast(u8, resp4, 1, "404")) {
-        std.debug.print("[PASS] Returned 404 status\n", .{});
+        slog.infof("[PASS] Returned 404 status", .{});
     } else {
-        std.debug.print("[FAIL] Expected 404 status\n", .{});
+        slog.warnf("[FAIL] Expected 404 status", .{});
     }
 
     // Test 5: Headers and parameters
-    std.debug.print("\n[TEST 5] GET /todos/99 with headers (full request)\n", .{});
+    slog.infof("\n[TEST 5] GET /todos/99 with headers (full request)", .{});
     const req5 = "GET /todos/99 HTTP/1.1\r\nHost: localhost\r\nAuthorization: Bearer token123\r\nContent-Type: application/json\r\n\r\n";
     const resp5 = try srv.handleRequest(req5);
     const len5 = if (resp5.len > 100) 100 else resp5.len;
-    std.debug.print("Response: {s}\n", .{resp5[0..len5]});
+    slog.infof("Response: {s}", .{resp5[0..len5]});
     if (std.mem.containsAtLeast(u8, resp5, 1, "200")) {
-        std.debug.print("[PASS] Handled request with headers\n", .{});
+        slog.infof("[PASS] Handled request with headers", .{});
     } else {
-        std.debug.print("[FAIL] Expected 200 status\n", .{});
+        slog.warnf("[FAIL] Expected 200 status", .{});
     }
 
-    std.debug.print("\n╔════════════════════════════════════════════════════╗\n", .{});
-    std.debug.print("║         ✓ SERVER INTEGRATION TESTS COMPLETE       ║\n", .{});
-    std.debug.print("╚════════════════════════════════════════════════════╝\n\n", .{});
+    slog.infof("\n╔════════════════════════════════════════════════════╗", .{});
+    slog.infof("║         ✓ SERVER INTEGRATION TESTS COMPLETE       ║", .{});
+    slog.infof("╚════════════════════════════════════════════════════╝\n", .{});
 }

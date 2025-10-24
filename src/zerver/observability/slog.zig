@@ -392,6 +392,34 @@ pub fn err(msg: []const u8, attrs: []const Attr) void {
     default().err(msg, attrs);
 }
 
+fn logf(level: Level, comptime fmt: []const u8, args: anytype) void {
+    const msg = std.fmt.allocPrint(std.heap.page_allocator, fmt, args) catch return;
+    defer std.heap.page_allocator.free(msg);
+
+    switch (level) {
+        .Debug => default().debug(msg, &.{}),
+        .Info => default().info(msg, &.{}),
+        .Warn => default().warn(msg, &.{}),
+        .Error => default().err(msg, &.{}),
+    }
+}
+
+pub fn debugf(comptime fmt: []const u8, args: anytype) void {
+    logf(.Debug, fmt, args);
+}
+
+pub fn infof(comptime fmt: []const u8, args: anytype) void {
+    logf(.Info, fmt, args);
+}
+
+pub fn warnf(comptime fmt: []const u8, args: anytype) void {
+    logf(.Warn, fmt, args);
+}
+
+pub fn errf(comptime fmt: []const u8, args: anytype) void {
+    logf(.Error, fmt, args);
+}
+
 /// Test the logging library
 pub fn testLogger() !void {
     var buf = std.ArrayList(u8).init(std.testing.allocator);
@@ -428,6 +456,7 @@ pub fn testLogger() !void {
 
 /// Simple debug writer for console output
 pub fn debugWriter(bytes: []const u8) anyerror!usize {
-    std.debug.print("{s}", .{bytes});
+    var stdout = std.fs.File.stdout();
+    try stdout.writeAll(bytes);
     return bytes.len;
 }

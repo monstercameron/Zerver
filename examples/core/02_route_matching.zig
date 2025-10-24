@@ -1,7 +1,7 @@
 /// This example demonstrates Zerver's routing capabilities, including path parameters and route priority.
-// TODO: Logging - Replace std.debug.print with slog for consistent structured logging.
 const std = @import("std");
 const zerver = @import("zerver");
+const slog = @import("src/zerver/observability/slog.zig");
 
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
@@ -23,8 +23,8 @@ pub fn main() !void {
     try router.addRoute(.GET, "/todos/:id", get_todo_spec);
     try router.addRoute(.GET, "/todos/:id/items/:item_id", get_todo_item_spec);
 
-    std.debug.print("Router Example\n", .{});
-    std.debug.print("==============\n\n", .{});
+    slog.infof("Router Example", .{});
+    slog.infof("==============", .{});
 
     // Create an arena for matching
     var arena = std.heap.ArenaAllocator.init(allocator);
@@ -47,39 +47,46 @@ pub fn main() !void {
     for (test_cases) |tc| {
         if (try router.match(tc.method, tc.path, arena.allocator())) |m| {
             if (tc.should_match) {
-                std.debug.print("✓ {s} {s}", .{ @tagName(tc.method), tc.path });
+                var line = std.ArrayList(u8).init(std.heap.page_allocator);
+                defer line.deinit();
 
-                // Print extracted params
+                var writer = line.writer(std.heap.page_allocator);
+                try writer.print("✓ {s} {s}", .{ @tagName(tc.method), tc.path });
+
                 var iter = m.params.iterator();
                 var first = true;
                 while (iter.next()) |entry| {
                     if (first) {
-                        std.debug.print(" [params: ", .{});
+                        try writer.writeAll(" [params: ");
                         first = false;
                     } else {
-                        std.debug.print(", ", .{});
+                        try writer.writeAll(", ");
                     }
-                    std.debug.print("{s}={s}", .{ entry.key_ptr.*, entry.value_ptr.* });
+                    try writer.print("{s}={s}", .{ entry.key_ptr.*, entry.value_ptr.* });
                 }
                 if (!first) {
-                    std.debug.print("]", .{});
+                    try writer.writeByte(']');
                 }
-                std.debug.print("\n", .{});
+
+                slog.infof("{s}", .{line.items});
             } else {
-                std.debug.print("✗ {s} {s} - should NOT match but did!\n", .{ @tagName(tc.method), tc.path });
+                slog.warnf("✗ {s} {s} - should NOT match but did!", .{ @tagName(tc.method), tc.path });
             }
         } else {
             if (tc.should_match) {
-                std.debug.print("✗ {s} {s} - should match but didn't!\n", .{ @tagName(tc.method), tc.path });
+                slog.warnf("✗ {s} {s} - should match but didn't!", .{ @tagName(tc.method), tc.path });
             } else {
-                std.debug.print("✓ {s} {s} - correctly rejected\n", .{ @tagName(tc.method), tc.path });
+                slog.infof("✓ {s} {s} - correctly rejected", .{ @tagName(tc.method), tc.path });
             }
         }
     }
 
-    std.debug.print("\n--- Route Priority ---\n", .{});
-    std.debug.print("Routes are sorted by:\n", .{});
-    std.debug.print("1. Longest literals first (e.g., /todos/items before /todos/:id)\n", .{});
-    std.debug.print("2. Fewest params (e.g., /todos/:id before /todos/:id/items/:item_id)\n", .{});
-    std.debug.print("3. Declaration order (stable sort)\n", .{});
+    slog.infof(
+        \\ 
+        \\--- Route Priority ---
+        \\Routes are sorted by:
+        \\1. Longest literals first (e.g., /todos/items before /todos/:id)
+        \\2. Fewest params (e.g., /todos/:id before /todos/:id/items/:item_id)
+        \\3. Declaration order (stable sort)
+    , .{});
 }

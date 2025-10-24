@@ -1,7 +1,7 @@
 /// This example demonstrates a basic Zerver HTTP server with routing and middleware.
-// TODO: Logging - Replace std.debug.print with slog for consistent structured logging.
 const std = @import("std");
 const zerver = @import("zerver");
+const slog = @import("src/zerver/observability/slog.zig");
 
 /// Mock effect handler
 fn mockEffectHandler(_effect: *const zerver.Effect, _timeout_ms: u32) anyerror!zerver.executor.EffectResult {
@@ -13,7 +13,7 @@ fn mockEffectHandler(_effect: *const zerver.Effect, _timeout_ms: u32) anyerror!z
 /// Example step: list todos
 fn step_list_todos(ctx: *zerver.CtxBase) !zerver.Decision {
     _ = ctx;
-    std.debug.print("    [Step] list_todos\n", .{});
+    slog.infof("    [Step] list_todos", .{});
     return zerver.done(.{
         .status = 200,
         .body = "[{\"id\":1,\"title\":\"Buy milk\"}]",
@@ -25,7 +25,7 @@ fn step_get_todo(ctx: *zerver.CtxBase) !zerver.Decision {
     const todo_id = ctx.param("id") orelse {
         return zerver.fail(zerver.ErrorCode.NotFound, "todo", "");
     };
-    std.debug.print("    [Step] get_todo id={s}\n", .{todo_id});
+    slog.infof("    [Step] get_todo id={s}", .{todo_id});
     return zerver.done(.{
         .status = 200,
         .body = "{\"id\":1,\"title\":\"Buy milk\"}",
@@ -35,7 +35,7 @@ fn step_get_todo(ctx: *zerver.CtxBase) !zerver.Decision {
 /// Example step: create todo
 fn step_create_todo(ctx: *zerver.CtxBase) !zerver.Decision {
     _ = ctx;
-    std.debug.print("    [Step] create_todo\n", .{});
+    slog.infof("    [Step] create_todo", .{});
     return zerver.done(.{
         .status = 201,
         .body = "{\"id\":1,\"title\":\"Buy milk\"}",
@@ -45,7 +45,7 @@ fn step_create_todo(ctx: *zerver.CtxBase) !zerver.Decision {
 /// Global middleware: log all requests
 fn middleware_logging(ctx: *zerver.CtxBase) !zerver.Decision {
     _ = ctx;
-    std.debug.print("  [Middleware] Request received\n", .{});
+    slog.infof("  [Middleware] Request received", .{});
     return zerver.continue_();
 }
 
@@ -63,8 +63,8 @@ pub fn main() !void {
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
-    std.debug.print("Server Example\n", .{});
-    std.debug.print("==============\n\n", .{});
+    slog.infof("Server Example", .{});
+    slog.infof("==============\n", .{});
 
     // Create server
     const config = zerver.Config{
@@ -93,43 +93,43 @@ pub fn main() !void {
         zerver.step("create", step_create_todo),
     } });
 
-    std.debug.print("Routes registered:\n", .{});
-    std.debug.print("  GET  /todos\n", .{});
-    std.debug.print("  GET  /todos/:id\n", .{});
-    std.debug.print("  POST /todos\n\n", .{});
+    slog.infof("Routes registered:", .{});
+    slog.infof("  GET  /todos", .{});
+    slog.infof("  GET  /todos/:id", .{});
+    slog.infof("  POST /todos\n", .{});
 
     // Test request handling
-    std.debug.print("Test 1: GET /todos\n", .{});
+    slog.infof("Test 1: GET /todos", .{});
     const resp1 = try server.handleRequest("GET /todos HTTP/1.1\r\n" ++
         "Host: localhost:8080\r\n" ++
         "\r\n");
-    std.debug.print("Response: {s}\n\n", .{resp1});
+    slog.infof("Response: {s}\n", .{resp1});
 
-    std.debug.print("Test 2: GET /todos/123\n", .{});
+    slog.infof("Test 2: GET /todos/123", .{});
     const resp2 = try server.handleRequest("GET /todos/123 HTTP/1.1\r\n" ++
         "Host: localhost:8080\r\n" ++
         "\r\n");
-    std.debug.print("Response: {s}\n\n", .{resp2});
+    slog.infof("Response: {s}\n", .{resp2});
 
-    std.debug.print("Test 3: POST /todos\n", .{});
+    slog.infof("Test 3: POST /todos", .{});
     const resp3 = try server.handleRequest("POST /todos HTTP/1.1\r\n" ++
         "Host: localhost:8080\r\n" ++
         "Content-Length: 0\r\n" ++
         "\r\n");
-    std.debug.print("Response: {s}\n\n", .{resp3});
+    slog.infof("Response: {s}\n", .{resp3});
 
-    std.debug.print("Test 4: GET /unknown (404)\n", .{});
+    slog.infof("Test 4: GET /unknown (404)", .{});
     const resp4 = try server.handleRequest("GET /unknown HTTP/1.1\r\n" ++
         "Host: localhost:8080\r\n" ++
         "\r\n");
-    std.debug.print("Response: {s}\n\n", .{resp4});
+    slog.infof("Response: {s}\n", .{resp4});
 
-    std.debug.print("--- Server Features ---\n", .{});
-    std.debug.print("✓ HTTP request parsing (method, path, headers, body)\n", .{});
-    std.debug.print("✓ Route matching with path parameters\n", .{});
-    std.debug.print("✓ Global middleware chain\n", .{});
-    std.debug.print("✓ Per-route before/main step execution\n", .{});
-    std.debug.print("✓ Error handling with on_error callback\n", .{});
-    std.debug.print("✓ Response rendering (status, headers, body)\n", .{});
-    std.debug.print("✓ Flow endpoint dispatch (/flow/v1/<slug>)\n", .{});
+    slog.infof("--- Server Features ---", .{});
+    slog.infof("✓ HTTP request parsing (method, path, headers, body)", .{});
+    slog.infof("✓ Route matching with path parameters", .{});
+    slog.infof("✓ Global middleware chain", .{});
+    slog.infof("✓ Per-route before/main step execution", .{});
+    slog.infof("✓ Error handling with on_error callback", .{});
+    slog.infof("✓ Response rendering (status, headers, body)", .{});
+    slog.infof("✓ Flow endpoint dispatch (/flow/v1/<slug>)", .{});
 }

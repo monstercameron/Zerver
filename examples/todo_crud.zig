@@ -10,6 +10,7 @@
 /// - All framework features working together
 const std = @import("std");
 const zerver = @import("zerver");
+const slog = @import("src/zerver/observability/slog.zig");
 
 /// Application slots for Todo state
 pub const TodoSlot = enum(u32) {
@@ -30,13 +31,13 @@ pub fn TodoSlotType(comptime s: TodoSlot) type {
 
 // Step 1: Extract and validate user from header
 pub fn step_auth(ctx: *zerver.CtxBase) !zerver.Decision {
-    std.debug.print("  [Auth] Step auth called\n", .{});
+    slog.infof("  [Auth] Step auth called", .{});
     const user_id = ctx.header("x-user-id") orelse {
-        std.debug.print("  [Auth] Missing X-User-ID header\n", .{});
+        slog.warnf("  [Auth] Missing X-User-ID header", .{});
         return zerver.fail(zerver.ErrorCode.Unauthorized, "auth", "missing_user");
     };
 
-    std.debug.print("  [Auth] User: {s}\n", .{user_id});
+    slog.infof("  [Auth] User: {s}", .{user_id});
     return zerver.continue_();
 }
 
@@ -46,16 +47,16 @@ pub fn step_extract_id(ctx: *zerver.CtxBase) !zerver.Decision {
         return zerver.continue_(); // OK if not present (LIST operation)
     };
 
-    std.debug.print("  [Extract] TodoId: {s}\n", .{todo_id});
+    slog.infof("  [Extract] TodoId: {s}", .{todo_id});
     return zerver.continue_();
 }
 
 // Step 3: Simulate database load
 pub fn step_load_from_db(ctx: *zerver.CtxBase) !zerver.Decision {
-    std.debug.print("  [Step] step_load_from_db called\n", .{});
+    slog.infof("  [Step] step_load_from_db called", .{});
     const todo_id = ctx.param("id") orelse {
         // LIST operation - return empty list effect
-        std.debug.print("  [DB Load] Fetching todo list\n", .{});
+        slog.infof("  [DB Load] Fetching todo list", .{});
 
         const effects = [_]zerver.Effect{
             .{
@@ -76,7 +77,7 @@ pub fn step_load_from_db(ctx: *zerver.CtxBase) !zerver.Decision {
     };
 
     // Single item load
-    std.debug.print("  [DB Load] Fetching todo {s}\n", .{todo_id});
+    slog.infof("  [DB Load] Fetching todo {s}", .{todo_id});
 
     const effects = [_]zerver.Effect{
         .{
@@ -98,7 +99,7 @@ pub fn step_load_from_db(ctx: *zerver.CtxBase) !zerver.Decision {
 
 fn continuation_list(ctx: *zerver.CtxBase) !zerver.Decision {
     _ = ctx;
-    std.debug.print("  [Continuation] List continuation called\n", .{});
+    slog.infof("  [Continuation] List continuation called", .{});
 
     return zerver.done(.{
         .status = 200,
@@ -111,7 +112,7 @@ fn continuation_list(ctx: *zerver.CtxBase) !zerver.Decision {
 
 fn continuation_get(ctx: *zerver.CtxBase) !zerver.Decision {
     _ = ctx;
-    std.debug.print("  [Continuation] Item continuation called\n", .{});
+    slog.infof("  [Continuation] Item continuation called", .{});
 
     return zerver.done(.{
         .status = 200,
@@ -125,7 +126,7 @@ fn continuation_get(ctx: *zerver.CtxBase) !zerver.Decision {
 // Step 4: Create todo
 pub fn step_create_todo(ctx: *zerver.CtxBase) !zerver.Decision {
     _ = ctx;
-    std.debug.print("  [Create] Storing new todo\n", .{});
+    slog.infof("  [Create] Storing new todo", .{});
 
     const effects = [_]zerver.Effect{
         .{
@@ -148,7 +149,7 @@ pub fn step_create_todo(ctx: *zerver.CtxBase) !zerver.Decision {
 
 fn continuation_create(ctx: *zerver.CtxBase) !zerver.Decision {
     _ = ctx;
-    std.debug.print("  [Continuation] Create continuation called\n", .{});
+    slog.infof("  [Continuation] Create continuation called", .{});
 
     return zerver.done(.{
         .status = 201,
@@ -165,7 +166,7 @@ pub fn step_update_todo(ctx: *zerver.CtxBase) !zerver.Decision {
         return zerver.fail(zerver.ErrorCode.NotFound, "todo", "missing_id");
     };
 
-    std.debug.print("  [Update] Updating todo {s}\n", .{todo_id});
+    slog.infof("  [Update] Updating todo {s}", .{todo_id});
 
     const effects = [_]zerver.Effect{
         .{
@@ -189,7 +190,7 @@ pub fn step_update_todo(ctx: *zerver.CtxBase) !zerver.Decision {
 
 fn continuation_update(ctx: *zerver.CtxBase) !zerver.Decision {
     _ = ctx;
-    std.debug.print("  [Continuation] Update continuation called\n", .{});
+    slog.infof("  [Continuation] Update continuation called", .{});
 
     return zerver.done(.{
         .status = 200,
@@ -206,7 +207,7 @@ pub fn step_delete_todo(ctx: *zerver.CtxBase) !zerver.Decision {
         return zerver.fail(zerver.ErrorCode.NotFound, "todo", "missing_id");
     };
 
-    std.debug.print("  [Delete] Deleting todo {s}\n", .{todo_id});
+    slog.infof("  [Delete] Deleting todo {s}", .{todo_id});
 
     const effects = [_]zerver.Effect{
         .{
@@ -228,7 +229,7 @@ pub fn step_delete_todo(ctx: *zerver.CtxBase) !zerver.Decision {
 
 fn continuation_delete(ctx: *zerver.CtxBase) !zerver.Decision {
     _ = ctx;
-    std.debug.print("  [Continuation] Todo deleted\n", .{});
+    slog.infof("  [Continuation] Todo deleted", .{});
 
     return zerver.done(.{
         .status = 204,
@@ -238,17 +239,17 @@ fn continuation_delete(ctx: *zerver.CtxBase) !zerver.Decision {
 
 // Global middleware
 pub fn middleware_logging(ctx: *zerver.CtxBase) !zerver.Decision {
-    std.debug.print("  [Middleware] Logging middleware called\n", .{});
+    slog.infof("  [Middleware] Logging middleware called", .{});
     _ = ctx;
-    std.debug.print("→ Request received\n", .{});
+    slog.infof("→ Request received", .{});
     return zerver.continue_();
 }
 
 // Error handler
 pub fn onError(ctx: *zerver.CtxBase) anyerror!zerver.Decision {
-    std.debug.print("  [Error] onError called\n", .{});
+    slog.warnf("  [Error] onError called", .{});
     if (ctx.last_error) |err| {
-        std.debug.print("  [Error] Last error: kind={}, what='{s}', key='{s}'\n", .{ err.kind, err.ctx.what, err.ctx.key });
+        slog.warnf("  [Error] Last error: kind={}, what='{s}', key='{s}'", .{ err.kind, err.ctx.what, err.ctx.key });
 
         // Return appropriate error message based on the error
         if (std.mem.eql(u8, err.ctx.key, "missing_user")) {
@@ -277,7 +278,7 @@ pub fn onError(ctx: *zerver.CtxBase) anyerror!zerver.Decision {
             });
         }
     } else {
-        std.debug.print("  [Error] No last_error set\n", .{});
+        slog.warnf("  [Error] No last_error set", .{});
         return zerver.done(.{
             .status = 500,
             .headers = &[_]zerver.types.Header{
@@ -290,24 +291,24 @@ pub fn onError(ctx: *zerver.CtxBase) anyerror!zerver.Decision {
 
 // Effect handler (mock database)
 pub fn effectHandler(effect: *const zerver.Effect, _timeout_ms: u32) anyerror!zerver.executor.EffectResult {
-    std.debug.print("  [Effect] Handling effect type: {}\n", .{@as(std.meta.Tag(zerver.Effect), effect.*)});
+    slog.infof("  [Effect] Handling effect type: {}", .{@as(std.meta.Tag(zerver.Effect), effect.*)});
     _ = _timeout_ms;
     switch (effect.*) {
         .db_get => |db_get| {
-            std.debug.print("  [Effect] DB GET: {s} (token {})\n", .{ db_get.key, db_get.token });
+            slog.infof("  [Effect] DB GET: {s} (token {})", .{ db_get.key, db_get.token });
             // Don't store in slots for now
             return .{ .success = "" };
         },
         .db_put => |db_put| {
-            std.debug.print("  [Effect] DB PUT: {s} = {s} (token {})\n", .{ db_put.key, db_put.value, db_put.token });
+            slog.infof("  [Effect] DB PUT: {s} = {s} (token {})", .{ db_put.key, db_put.value, db_put.token });
             return .{ .success = "" };
         },
         .db_del => |db_del| {
-            std.debug.print("  [Effect] DB DEL: {s} (token {})\n", .{ db_del.key, db_del.token });
+            slog.infof("  [Effect] DB DEL: {s} (token {})", .{ db_del.key, db_del.token });
             return .{ .success = "" };
         },
         else => {
-            std.debug.print("  [Effect] Unknown effect type\n", .{});
+            slog.warnf("  [Effect] Unknown effect type", .{});
             return .{ .success = "" };
         },
     }
@@ -318,8 +319,8 @@ pub fn main() !void {
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
-    std.debug.print("Todo CRUD Example - Complete Zerver Demo\n", .{});
-    std.debug.print("========================================\n\n", .{});
+    slog.infof("Todo CRUD Example - Complete Zerver Demo", .{});
+    slog.infof("========================================\n", .{});
 
     // Create server
     const config = zerver.Config{
@@ -361,15 +362,15 @@ pub fn main() !void {
         zerver.step("delete", step_delete_todo),
     } });
 
-    std.debug.print("Todo CRUD Routes:\n", .{});
-    std.debug.print("  GET    /todos          - List all todos\n", .{});
-    std.debug.print("  GET    /todos/:id      - Get specific todo\n", .{});
-    std.debug.print("  POST   /todos          - Create todo\n", .{});
-    std.debug.print("  PATCH  /todos/:id      - Update todo\n", .{});
-    std.debug.print("  DELETE /todos/:id      - Delete todo\n\n", .{});
+    slog.infof("Todo CRUD Routes:", .{});
+    slog.infof("  GET    /todos          - List all todos", .{});
+    slog.infof("  GET    /todos/:id      - Get specific todo", .{});
+    slog.infof("  POST   /todos          - Create todo", .{});
+    slog.infof("  PATCH  /todos/:id      - Update todo", .{});
+    slog.infof("  DELETE /todos/:id      - Delete todo\n", .{});
 
     // Test requests
-    std.debug.print("Test 1: GET /todos (list)\n", .{});
+    slog.infof("Test 1: GET /todos (list)", .{});
     {
         var arena = std.heap.ArenaAllocator.init(allocator);
         defer arena.deinit();
@@ -378,10 +379,10 @@ pub fn main() !void {
             "Host: localhost\r\n" ++
             "X-User-ID: user-123\r\n" ++
             "\r\n", arena_alloc);
-        std.debug.print("Response: {s}\n\n", .{resp1.complete});
+        slog.infof("Response: {s}\n", .{resp1.complete});
     }
 
-    std.debug.print("Test 2: GET /todos/1 (get)\n", .{});
+    slog.infof("Test 2: GET /todos/1 (get)", .{});
     {
         var arena = std.heap.ArenaAllocator.init(allocator);
         defer arena.deinit();
@@ -390,10 +391,10 @@ pub fn main() !void {
             "Host: localhost\r\n" ++
             "X-User-ID: user-123\r\n" ++
             "\r\n", arena_alloc);
-        std.debug.print("Response: {s}\n\n", .{resp2.complete});
+        slog.infof("Response: {s}\n", .{resp2.complete});
     }
 
-    std.debug.print("Test 3: POST /todos (create)\n", .{});
+    slog.infof("Test 3: POST /todos (create)", .{});
     {
         var arena = std.heap.ArenaAllocator.init(allocator);
         defer arena.deinit();
@@ -404,10 +405,10 @@ pub fn main() !void {
             "Content-Length: 20\r\n" ++
             "\r\n" ++
             "{\"title\":\"New todo\"}", arena_alloc);
-        std.debug.print("Response: {s}\n\n", .{resp3.complete});
+        slog.infof("Response: {s}\n", .{resp3.complete});
     }
 
-    std.debug.print("Test 4: PATCH /todos/1 (update)\n", .{});
+    slog.infof("Test 4: PATCH /todos/1 (update)", .{});
     {
         var arena = std.heap.ArenaAllocator.init(allocator);
         defer arena.deinit();
@@ -418,10 +419,10 @@ pub fn main() !void {
             "Content-Length: 36\r\n" ++
             "\r\n" ++
             "{\"title\":\"Updated todo\",\"done\":true}", arena_alloc);
-        std.debug.print("Response: {s}\n\n", .{resp4.complete});
+        slog.infof("Response: {s}\n", .{resp4.complete});
     }
 
-    std.debug.print("Test 5: DELETE /todos/1 (delete)\n", .{});
+    slog.infof("Test 5: DELETE /todos/1 (delete)", .{});
     {
         var arena = std.heap.ArenaAllocator.init(allocator);
         defer arena.deinit();
@@ -430,16 +431,16 @@ pub fn main() !void {
             "Host: localhost\r\n" ++
             "X-User-ID: user-123\r\n" ++
             "\r\n", arena_alloc);
-        std.debug.print("Response: {s}\n\n", .{resp5.complete});
+        slog.infof("Response: {s}\n", .{resp5.complete});
     }
 
-    std.debug.print("--- Features Demonstrated ---\n", .{});
-    std.debug.print("✓ Slot system for per-request state\n", .{});
-    std.debug.print("✓ Global middleware chain\n", .{});
-    std.debug.print("✓ Route matching with path parameters\n", .{});
-    std.debug.print("✓ Step-based orchestration\n", .{});
-    std.debug.print("✓ Effect handling (DB operations)\n", .{});
-    std.debug.print("✓ Continuations after effects\n", .{});
-    std.debug.print("✓ Error handling\n", .{});
-    std.debug.print("✓ Complete CRUD workflow\n", .{});
+    slog.infof("--- Features Demonstrated ---", .{});
+    slog.infof("✓ Slot system for per-request state", .{});
+    slog.infof("✓ Global middleware chain", .{});
+    slog.infof("✓ Route matching with path parameters", .{});
+    slog.infof("✓ Step-based orchestration", .{});
+    slog.infof("✓ Effect handling (DB operations)", .{});
+    slog.infof("✓ Continuations after effects", .{});
+    slog.infof("✓ Error handling", .{});
+    slog.infof("✓ Complete CRUD workflow", .{});
 }

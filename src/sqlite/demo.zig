@@ -1,5 +1,6 @@
 const std = @import("std");
 const db_mod = @import("../sqlite/db.zig");
+const slog = @import("../zerver/observability/slog.zig");
 
 // Example entity
 const User = struct {
@@ -58,12 +59,12 @@ pub fn demonstrateBeautifulInterface() !void {
     // Execute query (would return results with proper implementation)
     // const users = try query.execute(User);
 
-    std.debug.print("Beautiful database interface demonstrated!\n", .{});
-    std.debug.print("Features:\n", .{});
-    std.debug.print("  ✓ Repository pattern for type-safe operations\n", .{});
-    std.debug.print("  ✓ Fluent query builder API\n", .{});
-    std.debug.print("  ✓ Transaction support\n", .{});
-    std.debug.print("  ✓ Migration system\n", .{});
-    std.debug.print("  ✓ Health checks\n", .{});
-    std.debug.print("  ✓ Proper error handling\n", .{});
+    slog.infof("Beautiful database interface demonstrated!", .{});
+    slog.infof("Features:", .{});
+    slog.infof("  ✓ Repository pattern for type-safe operations", .{});
+    slog.infof("  ✓ Fluent query builder API", .{});
+    slog.infof("  ✓ Transaction support", .{});
+    slog.infof("  ✓ Migration system", .{});
+    slog.infof("  ✓ Health checks", .{});
+    slog.infof("  ✓ Proper error handling", .{});
 }

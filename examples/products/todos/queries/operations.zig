@@ -8,6 +8,7 @@ const std = @import("std");
 const zerver = @import("zerver");
 const domain = @import("../core/domain.zig");
 const middleware = @import("../common/middleware.zig");
+const slog = @import("src/zerver/observability/slog.zig");
 
 /// Query: Extract todo ID from URL path parameter
 pub fn query_extract_id(ctx: *zerver.CtxBase) !zerver.Decision {
@@ -16,7 +17,7 @@ pub fn query_extract_id(ctx: *zerver.CtxBase) !zerver.Decision {
     };
 
     try ctx.slotPutString(@intFromEnum(middleware.Slot.todo_id), todo_id);
-    std.debug.print("[query] Extracted ID: {s}\n", .{todo_id});
+    slog.infof("[query] Extracted ID: {s}", .{todo_id});
 
     return .Continue;
 }
@@ -29,12 +30,12 @@ pub fn query_get_todo(ctx: *zerver.CtxBase) !zerver.Decision {
 
     // Simulate DB read latency
     const latency = domain.OperationLatency.read().random();
-    std.debug.print("[query_get_todo] Loading {s}... ({d}ms)\n", .{ todo_id, latency });
+    slog.infof("[query_get_todo] Loading {s}... ({d}ms)", .{ todo_id, latency });
     std.time.sleep(latency * 1_000_000);
 
     // BTS: Real implementation would fetch from database
     // For MVP, return mock success
-    std.debug.print("[query_get_todo] ✓ Loaded: {s}\n", .{todo_id});
+    slog.infof("[query_get_todo] ✓ Loaded: {s}", .{todo_id});
     return .Continue;
 }
 
@@ -44,16 +45,16 @@ pub fn query_list_todos(ctx: *zerver.CtxBase) !zerver.Decision {
 
     // Simulate DB scan latency (slower than single read)
     const latency = domain.OperationLatency.scan().random();
-    std.debug.print("[query_list_todos] Scanning user '{s}'... ({d}ms)\n", .{ user_id, latency });
+    slog.infof("[query_list_todos] Scanning user '{s}'... ({d}ms)", .{ user_id, latency });
     std.time.sleep(latency * 1_000_000);
 
-    std.debug.print("[query_list_todos] ✓ Found 0 todos\n", .{});
+    slog.infof("[query_list_todos] ✓ Found 0 todos", .{});
     return .Continue;
 }
 
 /// Render: Output list of todos as JSON
 pub fn render_list(_: *zerver.CtxBase) !zerver.Decision {
-    std.debug.print("[render] Rendering todo list\n", .{});
+    slog.infof("[render] Rendering todo list", .{});
     return zerver.done(.{
         .status = 200,
         .body = "{\"data\":[],\"total\":0}",
@@ -63,7 +64,7 @@ pub fn render_list(_: *zerver.CtxBase) !zerver.Decision {
 /// Render: Output single todo as JSON
 pub fn render_item(ctx: *zerver.CtxBase) !zerver.Decision {
     const todo_id = ctx.slotGetString(@intFromEnum(middleware.Slot.todo_id)) orelse "unknown";
-    std.debug.print("[render] Rendering item {s}\n", .{todo_id});
+    slog.infof("[render] Rendering item {s}", .{todo_id});
     return zerver.done(.{
         .status = 200,
         .body = "{\"id\":\"unknown\",\"title\":\"\",\"status\":\"pending\"}",

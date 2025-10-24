@@ -7,6 +7,7 @@
 /// This allows you to write type-safe steps while the framework can call them generically.
 const std = @import("std");
 const zerver = @import("zerver");
+const slog = @import("src/zerver/observability/slog.zig");
 
 // Define your application's slots
 pub const Slot = enum(u32) {
@@ -39,7 +40,7 @@ pub fn fetch_todo_step(ctx: *zerver.CtxView(FetchTodoSpec)) !zerver.Decision {
 
     // For this example, just return Continue
     _ = ctx;
-    std.debug.print("fetch_todo_step: type-safe access confirmed\n", .{});
+    slog.infof("fetch_todo_step: type-safe access confirmed", .{});
     return .Continue;
 }
 
@@ -54,7 +55,7 @@ pub fn render_step(ctx: *zerver.CtxView(RenderSpec)) !zerver.Decision {
     // ✗ Cannot write (no writes declared)
 
     _ = ctx;
-    std.debug.print("render_step: preparing response\n", .{});
+    slog.infof("render_step: preparing response", .{});
 
     return zerver.done(.{
         .status = 200,
@@ -64,18 +65,18 @@ pub fn render_step(ctx: *zerver.CtxView(RenderSpec)) !zerver.Decision {
 
 /// Wrap the typed functions into Steps using the trampoline
 pub fn main() void {
-    std.debug.print("Step Trampoline Example\n", .{});
-    std.debug.print("=======================\n\n", .{});
+    slog.infof("Step Trampoline Example", .{});
+    slog.infof("=======================\n", .{});
 
     // The step() function wraps our typed functions
     // It extracts the spec from the function signature at comptime
     const fetch_step = zerver.step("fetch_todo", fetch_todo_step);
     const render_step_wrapped = zerver.step("render", render_step);
 
-    std.debug.print("Created step: {s}\n", .{fetch_step.name});
-    std.debug.print("Created step: {s}\n", .{render_step_wrapped.name});
+    slog.infof("Created step: {s}", .{fetch_step.name});
+    slog.infof("Created step: {s}", .{render_step_wrapped.name});
 
-    std.debug.print("\nBoth steps are now wrapped as Step structs.\n", .{});
-    std.debug.print("The framework can call them via generic *CtxBase pointers.\n", .{});
-    std.debug.print("But the type system still enforces slot access at compile-time.\n", .{});
+    slog.infof("\nBoth steps are now wrapped as Step structs.", .{});
+    slog.infof("The framework can call them via generic *CtxBase pointers.", .{});
+    slog.infof("But the type system still enforces slot access at compile-time.", .{});
 }

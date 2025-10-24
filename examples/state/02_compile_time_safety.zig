@@ -4,6 +4,7 @@
 /// These examples show code that WOULD NOT COMPILE.
 const std = @import("std");
 const zerver = @import("zerver");
+const slog = @import("src/zerver/observability/slog.zig");
 
 // Assume we have slots defined like this:
 // pub const Slot = enum { TodoId, TodoItem, UserId };
@@ -60,13 +61,13 @@ fn optional_step(ctx: *OptionalView) !zerver.Decision {
     // ✓ Can optionally read TodoId
     const maybe_id = try ctx.optional(.TodoId);
     if (maybe_id) |id| {
-        std.debug.print("Got ID: {s}\n", .{id});
+        slog.infof("Got ID: {s}", .{id});
     }
 
     return .Continue;
 }
 
 pub fn main() void {
-    std.debug.print("This file demonstrates CtxView compile-time safety.\n", .{});
-    std.debug.print("See the commented examples above to understand what WOULD fail to compile.\n", .{});
+    slog.infof("This file demonstrates CtxView compile-time safety.", .{});
+    slog.infof("See the commented examples above to understand what WOULD fail to compile.", .{});
 }

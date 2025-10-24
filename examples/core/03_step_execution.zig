@@ -6,25 +6,25 @@
 /// - Join strategies (all, any, first_success)
 /// - Required vs optional effect failures
 /// - Continuation semantics
-// TODO: Logging - Replace std.debug.print with slog for consistent structured logging.
 const std = @import("std");
 const zerver = @import("zerver");
+const slog = @import("src/zerver/observability/slog.zig");
 
 /// Mock effect handler for demonstration
 fn mockEffectHandler(effect: *const zerver.Effect, _: u32) anyerror!zerver.executor.EffectResult {
     switch (effect.*) {
         .db_get => |e| {
-            std.debug.print("  [Effect] DbGet key={s}\n", .{e.key});
+            slog.infof("  [Effect] DbGet key={s}", .{e.key});
             // Simulate successful DB read
             return .{ .success = "mock_data" };
         },
         .db_put => |e| {
-            std.debug.print("  [Effect] DbPut key={s} value={s}\n", .{ e.key, e.value });
+            slog.infof("  [Effect] DbPut key={s} value={s}", .{ e.key, e.value });
             // Simulate successful DB write
             return .{ .success = "" };
         },
         .http_get => |e| {
-            std.debug.print("  [Effect] HttpGet url={s}\n", .{e.url});
+            slog.infof("  [Effect] HttpGet url={s}", .{e.url});
             return .{ .success = "mock_response" };
         },
         else => {
@@ -37,14 +37,14 @@ fn mockEffectHandler(effect: *const zerver.Effect, _: u32) anyerror!zerver.execu
 /// Example 1: Simple step that continues
 fn step_continue(ctx: *zerver.CtxBase) !zerver.Decision {
     _ = ctx;
-    std.debug.print("  [Step] step_continue\n", .{});
+    slog.infof("  [Step] step_continue", .{});
     return zerver.continue_();
 }
 
 /// Example 2: Step that requests a single effect
 fn step_with_effect(ctx: *zerver.CtxBase) !zerver.Decision {
     _ = ctx;
-    std.debug.print("  [Step] step_with_effect - requesting DB get\n", .{});
+    slog.infof("  [Step] step_with_effect - requesting DB get", .{});
 
     const effects = [_]zerver.Effect{
         .{ .db_get = .{
@@ -66,7 +66,7 @@ fn step_with_effect(ctx: *zerver.CtxBase) !zerver.Decision {
 /// Continuation after DB get completes
 fn continuation_after_db_get(ctx: *anyopaque) !zerver.Decision {
     const ctx_base: *zerver.CtxBase = @ptrCast(@alignCast(ctx));
-    std.debug.print("  [Continuation] Data loaded, continuing\n", .{});
+    slog.infof("  [Continuation] Data loaded, continuing", .{});
     _ = ctx_base;
     return zerver.done(.{
         .status = 200,
@@ -77,7 +77,7 @@ fn continuation_after_db_get(ctx: *anyopaque) !zerver.Decision {
 /// Example 3: Step with parallel effects
 fn step_parallel_effects(ctx: *zerver.CtxBase) !zerver.Decision {
     _ = ctx;
-    std.debug.print("  [Step] step_parallel_effects - requesting 2 effects\n", .{});
+    slog.infof("  [Step] step_parallel_effects - requesting 2 effects", .{});
 
     const effects = [_]zerver.Effect{
         .{ .db_get = .{
@@ -107,7 +107,7 @@ fn step_parallel_effects(ctx: *zerver.CtxBase) !zerver.Decision {
 /// Continuation after parallel effects
 fn continuation_parallel(ctx: *anyopaque) !zerver.Decision {
     const ctx_base: *zerver.CtxBase = @ptrCast(@alignCast(ctx));
-    std.debug.print("  [Continuation] Both effects attempted, continuing\n", .{});
+    slog.infof("  [Continuation] Both effects attempted, continuing", .{});
     _ = ctx_base;
     return zerver.done(.{
         .status = 200,
@@ -118,7 +118,7 @@ fn continuation_parallel(ctx: *anyopaque) !zerver.Decision {
 /// Example 4: Step that returns immediate error
 fn step_error(ctx: *zerver.CtxBase) !zerver.Decision {
     _ = ctx;
-    std.debug.print("  [Step] step_error - returning error\n", .{});
+    slog.infof("  [Step] step_error - returning error", .{});
     return zerver.fail(zerver.ErrorCode.NotFound, "item", "123");
 }
 
@@ -137,35 +137,35 @@ pub fn main() !void {
     var ctx = try zerver.CtxBase.init(allocator, arena.allocator());
     defer ctx.deinit();
 
-    std.debug.print("Executor Examples\n", .{});
-    std.debug.print("=================\n\n", .{});
+    slog.infof("Executor Examples", .{});
+    slog.infof("=================\n", .{});
 
     // Example 1: Simple continue
-    std.debug.print("Example 1: Simple Continue\n", .{});
+    slog.infof("Example 1: Simple Continue", .{});
     var decision = try executor.executeStep(&ctx, @ptrCast(&step_continue));
-    std.debug.print("Result: {}\n\n", .{decision});
+    slog.infof("Result: {}\n", .{decision});
 
     // Example 2: With effect
-    std.debug.print("Example 2: With Effect\n", .{});
+    slog.infof("Example 2: With Effect", .{});
     decision = try executor.executeStep(&ctx, @ptrCast(&step_with_effect));
-    std.debug.print("Result: {}\n\n", .{decision});
+    slog.infof("Result: {}\n", .{decision});
 
     // Example 3: Parallel effects
-    std.debug.print("Example 3: Parallel Effects\n", .{});
+    slog.infof("Example 3: Parallel Effects", .{});
     decision = try executor.executeStep(&ctx, @ptrCast(&step_parallel_effects));
-    std.debug.print("Result: {}\n\n", .{decision});
+    slog.infof("Result: {}\n", .{decision});
 
     // Example 4: Error handling
-    std.debug.print("Example 4: Error Handling\n", .{});
+    slog.infof("Example 4: Error Handling", .{});
     decision = try executor.executeStep(&ctx, @ptrCast(&step_error));
-    std.debug.print("Result: {}\n", .{decision});
+    slog.infof("Result: {}\n", .{decision});
 
-    std.debug.print("\n--- MVP Executor Features ---\n", .{});
-    std.debug.print("✓ Executes steps synchronously\n", .{});
-    std.debug.print("✓ Handles Need decisions with effects\n", .{});
-    std.debug.print("✓ Calls continuations after effects\n", .{});
-    std.debug.print("✓ Supports join strategies: all, any, first_success\n", .{});
-    std.debug.print("✓ Differentiates required vs optional failures\n", .{});
-    std.debug.print("✓ Recursively processes decisions (until Done/Fail)\n", .{});
-    std.debug.print("✓ MVP executes effects sequentially (Phase-2: parallelizes)\n", .{});
+    slog.infof("\n--- MVP Executor Features ---", .{});
+    slog.infof("✓ Executes steps synchronously", .{});
+    slog.infof("✓ Handles Need decisions with effects", .{});
+    slog.infof("✓ Calls continuations after effects", .{});
+    slog.infof("✓ Supports join strategies: all, any, first_success", .{});
+    slog.infof("✓ Differentiates required vs optional failures", .{});
+    slog.infof("✓ Recursively processes decisions (until Done/Fail)", .{});
+    slog.infof("✓ MVP executes effects sequentially (Phase-2: parallelizes)", .{});
 }

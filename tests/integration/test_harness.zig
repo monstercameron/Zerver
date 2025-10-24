@@ -2,9 +2,10 @@
 /// Tests core functionality without needing the full server
 const std = @import("std");
 const zerver = @import("src/zerver/root.zig");
+const slog = @import("../src/zerver/observability/slog.zig");
 
 fn logTest(comptime name: []const u8, comptime status: []const u8) void {
-    std.debug.print("[{s}] {s}\n", .{ status, name });
+    slog.infof("[{s}] {s}", .{ status, name });
 }
 
 /// Test 1: Router path matching
@@ -260,9 +261,9 @@ pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
 
-    std.debug.print("\n╔════════════════════════════════════════════════════╗\n", .{});
-    std.debug.print("║       Zerver MVP - Comprehensive Test Suite       ║\n", .{});
-    std.debug.print("╚════════════════════════════════════════════════════╝\n\n", .{});
+    slog.infof("\n╔════════════════════════════════════════════════════╗", .{});
+    slog.infof("║       Zerver MVP - Comprehensive Test Suite       ║", .{});
+    slog.infof("╚════════════════════════════════════════════════════╝\n", .{});
 
     // Run all tests
     try test_router_matching();
@@ -272,7 +273,7 @@ pub fn main() !void {
     try test_retry_policies();
     try test_tracer();
 
-    std.debug.print("\n╔════════════════════════════════════════════════════╗\n", .{});
-    std.debug.print("║              ✓ ALL TESTS PASSED (6/6)             ║\n", .{});
-    std.debug.print("╚════════════════════════════════════════════════════╝\n\n", .{});
+    slog.infof("\n╔════════════════════════════════════════════════════╗", .{});
+    slog.infof("║              ✓ ALL TESTS PASSED (6/6)             ║", .{});
+    slog.infof("╚════════════════════════════════════════════════════╝\n", .{});
 }

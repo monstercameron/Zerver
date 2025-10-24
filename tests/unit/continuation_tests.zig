@@ -7,6 +7,7 @@
 /// - Continuation chains can transition between states
 const std = @import("std");
 const zerver = @import("../src/zerver/root.zig");
+const slog = @import("../src/zerver/observability/slog.zig");
 
 /// Simple state machine for testing
 pub const TestState = enum { Init, EffectNeeded, EffectCompleted, Done };
@@ -65,7 +66,7 @@ pub fn test_basic_continuation() !void {
         else => @panic("Expected Done decision"),
     }
 
-    std.debug.print("✓ Test basic continuation passed\n", .{});
+    slog.infof("✓ Test basic continuation passed\n", .{});
 }
 
 fn step_request_effect() !zerver.Decision {
@@ -142,7 +143,7 @@ pub fn test_sequential_continuations() !void {
     }
 
     std.debug.assert(effects_executed == 2);
-    std.debug.print("✓ Test sequential continuations passed\n", .{});
+    slog.infof("✓ Test sequential continuations passed\n", .{});
 }
 
 fn step_first_effect() !zerver.Decision {
@@ -222,7 +223,7 @@ pub fn test_continuation_context_preservation() !void {
         else => @panic("Expected Done"),
     }
 
-    std.debug.print("✓ Test continuation context preservation passed\n", .{});
+    slog.infof("✓ Test continuation context preservation passed\n", .{});
 }
 
 fn step_preserve_context() !zerver.Decision {
@@ -287,7 +288,7 @@ pub fn test_continuation_error_handling() !void {
         else => @panic("Expected Fail"),
     }
 
-    std.debug.print("✓ Test continuation error handling passed\n", .{});
+    slog.infof("✓ Test continuation error handling passed\n", .{});
 }
 
 fn step_check_error() !zerver.Decision {
@@ -323,12 +324,12 @@ fn continuation_check_missing(ctx: *anyopaque) !zerver.Decision {
 // ============================================================================
 
 pub fn main() !void {
-    std.debug.print("\n=== Continuation Resume Logic Tests ===\n\n", .{});
+    slog.infof("\n=== Continuation Resume Logic Tests ===\n\n", .{});
 
     try test_basic_continuation();
     try test_sequential_continuations();
     try test_continuation_context_preservation();
     try test_continuation_error_handling();
 
-    std.debug.print("\n✅ All continuation tests passed!\n\n", .{});
+    slog.infof("\n✅ All continuation tests passed!\n\n", .{});
 }

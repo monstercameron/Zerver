@@ -8,6 +8,7 @@
 /// - Asserting on results
 const std = @import("std");
 const zerver = @import("zerver");
+const slog = @import("../../src/zerver/observability/slog.zig");
 
 /// Example slot enumeration
 const TodoSlot = enum { TodoId, TodoItem, UserId };
@@ -113,7 +114,7 @@ fn test_load_existing_todo() !void {
         return error.WrongToken;
     }
 
-    std.debug.print("✓ Test 1: Load existing todo - verified effect generation\n", .{});
+    slog.infof("✓ Test 1: Load existing todo - verified effect generation\n", .{});
 }
 
 /// Test 2: Continuation after successful load
@@ -141,7 +142,7 @@ fn test_continuation_success() !void {
         return error.WrongStatus;
     }
 
-    std.debug.print("✓ Test 2: Continuation success - returned 200\n", .{});
+    slog.infof("✓ Test 2: Continuation success - returned 200\n", .{});
 }
 
 /// Test 3: Continuation when todo not found (empty slot)
@@ -175,7 +176,7 @@ fn test_continuation_not_found() !void {
         return error.WrongErrorCode;
     }
 
-    std.debug.print("✓ Test 3: Continuation not found - returned 404\n", .{});
+    slog.infof("✓ Test 3: Continuation not found - returned 404\n", .{});
 }
 
 /// Test 4: Direct parameter access in test
@@ -199,21 +200,21 @@ fn test_parameter_access() !void {
         return error.ParamNotSet;
     }
 
-    std.debug.print("✓ Test 4: Parameter access - verified param storage\n", .{});
+    slog.infof("✓ Test 4: Parameter access - verified param storage\n", .{});
 }
 
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
 
-    std.debug.print("=== ReqTest DB Load Example ===\n\n", .{});
+    slog.infof("=== ReqTest DB Load Example ===\n\n", .{});
 
     try test_load_existing_todo();
     try test_continuation_success();
     try test_continuation_not_found();
     try test_parameter_access();
 
-    std.debug.print("\n✓ All tests passed!\n", .{});
+    slog.infof("\n✓ All tests passed!\n", .{});
 }
 
 /// Export tests for test runner

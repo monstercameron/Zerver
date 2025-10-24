@@ -417,7 +417,7 @@ fn continuation_create_comment(ctx: *zerver.CtxBase) !zerver.Decision {
 }
 
 pub fn step_delete_comment(ctx: *zerver.CtxBase) !zerver.Decision {
-    std.debug.print("  [Blog] Step delete comment called\n", .{});
+    slog.infof("  [Blog] Step delete comment called", .{});
     const comment_id = try loadSlot(ctx, .CommentId);
 
     const effects = try ctx.allocator.alloc(zerver.Effect, 1);
