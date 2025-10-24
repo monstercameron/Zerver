@@ -279,6 +279,12 @@ pub const Server = struct {
         ctx.path_str = parsed.path;
         ctx.body = parsed.body;
 
+        slog.debug("HTTP request parsed", &.{
+            slog.Attr.string("method", ctx.method_str),
+            slog.Attr.string("path", ctx.path_str),
+            slog.Attr.uint("body_len", parsed.body.len),
+        });
+
         // Copy headers to context
         var header_iter = parsed.headers.iterator();
         while (header_iter.next()) |entry| {
@@ -472,8 +478,18 @@ pub const Server = struct {
         } else if (content_length) |cl| {
             // Content-Length specified - body must be exactly this length
             if (raw_body.len != cl) {
+                slog.err("Content-Length mismatch", &.{
+                    slog.Attr.uint("declared_len", cl),
+                    slog.Attr.uint("actual_len", raw_body.len),
+                    slog.Attr.string("path", path),
+                });
                 return error.ContentLengthMismatch;
             }
+            slog.debug("Content-Length verified", &.{
+                slog.Attr.uint("content_length", cl),
+                slog.Attr.uint("raw_body_len", raw_body.len),
+                slog.Attr.string("path", path),
+            });
             body = raw_body;
         } else {
             // No Content-Length or Transfer-Encoding

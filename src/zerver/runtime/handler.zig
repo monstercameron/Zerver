@@ -8,6 +8,19 @@ const windows_sockets = @import("platform/windows_sockets.zig");
 const root = @import("../root.zig");
 const slog = @import("../observability/slog.zig");
 
+fn hexPreview(data: []const u8, out: []u8) []const u8 {
+    if (data.len == 0) return "";
+    if (out.len < data.len * 2) return "";
+    const hex_chars = "0123456789abcdef";
+    var i: usize = 0;
+    while (i < data.len) : (i += 1) {
+        const byte = data[i];
+        out[i * 2] = hex_chars[(byte >> 4) & 0xF];
+        out[i * 2 + 1] = hex_chars[byte & 0xF];
+    }
+    return out[0 .. data.len * 2];
+}
+
 /// Read an HTTP request from a connection with timeout
 /// Implements robust HTTP/1.1 message framing per RFC 9110/9112
 pub fn readRequestWithTimeout(
@@ -26,61 +39,71 @@ pub fn readRequestWithTimeout(
     // Phase 1: Read headers until \r\n\r\n
     var headers_complete = false;
     while (req_buf.items.len < max_size and !headers_complete) {
-        // Check timeout
-        const now = std.time.milliTimestamp();
-        if (now - start_time > timeout_ms) {
-            return error.Timeout;
-        }
-
-        var bytes_read: usize = 0;
-
-        if (windows_sockets.isWindows()) {
-            bytes_read = windows_sockets.recvWithTimeout(connection.stream.handle, &read_buf, 1000) catch |err| {
-                if (req_buf.items.len > 0) {
-                    slog.debug("Winsock recv timeout error after partial read", &.{
+        const bytes_read = readWithTimeout(connection, read_buf[0..], timeout_ms, start_time) catch |err| {
+            switch (err) {
+                error.Timeout => {
+                    if (req_buf.items.len == 0) {
+                        return error.Timeout;
+                    }
+                    const preview_len = @min(req_buf.items.len, 120);
+                    slog.warn("Header read timed out", &.{
                         slog.Attr.uint("bytes_read", req_buf.items.len),
-                        slog.Attr.string("error", @errorName(err)),
+                        slog.Attr.string("preview", req_buf.items[0..preview_len]),
                     });
-                    break;
-                }
-                if (err == error.Timeout) return error.Timeout;
-                slog.debug("Winsock recv error", &.{
-                    slog.Attr.string("error", @errorName(err)),
-                });
-                return error.ConnectionClosed;
-            };
-        } else {
-            bytes_read = connection.stream.read(&read_buf) catch |err| {
-                if (req_buf.items.len > 0) {
-                    slog.debug("Partial read before error", &.{
+                    return error.Timeout;
+                },
+                error.ConnectionClosed => {
+                    if (req_buf.items.len == 0) {
+                        return error.ConnectionClosed;
+                    }
+                    const preview_len = @min(req_buf.items.len, 120);
+                    slog.warn("Connection closed while reading headers", &.{
                         slog.Attr.uint("bytes_read", req_buf.items.len),
+                        slog.Attr.string("preview", req_buf.items[0..preview_len]),
                     });
-                    break;
-                }
-                if (err == error.WouldBlock) return error.Timeout;
-                slog.debug("Read error", &.{
-                    slog.Attr.string("error", @errorName(err)),
-                });
-                return error.ConnectionClosed;
-            };
-        }
+                    return error.ConnectionClosed;
+                },
+            }
+        };
 
         if (bytes_read == 0) {
             if (req_buf.items.len > 0) {
                 break;
             }
-            slog.debug("Connection closed by client", &.{});
+            slog.warn("Connection closed by client", &.{});
             return error.ConnectionClosed;
         }
 
         try req_buf.appendSlice(allocator, read_buf[0..bytes_read]);
 
-        // Check for complete headers
-        if (req_buf.items.len >= 4) {
-            const tail = req_buf.items[req_buf.items.len - 4 ..];
-            if (std.mem.eql(u8, tail, "\r\n\r\n")) {
-                headers_complete = true;
-            }
+        const chunk_preview_len = @min(bytes_read, 60);
+        const total_preview_len = @min(req_buf.items.len, 200);
+        const chunk_hex_len = @min(bytes_read, 32);
+        var chunk_hex_buf: [64]u8 = undefined;
+        const chunk_hex = hexPreview(read_buf[0..chunk_hex_len], chunk_hex_buf[0..]);
+        const tail_len = @min(req_buf.items.len, 4);
+        const tail_start = req_buf.items.len - tail_len;
+        var tail_hex_buf: [8]u8 = undefined;
+        const tail_hex = hexPreview(req_buf.items[tail_start..], tail_hex_buf[0..]);
+        const terminator_opt = std.mem.indexOf(u8, req_buf.items, "\r\n\r\n");
+        const terminator_index: usize = terminator_opt orelse 0;
+        const terminator_found = terminator_opt != null;
+        slog.debug("Appended request bytes", &.{
+            slog.Attr.uint("chunk_bytes", bytes_read),
+            slog.Attr.uint("total_bytes", req_buf.items.len),
+            slog.Attr.string("chunk_preview", read_buf[0..chunk_preview_len]),
+            slog.Attr.string("chunk_hex", chunk_hex),
+            slog.Attr.string("buffer_preview", req_buf.items[0..total_preview_len]),
+            slog.Attr.string("tail_hex", tail_hex),
+            slog.Attr.uint("terminator_index", @as(u64, @intCast(terminator_index))),
+            slog.Attr.@"bool"("terminator_found", terminator_found),
+        });
+
+        if (std.mem.indexOf(u8, req_buf.items, "\r\n\r\n")) |found| {
+            headers_complete = true;
+            slog.debug("Header terminator located", &.{
+                slog.Attr.uint("index", found),
+            });
         }
     }
 
@@ -131,8 +154,15 @@ pub fn readRequestWithTimeout(
     }
     // If neither, no body expected (GET, HEAD, etc.)
 
-    slog.debug("Complete HTTP request received", &.{
+    const full_preview_len = @min(req_buf.items.len, 200);
+    const tail_len = @min(req_buf.items.len, 4);
+    const tail_start = req_buf.items.len - tail_len;
+    var tail_hex_buf: [8]u8 = undefined;
+    const tail_hex = hexPreview(req_buf.items[tail_start..], tail_hex_buf[0..]);
+    slog.info("Complete HTTP request received", &.{
         slog.Attr.uint("total_bytes", req_buf.items.len),
+        slog.Attr.string("preview", req_buf.items[0..full_preview_len]),
+        slog.Attr.string("tail_hex", tail_hex),
     });
 
     return req_buf.items;
@@ -256,21 +286,31 @@ fn readWithTimeout(
     start_time: i64,
 ) !usize {
     // Check timeout
-    const now = std.time.milliTimestamp();
-    if (now - start_time > timeout_ms) {
-        return error.Timeout;
-    }
+    const per_attempt_timeout_ms: u32 = 250;
 
-    if (windows_sockets.isWindows()) {
-        return windows_sockets.recvWithTimeout(connection.stream.handle, buffer, 1000) catch |err| {
-            if (err == error.Timeout) return error.Timeout;
-            return error.ConnectionClosed;
-        };
-    } else {
-        return connection.stream.read(buffer) catch |err| {
-            if (err == error.WouldBlock) return error.Timeout;
-            return error.ConnectionClosed;
-        };
+    while (true) {
+        const now = std.time.milliTimestamp();
+        if (now - start_time > timeout_ms) {
+            return error.Timeout;
+        }
+
+        if (windows_sockets.isWindows()) {
+            const result = windows_sockets.recvWithTimeout(connection.stream.handle, buffer, per_attempt_timeout_ms) catch |err| {
+                if (err == error.TimedOut) {
+                    continue;
+                }
+                return error.ConnectionClosed;
+            };
+            return result;
+        } else {
+            const result = connection.stream.read(buffer) catch |err| {
+                if (err == error.WouldBlock) {
+                    continue;
+                }
+                return error.ConnectionClosed;
+            };
+            return result;
+        }
     }
 }
 
@@ -281,30 +321,17 @@ pub fn sendResponse(
 ) !void {
     // TODO: RFC 9110/9112 - Ensure proper HTTP/1.1 message framing for responses, including support for Transfer-Encoding (e.g., chunked encoding) if applicable (RFC 9112 Section 6).
     // TODO: SSE - Implement a mechanism for streaming responses, allowing incremental writing of data for Server-Sent Events (HTML Living Standard).
+    const preview_len = @min(response.len, 120);
     slog.debug("Sending HTTP response", &.{
         slog.Attr.uint("response_size", response.len),
+        slog.Attr.string("preview", response[0..preview_len]),
     });
 
-    if (windows_sockets.isWindows()) {
-        // Windows: use raw Winsock
-        windows_sockets.sendAll(connection.stream.handle, response) catch |err| {
-            slog.err("Winsock send error", &.{
-                slog.Attr.string("error", @errorName(err)),
-            });
-            // Try to send a simple error response
-            const fallback = "HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nOK";
-            windows_sockets.sendAll(connection.stream.handle, fallback) catch {
-                slog.err("Fallback response send failed", &.{});
-            };
-        };
-    } else {
-        // Unix: use standard stream write
-        _ = connection.stream.writeAll(response) catch |err| {
-            slog.err("Response write error", &.{
-                slog.Attr.string("error", @errorName(err)),
-            });
-        };
-    }
+    _ = connection.stream.writeAll(response) catch |err| {
+        slog.err("Response write error", &.{
+            slog.Attr.string("error", @errorName(err)),
+        });
+    };
 }
 
 /// Send a streaming HTTP response (for SSE and other streaming use cases)

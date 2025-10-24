@@ -11,7 +11,22 @@ This note contrasts how the same "To-Do" resource is modeled in four popular bac
 
 ## Express.js (Node)
 
-**Mental model:** Express exposes a lightweight HTTP pipeline. You compose middleware until you respond. State and validation are whatever you make them—usually JavaScript objects held in closure scope or attached to `req`.
+**Mental model:** Express exposes a lightweight HTTP pipeline. You compose middleware until you respond. State and validation are whatever you make them - usually JavaScript objects held in closure scope or attached to `req`.
+
+**DX highlights:**
+- Extremely low ceremony to get started; the todo router above fits in one file with no project scaffolding.
+- Freedom cuts both ways: developers must align on linting, validation, and result shaping or the API drifts quickly.
+- Async flows are easy to write but hard to introspect; figuring out why a handler stalled requires manual timing, logs, or third-party middleware.
+
+**Contrast with Zerver:** Express gives you full control and minimal opinions, whereas Zerver trades some freedom for explicit step graphs and enforced data flow. In Zerver every step has a name, runs in a known order, and produces trace events, so a stalled request is visible without extra instrumentation.
+
+```mermaid
+flowchart TD
+    A[HTTP Request] --> B[Express Router]
+    B --> C[Middleware Chain]
+    C --> D[Route Handler]
+    D --> E[Response]
+```
 
 ```ts
 // src/todos/controller.ts
@@ -59,13 +74,28 @@ router.delete('/todos/:id', (req, res) => {
 export default router;
 ```
 
-- **Composition:** Manual—middleware order in code equals runtime order.
+- **Composition:** Manual - middleware order in code equals runtime order.
 - **State handling:** Data is mutable JS objects; validation and error handling are ad-hoc.
 - **Observability:** Add logging/tracing middleware yourself (e.g. `morgan`, OpenTelemetry SDK).
 
 ## ASP.NET Core (.NET)
 
 **Mental model:** HTTP requests become controller instances resolved by the dependency injection container. Attributes declare routing and filters/policies run before/after each action. Model binding populates strongly typed parameters.
+
+**DX highlights:**
+- Tooling (Visual Studio, Rider) scaffolds controllers, contracts, and integration tests; refactors are safe because everything is typed and IDE-aware.
+- Cross-cutting concerns (auth, rate limiting, caching) bolt in through filters and middleware; they are powerful but require familiarity with the ASP.NET pipeline.
+- Observability is available via `ILogger`, `ActivitySource`, and OpenTelemetry integration, yet you still need to wire log scopes and tags in every controller or service.
+
+**Contrast with Zerver:** ASP.NET relies on runtime DI and attributes, so the pipeline emerges at runtime. Zerver keeps the pipeline declarative and finite (array of steps) which the executor can validate and trace. Instead of action filters, you add pre-steps that manipulate slots or signal `.Need`, and every piece of state is type-checked.
+
+```mermaid
+flowchart TD
+    A[HTTP Request] --> B[ASP.NET Middleware]
+    B --> C[Controller Action]
+    C --> D[Injected Service]
+    D --> E[HTTP Response]
+```
 
 ```csharp
 // TodoApi/Controllers/TodosController.cs
@@ -125,6 +155,22 @@ public sealed class TodosController : ControllerBase
 ## Spring Boot (Java)
 
 **Mental model:** Controllers are plain classes registered as beans. Spring binds HTTP input to Java objects, injects dependencies, and applies cross-cutting behavior (validation, transactions) through annotations.
+
+**DX highlights:**
+- Annotation-driven features (validation, transactions, caching) reduce boilerplate, but debugging annotation chains can feel opaque to newcomers.
+- Spring DevTools, Actuator, and the ecosystem ecosystem (Spring Data, Security) make building production-grade services fast once the context is configured.
+- Observability defaults improved with Micrometer, but you still decide which timers and spans to emit; forgetting a `@Timed` or `@Observed` leaves gaps.
+
+**Contrast with Zerver:** Spring hides orchestration inside the container; Zerver exposes it. In Zerver you never wonder "which filter ran first" because the step array is the pipeline. Where Spring wraps your method to handle transactions and retries, Zerver has explicit steps that yield `.Need` for each effect, making side effects part of the flow definition.
+
+```mermaid
+flowchart TD
+    A[HTTP Request] --> B[DispatcherServlet]
+    B --> C[RestController Method]
+    C --> D[Service Layer]
+    D --> E[Repository or Effect]
+    E --> F[HTTP Response]
+```
 
 ```java
 // src/main/java/com/example/todo/TodoController.java
@@ -191,6 +237,20 @@ public class TodoController {
 
 **Mental model:** Requests run through a compile-time checked pipeline of "steps." Each step explicitly declares what request slots it reads/writes. Effects (DB, HTTP) are requested via `Need` decisions and executed by the engine, while observability is captured automatically.
 
+**DX highlights:**
+- Step signatures advertise the data contract (reads, writes) so reviewers can spot ordering mistakes without running the code.
+- Returning `.Need` is the only way to execute side effects, which keeps I/O explicit and traceable; the executor records both the request and the continuation hop.
+- Trace export, slot inspection, and effect timelines come for free because the engine controls scheduling.
+
+```mermaid
+flowchart TD
+    A[HTTP Request] --> B[Step Pipeline]
+    B --> C[Step returns .Need]
+    C --> D[Effect Handler]
+    D --> E[Continuation Step]
+    E --> F[zerver.done Response]
+```
+
 ```zig
 // src/todo/controller.zig
 const std = @import("std");
@@ -205,6 +265,14 @@ fn SlotType(comptime s: Slot) type {
         .TodoItem => struct { id: []const u8, title: []const u8, completed: bool },
         .TodoPayload => struct { title: []const u8, completed: bool = false },
     };
+}
+
+fn step_capture_id(ctx: *zerver.CtxView(.{ .writes = &.{ .TodoId } })) !zerver.Decision {
+    const id = ctx.param("id") orelse {
+        return zerver.fail(400, "Missing :id parameter", "path");
+    };
+    try ctx.put(.TodoId, id);
+    return zerver.continue_();
 }
 
 fn step_list_todos(ctx: *zerver.CtxView(.{ .writes = &.{ .TodoList } })) !zerver.Decision {
@@ -232,7 +300,7 @@ pub fn registerTodos(server: *zerver.Server) !void {
 
     try server.addRoute(.GET, "/todos/:id", .{
         .steps = &.{
-            zerver.step("read_path", zerver.steps.pathParam(Slot, .TodoId)),
+            zerver.step("read_path", step_capture_id),
             zerver.step("load_one", step_load_todo),
             zerver.step("render_one", step_render_todo),
         },
@@ -253,8 +321,26 @@ fn step_load_todo(ctx: *zerver.CtxView(.{
     .writes = &.{ .TodoItem },
 })) !zerver.Decision {
     const id = try ctx.require(.TodoId);
-    // In a real app this would return Need(DbGet, ...)
-    try ctx.put(.TodoItem, .{ .id = id, .title = "Fetched", .completed = false });
+    const resume = zerver.step("cache_hit", step_record_hit);
+    return .Need(.{
+        .effects = &.{
+            zerver.Effect.dbGet(.{
+                .key = ctx.base.bufFmt("todo:{s}", .{id}),
+                .required = true,
+                .token = .TodoItem,
+            }),
+        },
+        .resume = resume,
+    });
+}
+
+fn step_record_hit(ctx: *zerver.CtxView(.{
+    .reads = &.{ .TodoId, .TodoItem },
+    .writes = &.{ .TodoItem },
+})) !zerver.Decision {
+    const item = try ctx.require(.TodoItem);
+    // mutate or enrich the todo before rendering
+    try ctx.put(.TodoItem, .{ .id = item.id, .title = item.title, .completed = item.completed });
     return zerver.continue_();
 }
 
@@ -274,7 +360,22 @@ fn step_render_todo(ctx: *zerver.CtxView(.{ .reads = &.{ .TodoItem } })) !zerver
 
 ### When to choose which
 
-1. **Express.js** – best for rapid experimentation, lightweight services, or teams fluent in Node who can bolt on observability consciously.
-2. **ASP.NET Core** – strong fit for enterprise teams needing static typing, tooling, and integrated observability pipelines.
-3. **Spring Boot** – excels when you need the Spring ecosystem (JPA, security, messaging) and prefer annotation-driven configuration.
-4. **Zerver** – choose when you want explicit orchestration, high observability, and compile-time guarantees around request state, especially for systems where tracing is first-class.
+1. **Express.js** - best for rapid experimentation, lightweight services, or teams fluent in Node who can bolt on observability consciously.
+2. **ASP.NET Core** - strong fit for enterprise teams needing static typing, tooling, and integrated observability pipelines.
+3. **Spring Boot** - excels when you need the Spring ecosystem (JPA, security, messaging) and prefer annotation-driven configuration.
+4. **Zerver** - choose when you want explicit orchestration, high observability, and compile-time guarantees around request state, especially for systems where tracing is first-class.
+
+## Zerver DX Walkthrough vs. the Others
+
+Building a controller in Zerver feels like assembling a flow chart: you decide on slots, sketch each step, and wire them into a pipeline. Below is a typical loop and how it relates to the other frameworks:
+
+1. **Define the slot contract.** You list the per-request state up front (similar to declaring DTOs in ASP.NET or records in Spring) but enforced at compile time. Unlike Express where state is implicit in `req`, Zerver refuses to compile if a step uses an undeclared slot.
+2. **Author pure steps first.** Start with steps that only read/write slots. This mirrors Spring's encouragement to keep controllers thin, yet Zerver gives you a typed view so "thinness" is enforced. Compared to Express, there is less temptation to touch globals because the step signature exposes only what it can access.
+3. **Introduce effects with `.Need`.** When you reach for the database, you return `.Need` and specify the effect plus continuation. This is closest to ASP.NET filters where you can short-circuit or resume, but in Zerver the continuation lives beside the step so the data flow stays obvious. There is no hidden magic like Spring transactions or implicit async recursion as in Express.
+4. **Compose the route.** The final `server.addRoute` reads like a declarative array (not unlike the middleware arrays you might hand-roll in Express). The difference is that Zerver's executor validates each entry and emits trace spans automatically; you never worry about the wiring order going stale because the compiler sees the spec.
+5. **Observe and iterate.** With slots and traces you can inspect the request after any step, similar to using Application Insights or Spring Actuator, but without additional configuration. Express developers often add `console.time`, whereas Zerver surfaces timing in the debug trace by default.
+
+In practice: Zerver combines Express's readability (the pipeline is literal code) with ASP.NET's strong typing and Spring's layered separation, while weaving observability through `.Need` and slot discipline. Developing a controller means spending most of your time in pure Zig functions, letting the executor handle edge cases that would otherwise be sprinkled across middleware, filters, or annotations.
+
+
+

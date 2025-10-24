@@ -100,7 +100,10 @@ pub const Executor = struct {
 
         // Call the step function (it will receive *CtxBase directly)
         const ptr = @intFromPtr(step_fn);
-        std.debug.print("Calling step function at address: 0x{x}\n", .{ptr});
+        slog.debug("Executing step function", &.{
+            slog.Attr.uint("fn_ptr", @as(u64, @intCast(ptr))),
+            slog.Attr.uint("depth", @as(u64, @intCast(depth))),
+        });
         var decision = try step_fn(ctx_base);
 
         // Handle any Need decisions by executing effects

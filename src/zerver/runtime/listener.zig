@@ -30,7 +30,7 @@ pub fn listenAndServe(
             continue;
         };
 
-        slog.debug("Accepted new connection", &.{});
+    slog.info("Accepted new connection", &.{});
 
         // Handle persistent connection - RFC 9112 Section 9
         try handleConnection(srv, allocator, connection);
@@ -82,14 +82,16 @@ fn handleConnection(
 
         last_activity = std.time.milliTimestamp();
 
-        slog.debug("Received HTTP request", &.{
+        const preview_len = @min(req_data.len, 120);
+        slog.info("Received HTTP request", &.{
             slog.Attr.uint("bytes", req_data.len),
+            slog.Attr.string("preview", req_data[0..preview_len]),
         });
 
         if (req_data.len > 0) {
             const line_end = std.mem.indexOf(u8, req_data, "\r\n") orelse req_data.len;
             const request_line = req_data[0..line_end];
-            slog.debug("HTTP request line", &.{
+            slog.info("HTTP request line", &.{
                 slog.Attr.string("line", request_line),
             });
         }
@@ -102,6 +104,10 @@ fn handleConnection(
             try handler.sendErrorResponse(connection, "500 Internal Server Error", "Internal Server Error");
             return;
         };
+
+        slog.info("handleRequest completed", &.{
+            slog.Attr.string("result", @tagName(response_result)),
+        });
 
         // Send response based on type
         switch (response_result) {
@@ -119,18 +125,18 @@ fn handleConnection(
             },
         }
 
-        slog.debug("Response sent successfully", &.{});
+    slog.info("Response sent successfully", &.{});
 
         // Check Connection header to determine if we should keep the connection alive
         // RFC 9112 Section 9.1: Connection header controls connection persistence
         const should_keep_alive = shouldKeepConnectionAlive(req_data);
 
         if (!should_keep_alive) {
-            slog.debug("Connection close requested by client", &.{});
+            slog.info("Connection close requested by client", &.{});
             return;
         }
 
-        slog.debug("Keeping connection alive for next request", &.{});
+        slog.info("Keeping connection alive for next request", &.{});
     }
 }
 

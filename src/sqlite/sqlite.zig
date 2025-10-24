@@ -8,13 +8,13 @@ pub const SQLITE_OK = 0;
 pub const SQLITE_ROW = 100;
 pub const SQLITE_DONE = 101;
 
-extern "c" fn sqlite3_open(filename: [*:0]const u8, ppDb: **sqlite3) c_int;
+extern "c" fn sqlite3_open(filename: [*:0]const u8, ppDb: *?*sqlite3) c_int;
 extern "c" fn sqlite3_close(db: *sqlite3) c_int;
-extern "c" fn sqlite3_exec(db: *sqlite3, sql: [*:0]const u8, callback: ?*const fn (?*anyopaque, c_int, [*c][*c]u8, [*c][*c]u8) callconv(.C) c_int, arg: ?*anyopaque, errmsg: [*c][*c]u8) c_int;
-extern "c" fn sqlite3_prepare_v2(db: *sqlite3, zSql: [*:0]const u8, nByte: c_int, ppStmt: **sqlite3_stmt, pzTail: [*c][*c]u8) c_int;
+extern "c" fn sqlite3_exec(db: *sqlite3, sql: [*:0]const u8, callback: ?*const fn (?*anyopaque, c_int, [*c][*c]u8, [*c][*c]u8) callconv(.c) c_int, arg: ?*anyopaque, errmsg: [*c][*c]u8) c_int;
+extern "c" fn sqlite3_prepare_v2(db: *sqlite3, zSql: [*:0]const u8, nByte: c_int, ppStmt: *?*sqlite3_stmt, pzTail: [*c][*c]u8) c_int;
 extern "c" fn sqlite3_step(stmt: *sqlite3_stmt) c_int;
 extern "c" fn sqlite3_finalize(stmt: *sqlite3_stmt) c_int;
-extern "c" fn sqlite3_bind_text(stmt: *sqlite3_stmt, index: c_int, text: [*:0]const u8, n: c_int, destructor: ?*const fn (?*anyopaque) callconv(.C) void) c_int;
+extern "c" fn sqlite3_bind_text(stmt: *sqlite3_stmt, index: c_int, text: [*:0]const u8, n: c_int, destructor: ?*const fn (?*anyopaque) callconv(.c) void) c_int;
 extern "c" fn sqlite3_bind_int(stmt: *sqlite3_stmt, index: c_int, value: c_int) c_int;
 extern "c" fn sqlite3_column_text(stmt: *sqlite3_stmt, iCol: c_int) [*:0]const u8;
 extern "c" fn sqlite3_column_int(stmt: *sqlite3_stmt, iCol: c_int) c_int;
@@ -36,7 +36,7 @@ pub const Database = struct {
 
     /// Open a SQLite database file
     pub fn open(filename: []const u8) !Database {
-        var db: ?*sqlite3 = undefined;
+        var db: ?*sqlite3 = null;
         const result = sqlite3_open(@ptrCast(filename), &db);
         if (result != SQLITE_OK or db == null) {
             return Error.OpenFailed;
@@ -61,7 +61,7 @@ pub const Database = struct {
 
     /// Prepare a SQL statement
     pub fn prepare(self: *Database, sql: []const u8) !Statement {
-        var stmt: ?*sqlite3_stmt = undefined;
+        var stmt: ?*sqlite3_stmt = null;
         const result = sqlite3_prepare_v2(self.db, @ptrCast(sql), @intCast(sql.len), &stmt, null);
         if (result != SQLITE_OK or stmt == null) {
             return Error.PrepareFailed;

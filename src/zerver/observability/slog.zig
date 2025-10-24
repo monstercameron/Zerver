@@ -141,18 +141,39 @@ pub const TextHandler = struct {
         self.mutex.lock();
         defer self.mutex.unlock();
 
-        // Format: timestamp [LEVEL] message
-        const msg = std.fmt.allocPrint(std.heap.page_allocator, "{} [{s}] {s}\n", .{
+    var line = std.ArrayList(u8).initCapacity(std.heap.page_allocator, 256) catch return;
+    defer line.deinit(std.heap.page_allocator);
+
+    const writer = line.writer(std.heap.page_allocator);
+        writer.print("{} [{s}] {s}", .{
             @divFloor(record.time, std.time.ns_per_s),
             record.level.string(),
             record.message,
         }) catch return;
-        defer std.heap.page_allocator.free(msg);
 
-        _ = try self.writeFn(msg);
+        for (record.attrs) |attr| {
+            writer.writeByte(' ') catch return;
+            writer.writeAll(attr.key) catch return;
+            writer.writeAll("=") catch return;
+            switch (attr.value) {
+                .string => |s| {
+                    writer.writeByte('"') catch return;
+                    writer.writeAll(s) catch return;
+                    writer.writeByte('"') catch return;
+                },
+                .int => |i| writer.print("{d}", .{i}) catch return,
+                .uint => |u| writer.print("{d}", .{u}) catch return,
+                .float => |f| writer.print("{d}", .{f}) catch return,
+                .bool => |b| writer.print("{}", .{b}) catch return,
+                .duration => |d| writer.print("{d}ns", .{d}) catch return,
+                .any => writer.writeAll("<any>") catch return,
+            }
+        }
 
-        // TODO: Add attribute printing
-        _ = record.attrs;
+    writer.writeByte('\n') catch return;
+
+    const msg = line.items;
+    _ = try self.writeFn(msg);
     }
 };
 
@@ -273,6 +294,62 @@ pub const Logger = struct {
 var default_logger: ?Logger = null;
 var default_mutex: std.Thread.Mutex = .{};
 var default_text_handler: ?TextHandler = null;
+var file_log: ?std.fs.File = null;
+var file_log_mutex: std.Thread.Mutex = .{};
+
+fn combinedWriter(bytes: []const u8) anyerror!usize {
+    // Always mirror logs to the console
+    _ = try debugWriter(bytes);
+
+    file_log_mutex.lock();
+    defer file_log_mutex.unlock();
+
+    if (file_log) |*file| {
+        try file.writeAll(bytes);
+    }
+
+    return bytes.len;
+}
+
+pub fn setupDefaultLoggerWithFile(path: []const u8) !void {
+    const cwd = std.fs.cwd();
+
+    if (std.fs.path.dirname(path)) |dir| {
+        if (dir.len > 0) {
+            cwd.makePath(dir) catch |caught_err| switch (caught_err) {
+                error.PathAlreadyExists => {},
+                else => return caught_err,
+            };
+        }
+    }
+
+    var file = try cwd.createFile(path, .{
+        .truncate = false,
+    });
+    try file.seekFromEnd(0);
+
+    file_log_mutex.lock();
+    if (file_log) |*existing| {
+        existing.close();
+    }
+    file_log = file;
+    file_log_mutex.unlock();
+
+    default_text_handler = TextHandler.init(combinedWriter);
+    const handler = default_text_handler.?.handler();
+    const logger = Logger.init(handler);
+    setDefault(logger);
+}
+
+pub fn closeDefaultLoggerFile() void {
+    file_log_mutex.lock();
+    defer file_log_mutex.unlock();
+
+    if (file_log) |*file| {
+        file.close();
+        file_log = null;
+    }
+}
 
 /// Set the default logger
 pub fn setDefault(logger: Logger) void {

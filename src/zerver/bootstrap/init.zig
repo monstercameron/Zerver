@@ -48,10 +48,6 @@ const hello_world_step = root.types.Step{
 
 /// Initialize and configure the server
 pub fn initializeServer(allocator: std.mem.Allocator) !root.Server {
-    // Initialize structured logging with default logger
-    _ = slog.default();
-    // TODO: Memory/Safety - Ensure proper deinitialization of the global slog.default() logger and its handler at program exit to prevent memory leaks.
-
     slog.info("Zerver MVP Server Starting", &[_]slog.Attr{
         slog.Attr.string("version", "mvp"),
         slog.Attr.int("port", 8080),
