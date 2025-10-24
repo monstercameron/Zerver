@@ -30,7 +30,7 @@ pub fn listenAndServe(
             continue;
         };
 
-    slog.info("Accepted new connection", &.{});
+        slog.info("Accepted new connection", &.{});
 
         // Handle persistent connection - RFC 9112 Section 9
         try handleConnection(srv, allocator, connection);
@@ -125,7 +125,7 @@ fn handleConnection(
             },
         }
 
-    slog.info("Response sent successfully", &.{});
+        slog.info("Response sent successfully", &.{});
 
         // Check Connection header to determine if we should keep the connection alive
         // RFC 9112 Section 9.1: Connection header controls connection persistence

@@ -141,10 +141,10 @@ pub const TextHandler = struct {
         self.mutex.lock();
         defer self.mutex.unlock();
 
-    var line = std.ArrayList(u8).initCapacity(std.heap.page_allocator, 256) catch return;
-    defer line.deinit(std.heap.page_allocator);
+        var line = std.ArrayList(u8).initCapacity(std.heap.page_allocator, 256) catch return;
+        defer line.deinit(std.heap.page_allocator);
 
-    const writer = line.writer(std.heap.page_allocator);
+        const writer = line.writer(std.heap.page_allocator);
         writer.print("{} [{s}] {s}", .{
             @divFloor(record.time, std.time.ns_per_s),
             record.level.string(),
@@ -170,10 +170,10 @@ pub const TextHandler = struct {
             }
         }
 
-    writer.writeByte('\n') catch return;
+        writer.writeByte('\n') catch return;
 
-    const msg = line.items;
-    _ = try self.writeFn(msg);
+        const msg = line.items;
+        _ = try self.writeFn(msg);
     }
 };
 

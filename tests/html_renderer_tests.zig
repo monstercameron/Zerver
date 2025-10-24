@@ -17,8 +17,8 @@ test "html renderer: basic nesting produces expected markup" {
     const allocator = gpa.allocator();
 
     const tree = html.div(.{ .class = "container"[0..] }, .{
-        html.h1(.{}, .{ html.text("Hello Zig!"){} }),
-        html.p(.{}, .{ html.text("Rendered at comptime."){} }),
+        html.h1(.{}, .{html.text("Hello Zig!"){}}),
+        html.p(.{}, .{html.text("Rendered at comptime."){}}),
     });
 
     const rendered = try renderToString(tree, allocator);
@@ -57,12 +57,12 @@ test "html renderer: generated tag helpers cover diverse elements" {
 
     const tree = html.section(.{}, .{
         html.article(.{}, .{
-            html.h2(.{}, .{ html.text("Example"){} }),
+            html.h2(.{}, .{html.text("Example"){}}),
             html.img(.{ .src = "/logo.png"[0..], .alt = "logo"[0..] }, .{}),
             html.br(.{}, .{}),
             html.ul(.{}, .{
-                html.li(.{}, .{ html.text("First"){} }),
-                html.li(.{}, .{ html.text("Second"){} }),
+                html.li(.{}, .{html.text("First"){}}),
+                html.li(.{}, .{html.text("Second"){}}),
             }),
         }),
     });

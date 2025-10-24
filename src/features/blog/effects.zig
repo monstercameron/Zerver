@@ -153,7 +153,7 @@ fn getAllPosts(database: *db_mod.Database) !zerver.executor.EffectResult {
             .created_at = @as(i64, row.getInt(4)),
             .updated_at = @as(i64, row.getInt(5)),
         };
-    try writePostJson(&writer, post);
+        try writePostJson(&writer, post);
     }
     try writer.writeByte(']');
 
@@ -213,7 +213,7 @@ fn getCommentsForPost(database: *db_mod.Database, post_id: []const u8) !zerver.e
             .author = std.mem.span(row.getText(3)),
             .created_at = @as(i64, row.getInt(4)),
         };
-    try writeCommentJson(&writer, comment);
+        try writeCommentJson(&writer, comment);
     }
     try writer.writeByte(']');
 

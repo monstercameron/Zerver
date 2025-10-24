@@ -96,7 +96,7 @@ pub fn readRequestWithTimeout(
             slog.Attr.string("buffer_preview", req_buf.items[0..total_preview_len]),
             slog.Attr.string("tail_hex", tail_hex),
             slog.Attr.uint("terminator_index", @as(u64, @intCast(terminator_index))),
-            slog.Attr.@"bool"("terminator_found", terminator_found),
+            slog.Attr.bool("terminator_found", terminator_found),
         });
 
         if (std.mem.indexOf(u8, req_buf.items, "\r\n\r\n")) |found| {

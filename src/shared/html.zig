@@ -2,7 +2,6 @@ const std = @import("std");
 
 /// Minimal HTML renderer built on comptime-generated element helpers.
 /// Supports simple attributes, nested children, and text nodes.
-
 /// Any renderable node must expose a `render(writer)` method.
 fn isRenderable(comptime T: type) bool {
     return @hasDecl(T, "render");
@@ -97,26 +96,26 @@ fn Element(
             try writer.print("</{s}>", .{tag});
         }
 
-            inline fn renderAttr(writer: anytype, name: []const u8, value: anytype) !void {
+        inline fn renderAttr(writer: anytype, name: []const u8, value: anytype) !void {
             const ValueType = @TypeOf(value);
-                switch (@typeInfo(ValueType)) {
-                    .bool => if (value) try writer.print(" {s}", .{name}),
-                    .int, .comptime_int, .float, .comptime_float => try writer.print(" {s}=\"{}\"", .{ name, value }),
-                    .optional => {
-                        if (value) |some| {
-                            try renderAttr(writer, name, some);
+            switch (@typeInfo(ValueType)) {
+                .bool => if (value) try writer.print(" {s}", .{name}),
+                .int, .comptime_int, .float, .comptime_float => try writer.print(" {s}=\"{}\"", .{ name, value }),
+                .optional => {
+                    if (value) |some| {
+                        try renderAttr(writer, name, some);
+                    }
+                },
+                else => {
+                    if (asSlice(value)) |slice| {
+                        if (slice.len > 0) {
+                            try writer.print(" {s}=\"", .{name});
+                            try writeEscaped(writer, slice);
+                            try writer.writeByte('"');
                         }
-                    },
-                    else => {
-                        if (asSlice(value)) |slice| {
-                            if (slice.len > 0) {
-                                try writer.print(" {s}=\"", .{name});
-                                try writeEscaped(writer, slice);
-                                try writer.writeByte('"');
-                            }
-                        }
-                    },
-                }
+                    }
+                },
+            }
         }
 
         inline fn asSlice(value: anytype) ?[]const u8 {
@@ -148,20 +147,7 @@ fn Element(
 }
 
 inline fn isVoidElement(comptime tag: []const u8) bool {
-    return std.mem.eql(u8, tag, "area")
-        or std.mem.eql(u8, tag, "base")
-        or std.mem.eql(u8, tag, "br")
-        or std.mem.eql(u8, tag, "col")
-        or std.mem.eql(u8, tag, "embed")
-        or std.mem.eql(u8, tag, "hr")
-        or std.mem.eql(u8, tag, "img")
-        or std.mem.eql(u8, tag, "input")
-        or std.mem.eql(u8, tag, "link")
-        or std.mem.eql(u8, tag, "meta")
-        or std.mem.eql(u8, tag, "param")
-        or std.mem.eql(u8, tag, "source")
-        or std.mem.eql(u8, tag, "track")
-        or std.mem.eql(u8, tag, "wbr");
+    return std.mem.eql(u8, tag, "area") or std.mem.eql(u8, tag, "base") or std.mem.eql(u8, tag, "br") or std.mem.eql(u8, tag, "col") or std.mem.eql(u8, tag, "embed") or std.mem.eql(u8, tag, "hr") or std.mem.eql(u8, tag, "img") or std.mem.eql(u8, tag, "input") or std.mem.eql(u8, tag, "link") or std.mem.eql(u8, tag, "meta") or std.mem.eql(u8, tag, "param") or std.mem.eql(u8, tag, "source") or std.mem.eql(u8, tag, "track") or std.mem.eql(u8, tag, "wbr");
 }
 
 /// Generate a struct containing helper functions for common tags.
@@ -197,27 +183,22 @@ fn makeTags(comptime names: anytype) type {
 }
 
 pub const Tags = makeTags(.{
-    "a", "abbr", "address", "area", "article", "aside", "audio",
-    "b", "base", "bdi", "bdo", "blockquote", "body", "br", "button",
-    "canvas", "caption", "cite", "code", "col", "colgroup",
-    "data", "datalist", "dd", "del", "details", "dfn", "dialog", "div", "dl", "dt",
-    "em", "embed",
-    "fieldset", "figcaption", "figure", "footer", "form",
-    "h1", "h2", "h3", "h4", "h5", "h6", "head", "header", "hgroup", "hr", "html",
-    "i", "iframe", "img", "input", "ins",
-    "kbd",
-    "label", "legend", "li", "link",
-    "main", "map", "mark", "meta", "meter",
-    "nav", "noscript",
-    "object", "ol", "optgroup", "option", "output",
-    "p", "picture", "pre", "progress",
-    "q",
-    "rp", "rt", "ruby",
-    "s", "samp", "script", "section", "select", "small", "source", "span", "strong", "style", "sub", "summary", "sup",
-    "table", "tbody", "td", "template", "textarea", "tfoot", "th", "thead", "time", "title", "tr", "track",
-    "u", "ul",
-    "var", "video",
-    "wbr",
+    "a",      "abbr",     "address",  "area",   "article",    "aside",    "audio",
+    "b",      "base",     "bdi",      "bdo",    "blockquote", "body",     "br",
+    "button", "canvas",   "caption",  "cite",   "code",       "col",      "colgroup",
+    "data",   "datalist", "dd",       "del",    "details",    "dfn",      "dialog",
+    "div",    "dl",       "dt",       "em",     "embed",      "fieldset", "figcaption",
+    "figure", "footer",   "form",     "h1",     "h2",         "h3",       "h4",
+    "h5",     "h6",       "head",     "header", "hgroup",     "hr",       "html",
+    "i",      "iframe",   "img",      "input",  "ins",        "kbd",      "label",
+    "legend", "li",       "link",     "main",   "map",        "mark",     "meta",
+    "meter",  "nav",      "noscript", "object", "ol",         "optgroup", "option",
+    "output", "p",        "picture",  "pre",    "progress",   "q",        "rp",
+    "rt",     "ruby",     "s",        "samp",   "script",     "section",  "select",
+    "small",  "source",   "span",     "strong", "style",      "sub",      "summary",
+    "sup",    "table",    "tbody",    "td",     "template",   "textarea", "tfoot",
+    "th",     "thead",    "time",     "title",  "tr",         "track",    "u",
+    "ul",     "var",      "video",    "wbr",
 });
 
 pub const tags = Tags{};
