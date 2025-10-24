@@ -25,7 +25,7 @@ pub fn build(b: *std.Build) void {
 
     // Add SQLite as a C library
     exe.addCSourceFile(.{
-        .file = b.path("src/sqlite/sqlite3.c"),
+        .file = b.path("src/zerver/sql/dialects/sqlite/c/sqlite3.c"),
         .flags = &[_][]const u8{
             "-DSQLITE_ENABLE_JSON1",
             "-DSQLITE_THREADSAFE=1",
@@ -58,7 +58,7 @@ pub fn build(b: *std.Build) void {
     test_exe.root_module.addImport("zerver", zerver_mod);
     // Add SQLite to test executable
     test_exe.addCSourceFile(.{
-        .file = b.path("src/sqlite/sqlite3.c"),
+        .file = b.path("src/zerver/sql/dialects/sqlite/c/sqlite3.c"),
         .flags = &[_][]const u8{
             "-DSQLITE_ENABLE_JSON1",
             "-DSQLITE_THREADSAFE=1",
@@ -92,7 +92,7 @@ pub fn build(b: *std.Build) void {
     blog_exe.root_module.addImport("zerver", zerver_mod);
     // Add SQLite to blog example
     blog_exe.addCSourceFile(.{
-        .file = b.path("src/sqlite/sqlite3.c"),
+        .file = b.path("src/zerver/sql/dialects/sqlite/c/sqlite3.c"),
         .flags = &[_][]const u8{
             "-DSQLITE_ENABLE_JSON1",
             "-DSQLITE_THREADSAFE=1",

@@ -1,8 +1,7 @@
-const std = @import("std");
-const sqlite = @import("../../sqlite/sqlite.zig");
+const sql = @import("../../zerver/sql/mod.zig");
 
 /// Initialize the blog database schema
-pub fn initSchema(db: *sqlite.Database) !void {
+pub fn initSchema(db: *sql.db.Connection) !void {
     // Create posts table
     try db.exec(
         \\CREATE TABLE IF NOT EXISTS posts (

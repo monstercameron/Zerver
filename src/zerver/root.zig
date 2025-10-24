@@ -10,6 +10,7 @@ pub const router = @import("routes/router.zig");
 pub const executor = @import("impure/executor.zig");
 pub const tracer_module = @import("observability/tracer.zig");
 pub const reqtest_module = @import("core/reqtest.zig");
+pub const sql = @import("sql/mod.zig");
 
 // Main types
 pub const CtxBase = ctx_module.CtxBase;

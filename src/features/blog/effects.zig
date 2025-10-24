@@ -2,20 +2,27 @@ const std = @import("std");
 const zerver = @import("../../zerver/root.zig");
 const slog = @import("../../zerver/observability/slog.zig");
 const schema = @import("schema.zig");
-const db_mod = @import("../../sqlite/db.zig");
+const sql = @import("../../zerver/sql/mod.zig");
 
 const allocator = std.heap.c_allocator;
+const sqlite_driver = &sql.dialects.sqlite.driver.driver;
+const ValueConvertError = error{UnexpectedType};
 
-var db: ?db_mod.Database = null;
+var db: ?sql.db.Connection = null;
 var db_initialized = false;
 
 fn initDb() !void {
     if (db_initialized) return;
 
-    db = try db_mod.Database.open(allocator, "blog.db");
-    errdefer if (db) |*database| database.close();
+    var conn = try sql.db.openWithDriver(sqlite_driver, allocator, .{
+        .target = .{ .path = "blog.db" },
+        .busy_timeout_ms = 5_000,
+    });
+    errdefer conn.deinit();
 
-    try schema.initSchema(&db.?.inner);
+    try schema.initSchema(&conn);
+
+    db = conn;
     db_initialized = true;
     slog.info("blog sqlite initialized", &.{});
 }
@@ -132,9 +139,9 @@ fn handleDbDel(key: []const u8) !zerver.executor.EffectResult {
     } };
 }
 
-fn getAllPosts(database: *db_mod.Database) !zerver.executor.EffectResult {
-    var stmt = try database.inner.prepare("SELECT id, title, content, author, created_at, updated_at FROM posts ORDER BY created_at DESC");
-    defer stmt.finalize();
+fn getAllPosts(database: *sql.db.Connection) !zerver.executor.EffectResult {
+    var stmt = try database.prepare("SELECT id, title, content, author, created_at, updated_at FROM posts ORDER BY created_at DESC");
+    defer stmt.deinit();
 
     var json_buf = std.ArrayListUnmanaged(u8){};
     errdefer json_buf.deinit(allocator);
@@ -142,18 +149,15 @@ fn getAllPosts(database: *db_mod.Database) !zerver.executor.EffectResult {
     var writer = json_buf.writer(allocator);
     try writer.writeByte('[');
     var first = true;
-    while (try stmt.step()) |row| {
-        if (!first) try writer.writeByte(',');
-        first = false;
-        const post = schema.Post{
-            .id = std.mem.span(row.getText(0)),
-            .title = std.mem.span(row.getText(1)),
-            .content = std.mem.span(row.getText(2)),
-            .author = std.mem.span(row.getText(3)),
-            .created_at = @as(i64, row.getInt(4)),
-            .updated_at = @as(i64, row.getInt(5)),
-        };
-        try writePostJson(&writer, post);
+    while (true) {
+        switch (try stmt.step()) {
+            .row => {
+                if (!first) try writer.writeByte(',');
+                first = false;
+                try writePostRow(&writer, &stmt);
+            },
+            .done => break,
+        }
     }
     try writer.writeByte(']');
 
@@ -161,28 +165,22 @@ fn getAllPosts(database: *db_mod.Database) !zerver.executor.EffectResult {
     return .{ .success = data };
 }
 
-fn getPost(database: *db_mod.Database, id: []const u8) !zerver.executor.EffectResult {
-    var stmt = try database.inner.prepare("SELECT id, title, content, author, created_at, updated_at FROM posts WHERE id = ?");
-    defer stmt.finalize();
+fn getPost(database: *sql.db.Connection, id: []const u8) !zerver.executor.EffectResult {
+    var stmt = try database.prepare("SELECT id, title, content, author, created_at, updated_at FROM posts WHERE id = ?");
+    defer stmt.deinit();
 
-    try stmt.bindText(1, id);
+    try stmt.bind(1, .{ .text = id });
 
-    if (try stmt.step()) |row| {
-        const post = schema.Post{
-            .id = std.mem.span(row.getText(0)),
-            .title = std.mem.span(row.getText(1)),
-            .content = std.mem.span(row.getText(2)),
-            .author = std.mem.span(row.getText(3)),
-            .created_at = @as(i64, row.getInt(4)),
-            .updated_at = @as(i64, row.getInt(5)),
-        };
-
-        var json_buf = std.ArrayListUnmanaged(u8){};
-        errdefer json_buf.deinit(allocator);
-        var writer = json_buf.writer(allocator);
-        try writePostJson(&writer, post);
-        const data = try json_buf.toOwnedSlice(allocator);
-        return .{ .success = data };
+    switch (try stmt.step()) {
+        .row => {
+            var json_buf = std.ArrayListUnmanaged(u8){};
+            errdefer json_buf.deinit(allocator);
+            var writer = json_buf.writer(allocator);
+            try writePostRow(&writer, &stmt);
+            const data = try json_buf.toOwnedSlice(allocator);
+            return .{ .success = data };
+        },
+        .done => {},
     }
 
     return .{ .failure = .{
@@ -191,11 +189,11 @@ fn getPost(database: *db_mod.Database, id: []const u8) !zerver.executor.EffectRe
     } };
 }
 
-fn getCommentsForPost(database: *db_mod.Database, post_id: []const u8) !zerver.executor.EffectResult {
-    var stmt = try database.inner.prepare("SELECT id, post_id, content, author, created_at FROM comments WHERE post_id = ? ORDER BY created_at ASC");
-    defer stmt.finalize();
+fn getCommentsForPost(database: *sql.db.Connection, post_id: []const u8) !zerver.executor.EffectResult {
+    var stmt = try database.prepare("SELECT id, post_id, content, author, created_at FROM comments WHERE post_id = ? ORDER BY created_at ASC");
+    defer stmt.deinit();
 
-    try stmt.bindText(1, post_id);
+    try stmt.bind(1, .{ .text = post_id });
 
     var json_buf = std.ArrayListUnmanaged(u8){};
     errdefer json_buf.deinit(allocator);
@@ -203,17 +201,15 @@ fn getCommentsForPost(database: *db_mod.Database, post_id: []const u8) !zerver.e
     var writer = json_buf.writer(allocator);
     try writer.writeByte('[');
     var first = true;
-    while (try stmt.step()) |row| {
-        if (!first) try writer.writeByte(',');
-        first = false;
-        const comment = schema.Comment{
-            .id = std.mem.span(row.getText(0)),
-            .post_id = std.mem.span(row.getText(1)),
-            .content = std.mem.span(row.getText(2)),
-            .author = std.mem.span(row.getText(3)),
-            .created_at = @as(i64, row.getInt(4)),
-        };
-        try writeCommentJson(&writer, comment);
+    while (true) {
+        switch (try stmt.step()) {
+            .row => {
+                if (!first) try writer.writeByte(',');
+                first = false;
+                try writeCommentRow(&writer, &stmt);
+            },
+            .done => break,
+        }
     }
     try writer.writeByte(']');
 
@@ -221,27 +217,22 @@ fn getCommentsForPost(database: *db_mod.Database, post_id: []const u8) !zerver.e
     return .{ .success = data };
 }
 
-fn getComment(database: *db_mod.Database, id: []const u8) !zerver.executor.EffectResult {
-    var stmt = try database.inner.prepare("SELECT id, post_id, content, author, created_at FROM comments WHERE id = ?");
-    defer stmt.finalize();
+fn getComment(database: *sql.db.Connection, id: []const u8) !zerver.executor.EffectResult {
+    var stmt = try database.prepare("SELECT id, post_id, content, author, created_at FROM comments WHERE id = ?");
+    defer stmt.deinit();
 
-    try stmt.bindText(1, id);
+    try stmt.bind(1, .{ .text = id });
 
-    if (try stmt.step()) |row| {
-        const comment = schema.Comment{
-            .id = std.mem.span(row.getText(0)),
-            .post_id = std.mem.span(row.getText(1)),
-            .content = std.mem.span(row.getText(2)),
-            .author = std.mem.span(row.getText(3)),
-            .created_at = @as(i64, row.getInt(4)),
-        };
-
-        var json_buf = std.ArrayListUnmanaged(u8){};
-        errdefer json_buf.deinit(allocator);
-        var writer = json_buf.writer(allocator);
-        try writeCommentJson(&writer, comment);
-        const data = try json_buf.toOwnedSlice(allocator);
-        return .{ .success = data };
+    switch (try stmt.step()) {
+        .row => {
+            var json_buf = std.ArrayListUnmanaged(u8){};
+            errdefer json_buf.deinit(allocator);
+            var writer = json_buf.writer(allocator);
+            try writeCommentRow(&writer, &stmt);
+            const data = try json_buf.toOwnedSlice(allocator);
+            return .{ .success = data };
+        },
+        .done => {},
     }
 
     return .{ .failure = .{
@@ -250,56 +241,130 @@ fn getComment(database: *db_mod.Database, id: []const u8) !zerver.executor.Effec
     } };
 }
 
-fn putPost(database: *db_mod.Database, value: []const u8) !void {
+fn putPost(database: *sql.db.Connection, value: []const u8) !void {
     const parsed = try std.json.parseFromSlice(schema.Post, allocator, value, .{});
     defer parsed.deinit();
 
-    var stmt = try database.inner.prepare("INSERT OR REPLACE INTO posts (id, title, content, author, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)");
-    defer stmt.finalize();
+    var stmt = try database.prepare("INSERT OR REPLACE INTO posts (id, title, content, author, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)");
+    defer stmt.deinit();
 
-    try stmt.bindText(1, parsed.value.id);
-    try stmt.bindText(2, parsed.value.title);
-    try stmt.bindText(3, parsed.value.content);
-    try stmt.bindText(4, parsed.value.author);
-    const created_at = std.math.cast(i32, parsed.value.created_at) orelse return error.IntegerOverflow;
-    const updated_at = std.math.cast(i32, parsed.value.updated_at) orelse return error.IntegerOverflow;
-    try stmt.bindInt(5, created_at);
-    try stmt.bindInt(6, updated_at);
+    try stmt.bind(1, .{ .text = parsed.value.id });
+    try stmt.bind(2, .{ .text = parsed.value.title });
+    try stmt.bind(3, .{ .text = parsed.value.content });
+    try stmt.bind(4, .{ .text = parsed.value.author });
+    try stmt.bind(5, .{ .integer = parsed.value.created_at });
+    try stmt.bind(6, .{ .integer = parsed.value.updated_at });
 
-    _ = try stmt.step();
+    switch (try stmt.step()) {
+        .row => {},
+        .done => {},
+    }
 }
 
-fn putComment(database: *db_mod.Database, value: []const u8) !void {
+fn putComment(database: *sql.db.Connection, value: []const u8) !void {
     const parsed = try std.json.parseFromSlice(schema.Comment, allocator, value, .{});
     defer parsed.deinit();
 
-    var stmt = try database.inner.prepare("INSERT OR REPLACE INTO comments (id, post_id, content, author, created_at) VALUES (?, ?, ?, ?, ?)");
-    defer stmt.finalize();
+    var stmt = try database.prepare("INSERT OR REPLACE INTO comments (id, post_id, content, author, created_at) VALUES (?, ?, ?, ?, ?)");
+    defer stmt.deinit();
 
-    try stmt.bindText(1, parsed.value.id);
-    try stmt.bindText(2, parsed.value.post_id);
-    try stmt.bindText(3, parsed.value.content);
-    try stmt.bindText(4, parsed.value.author);
-    const created_at = std.math.cast(i32, parsed.value.created_at) orelse return error.IntegerOverflow;
-    try stmt.bindInt(5, created_at);
+    try stmt.bind(1, .{ .text = parsed.value.id });
+    try stmt.bind(2, .{ .text = parsed.value.post_id });
+    try stmt.bind(3, .{ .text = parsed.value.content });
+    try stmt.bind(4, .{ .text = parsed.value.author });
+    try stmt.bind(5, .{ .integer = parsed.value.created_at });
 
-    _ = try stmt.step();
+    switch (try stmt.step()) {
+        .row => {},
+        .done => {},
+    }
 }
 
-fn deletePost(database: *db_mod.Database, id: []const u8) !void {
-    var stmt = try database.inner.prepare("DELETE FROM posts WHERE id = ?");
-    defer stmt.finalize();
+fn deletePost(database: *sql.db.Connection, id: []const u8) !void {
+    var stmt = try database.prepare("DELETE FROM posts WHERE id = ?");
+    defer stmt.deinit();
 
-    try stmt.bindText(1, id);
-    _ = try stmt.step();
+    try stmt.bind(1, .{ .text = id });
+    switch (try stmt.step()) {
+        .row => {},
+        .done => {},
+    }
 }
 
-fn deleteComment(database: *db_mod.Database, id: []const u8) !void {
-    var stmt = try database.inner.prepare("DELETE FROM comments WHERE id = ?");
-    defer stmt.finalize();
+fn deleteComment(database: *sql.db.Connection, id: []const u8) !void {
+    var stmt = try database.prepare("DELETE FROM comments WHERE id = ?");
+    defer stmt.deinit();
 
-    try stmt.bindText(1, id);
-    _ = try stmt.step();
+    try stmt.bind(1, .{ .text = id });
+    switch (try stmt.step()) {
+        .row => {},
+        .done => {},
+    }
+}
+
+fn writePostRow(writer: anytype, stmt: *sql.db.Statement) !void {
+    const alloc = stmt.allocator;
+    var id = try stmt.readColumn(0);
+    defer id.deinit(alloc);
+    var title = try stmt.readColumn(1);
+    defer title.deinit(alloc);
+    var content = try stmt.readColumn(2);
+    defer content.deinit(alloc);
+    var author = try stmt.readColumn(3);
+    defer author.deinit(alloc);
+    var created_at = try stmt.readColumn(4);
+    defer created_at.deinit(alloc);
+    var updated_at = try stmt.readColumn(5);
+    defer updated_at.deinit(alloc);
+
+    const post = schema.Post{
+        .id = try valueText(&id),
+        .title = try valueText(&title),
+        .content = try valueText(&content),
+        .author = try valueText(&author),
+        .created_at = try valueInt(&created_at),
+        .updated_at = try valueInt(&updated_at),
+    };
+
+    try writePostJson(writer, post);
+}
+
+fn writeCommentRow(writer: anytype, stmt: *sql.db.Statement) !void {
+    const alloc = stmt.allocator;
+    var id = try stmt.readColumn(0);
+    defer id.deinit(alloc);
+    var post_id = try stmt.readColumn(1);
+    defer post_id.deinit(alloc);
+    var content = try stmt.readColumn(2);
+    defer content.deinit(alloc);
+    var author = try stmt.readColumn(3);
+    defer author.deinit(alloc);
+    var created_at = try stmt.readColumn(4);
+    defer created_at.deinit(alloc);
+
+    const comment = schema.Comment{
+        .id = try valueText(&id),
+        .post_id = try valueText(&post_id),
+        .content = try valueText(&content),
+        .author = try valueText(&author),
+        .created_at = try valueInt(&created_at),
+    };
+
+    try writeCommentJson(writer, comment);
+}
+
+fn valueText(value: *const sql.db.Value) ![]const u8 {
+    return switch (value.*) {
+        .text => |slice| @as([]const u8, slice),
+        else => ValueConvertError.UnexpectedType,
+    };
+}
+
+fn valueInt(value: *const sql.db.Value) !i64 {
+    return switch (value.*) {
+        .integer => |number| number,
+        else => ValueConvertError.UnexpectedType,
+    };
 }
 
 fn unexpectedError(what: []const u8) zerver.types.Error {
