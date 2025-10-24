@@ -1,5 +1,205 @@
 const std = @import("std");
 
+/// Comprehensive HTML attributes struct shared across components and renderers.
+pub const Attrs = struct {
+    // Global attributes
+    id: ?[]const u8 = null,
+    class: ?[]const u8 = null,
+    style: ?[]const u8 = null,
+    title: ?[]const u8 = null,
+    lang: ?[]const u8 = null,
+    dir: ?[]const u8 = null, // ltr, rtl, auto
+    tabindex: ?[]const u8 = null,
+    accesskey: ?[]const u8 = null,
+    contenteditable: ?[]const u8 = null, // true, false
+    draggable: ?[]const u8 = null, // true, false, auto
+    hidden: ?[]const u8 = null,
+    spellcheck: ?[]const u8 = null, // true, false
+    translate: ?[]const u8 = null, // yes, no
+
+    // ARIA attributes
+    role: ?[]const u8 = null,
+    @"aria-label": ?[]const u8 = null,
+    @"aria-labelledby": ?[]const u8 = null,
+    @"aria-describedby": ?[]const u8 = null,
+    @"aria-hidden": ?[]const u8 = null,
+    @"aria-expanded": ?[]const u8 = null,
+    @"aria-controls": ?[]const u8 = null,
+    @"aria-live": ?[]const u8 = null,
+    @"aria-atomic": ?[]const u8 = null,
+    @"aria-busy": ?[]const u8 = null,
+    @"aria-disabled": ?[]const u8 = null,
+    @"aria-selected": ?[]const u8 = null,
+    @"aria-checked": ?[]const u8 = null,
+    @"aria-pressed": ?[]const u8 = null,
+    @"aria-current": ?[]const u8 = null,
+    @"aria-haspopup": ?[]const u8 = null,
+    @"aria-invalid": ?[]const u8 = null,
+    @"aria-required": ?[]const u8 = null,
+    @"aria-readonly": ?[]const u8 = null,
+    @"aria-valuemin": ?[]const u8 = null,
+    @"aria-valuemax": ?[]const u8 = null,
+    @"aria-valuenow": ?[]const u8 = null,
+    @"aria-valuetext": ?[]const u8 = null,
+
+    // Link/anchor attributes
+    href: ?[]const u8 = null,
+    target: ?[]const u8 = null, // _blank, _self, _parent, _top
+    rel: ?[]const u8 = null,
+    download: ?[]const u8 = null,
+    hreflang: ?[]const u8 = null,
+    ping: ?[]const u8 = null,
+    referrerpolicy: ?[]const u8 = null,
+
+    // Image/media attributes
+    src: ?[]const u8 = null,
+    alt: ?[]const u8 = null,
+    width: ?[]const u8 = null,
+    height: ?[]const u8 = null,
+    loading: ?[]const u8 = null, // lazy, eager
+    decoding: ?[]const u8 = null, // sync, async, auto
+    srcset: ?[]const u8 = null,
+    sizes: ?[]const u8 = null,
+    crossorigin: ?[]const u8 = null, // anonymous, use-credentials
+    usemap: ?[]const u8 = null,
+    ismap: ?[]const u8 = null,
+
+    // Audio/Video attributes
+    autoplay: ?[]const u8 = null,
+    controls: ?[]const u8 = null,
+    loop: ?[]const u8 = null,
+    muted: ?[]const u8 = null,
+    preload: ?[]const u8 = null, // none, metadata, auto
+    poster: ?[]const u8 = null,
+
+    // Form attributes
+    action: ?[]const u8 = null,
+    method: ?[]const u8 = null, // get, post, dialog
+    enctype: ?[]const u8 = null,
+    accept: ?[]const u8 = null,
+    @"accept-charset": ?[]const u8 = null,
+    autocomplete: ?[]const u8 = null, // on, off
+    novalidate: ?[]const u8 = null,
+
+    // Input attributes
+    name: ?[]const u8 = null,
+    value: ?[]const u8 = null,
+    type: ?[]const u8 = null,
+    placeholder: ?[]const u8 = null,
+    required: ?[]const u8 = null,
+    readonly: ?[]const u8 = null,
+    disabled: ?[]const u8 = null,
+    checked: ?[]const u8 = null,
+    selected: ?[]const u8 = null,
+    multiple: ?[]const u8 = null,
+    min: ?[]const u8 = null,
+    max: ?[]const u8 = null,
+    step: ?[]const u8 = null,
+    minlength: ?[]const u8 = null,
+    maxlength: ?[]const u8 = null,
+    pattern: ?[]const u8 = null,
+    size: ?[]const u8 = null,
+    rows: ?[]const u8 = null,
+    cols: ?[]const u8 = null,
+    wrap: ?[]const u8 = null, // soft, hard
+    @"for": ?[]const u8 = null,
+    form: ?[]const u8 = null,
+    list: ?[]const u8 = null,
+
+    // Button attributes
+    formaction: ?[]const u8 = null,
+    formenctype: ?[]const u8 = null,
+    formmethod: ?[]const u8 = null,
+    formnovalidate: ?[]const u8 = null,
+    formtarget: ?[]const u8 = null,
+
+    // Table attributes
+    colspan: ?[]const u8 = null,
+    rowspan: ?[]const u8 = null,
+    headers: ?[]const u8 = null,
+    scope: ?[]const u8 = null, // row, col, rowgroup, colgroup
+
+    // Meta attributes
+    charset: ?[]const u8 = null,
+    content: ?[]const u8 = null,
+    @"http-equiv": ?[]const u8 = null,
+
+    // Script/Style attributes
+    async: ?[]const u8 = null,
+    @"defer": ?[]const u8 = null,
+    integrity: ?[]const u8 = null,
+    nonce: ?[]const u8 = null,
+    media: ?[]const u8 = null,
+
+    // Iframe attributes
+    sandbox: ?[]const u8 = null,
+    allow: ?[]const u8 = null,
+    allowfullscreen: ?[]const u8 = null,
+    allowpaymentrequest: ?[]const u8 = null,
+
+    // Details/Summary attributes
+    open: ?[]const u8 = null,
+
+    // Track attributes
+    default: ?[]const u8 = null,
+    kind: ?[]const u8 = null,
+    label: ?[]const u8 = null,
+    srclang: ?[]const u8 = null,
+
+    // Object/Embed attributes
+    data: ?[]const u8 = null,
+
+    // Time attributes
+    datetime: ?[]const u8 = null,
+
+    // Progress/Meter attributes
+    low: ?[]const u8 = null,
+    high: ?[]const u8 = null,
+    optimum: ?[]const u8 = null,
+
+    // HTMX attributes
+    hx_boost: ?[]const u8 = null,
+    hx_get: ?[]const u8 = null,
+    hx_post: ?[]const u8 = null,
+    hx_put: ?[]const u8 = null,
+    hx_delete: ?[]const u8 = null,
+    hx_patch: ?[]const u8 = null,
+    hx_target: ?[]const u8 = null,
+    hx_trigger: ?[]const u8 = null,
+    hx_select: ?[]const u8 = null,
+    hx_select_oob: ?[]const u8 = null,
+    hx_swap: ?[]const u8 = null,
+    hx_swap_oob: ?[]const u8 = null,
+    hx_vals: ?[]const u8 = null,
+    hx_params: ?[]const u8 = null,
+    hx_include: ?[]const u8 = null,
+    hx_indicator: ?[]const u8 = null,
+    hx_confirm: ?[]const u8 = null,
+    hx_disable: ?[]const u8 = null,
+    hx_disabled_elt: ?[]const u8 = null,
+    hx_ext: ?[]const u8 = null,
+    hx_headers: ?[]const u8 = null,
+    hx_history: ?[]const u8 = null,
+    hx_history_elt: ?[]const u8 = null,
+    hx_preserve: ?[]const u8 = null,
+    hx_push_url: ?[]const u8 = null,
+    hx_replace_url: ?[]const u8 = null,
+    hx_poll: ?[]const u8 = null,
+    hx_request: ?[]const u8 = null,
+    hx_sync: ?[]const u8 = null,
+    hx_validate: ?[]const u8 = null,
+    hx_prompt: ?[]const u8 = null,
+    hx_on: ?[]const u8 = null,
+    hx_encoding: ?[]const u8 = null,
+    hx_ws: ?[]const u8 = null,
+    hx_sse: ?[]const u8 = null,
+};
+
+/// Write the HTML5 doctype to the provided writer.
+pub fn writeDoctype(writer: anytype) !void {
+    try writer.writeAll("<!DOCTYPE html>\n");
+}
+
 /// Minimal HTML renderer built on comptime-generated element helpers.
 /// Supports simple attributes, nested children, and text nodes.
 /// Any renderable node must expose a `render(writer)` method.
@@ -61,18 +261,18 @@ pub const TextDynamic = struct {
 /// HTML element representation generated per tag.
 pub fn Element(
     comptime tag: []const u8,
-    comptime Attrs: type,
+    comptime AttrType: type,
     comptime Children: type,
 ) type {
     return struct {
         const Self = @This();
-        attrs: Attrs,
+        attrs: AttrType,
         children: Children,
 
         pub fn render(self: Self, writer: anytype) !void {
             try writer.print("<{s}", .{tag});
 
-            const attr_fields = std.meta.fields(Attrs);
+            const attr_fields = std.meta.fields(AttrType);
             inline for (attr_fields) |field| {
                 try renderAttr(writer, field.name, @field(self.attrs, field.name));
             }

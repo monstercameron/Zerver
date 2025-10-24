@@ -29,6 +29,7 @@ const load_blog_posts_step = zerver.step("load_blog_posts", list.step_load_blog_
 const load_blog_post_cards_step = zerver.step("load_blog_post_cards", list.step_load_blog_post_cards);
 const load_single_blog_post_card_step = zerver.step("load_single_blog_post_card", list.step_load_single_blog_post_card);
 const render_blog_list_header_step = zerver.step("render_blog_list_header", list.step_render_blog_list_header);
+const load_blog_post_page_step = zerver.step("load_blog_post_page", list.step_load_blog_post_page);
 
 pub fn registerRoutes(srv: *zerver.Server) !void {
     // Homepage route
@@ -37,51 +38,64 @@ pub fn registerRoutes(srv: *zerver.Server) !void {
     });
 
     // Blog list page with full HTML
-    try srv.addRoute(.GET, "/blog/list", .{
+    try srv.addRoute(.GET, "/blogs/list", .{
         .steps = &.{load_blog_posts_step},
     });
 
     // HTMX fragment endpoints
-    try srv.addRoute(.GET, "/blog/htmx/cards", .{
+    try srv.addRoute(.GET, "/blogs/htmx/cards", .{
         .steps = &.{load_blog_post_cards_step},
     });
 
-    try srv.addRoute(.GET, "/blog/htmx/card/:id", .{
+    try srv.addRoute(.GET, "/blogs/htmx/card/:id", .{
         .steps = &.{load_single_blog_post_card_step},
     });
 
-    try srv.addRoute(.GET, "/blog/htmx/header", .{
+    try srv.addRoute(.GET, "/blogs/htmx/header", .{
         .steps = &.{render_blog_list_header_step},
     });
 
-    // Posts
-    try srv.addRoute(.GET, "/blog/posts", .{
+    // Blog post page
+    try srv.addRoute(.GET, "/blogs/posts/:id", .{
+        .steps = &.{load_blog_post_page_step},
+    });
+    try srv.addRoute(.GET, "/blogs/posts/:id/fragment", .{
+        .steps = &.{load_blog_post_page_step},
+    });
+
+    // Legacy blog routes for backward compatibility
+    try srv.addRoute(.GET, "/blog/posts/:id", .{
+        .steps = &.{load_blog_post_page_step},
+    });
+
+    // Posts API
+    try srv.addRoute(.GET, "/blogs/api/posts", .{
         .steps = &.{list_posts_step},
     });
-    try srv.addRoute(.GET, "/blog/posts/:id", .{
+    try srv.addRoute(.GET, "/blogs/api/posts/:id", .{
         .steps = &.{ extract_post_id_step, get_post_step },
     });
-    try srv.addRoute(.POST, "/blog/posts", .{
+    try srv.addRoute(.POST, "/blogs/api/posts", .{
         .steps = &.{ parse_post_step, validate_post_step, db_create_post_step },
     });
-    try srv.addRoute(.PUT, "/blog/posts/:id", .{
+    try srv.addRoute(.PUT, "/blogs/api/posts/:id", .{
         .steps = &.{ extract_post_id_step, parse_update_post_step, validate_post_step, db_update_post_step },
     });
-    try srv.addRoute(.PATCH, "/blog/posts/:id", .{
+    try srv.addRoute(.PATCH, "/blogs/api/posts/:id", .{
         .steps = &.{ extract_post_id_step, parse_update_post_step, validate_post_step, db_update_post_step }, // PATCH can reuse PUT steps for now
     });
-    try srv.addRoute(.DELETE, "/blog/posts/:id", .{
+    try srv.addRoute(.DELETE, "/blogs/api/posts/:id", .{
         .steps = &.{ extract_post_id_step, delete_post_step },
     });
 
-    // Comments
-    try srv.addRoute(.GET, "/blog/posts/:post_id/comments", .{
+    // Comments API
+    try srv.addRoute(.GET, "/blogs/api/posts/:post_id/comments", .{
         .steps = &.{ extract_post_id_for_comment_step, list_comments_step },
     });
-    try srv.addRoute(.POST, "/blog/posts/:post_id/comments", .{
+    try srv.addRoute(.POST, "/blogs/api/posts/:post_id/comments", .{
         .steps = &.{ extract_post_id_for_comment_step, parse_comment_step, validate_comment_step, db_create_comment_step },
     });
-    try srv.addRoute(.DELETE, "/blog/posts/:post_id/comments/:comment_id", .{
+    try srv.addRoute(.DELETE, "/blogs/api/posts/:post_id/comments/:comment_id", .{
         .steps = &.{ extract_post_id_for_comment_step, extract_comment_id_step, delete_comment_step },
     });
 }
