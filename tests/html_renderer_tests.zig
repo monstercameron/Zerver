@@ -1,6 +1,5 @@
 const std = @import("std");
 const html = @import("html.zig");
-const tags = html.tags;
 
 fn renderToString(node: anytype, allocator: std.mem.Allocator) ![]u8 {
     var buffer = std.ArrayListUnmanaged(u8){};
@@ -17,9 +16,9 @@ test "html renderer: basic nesting produces expected markup" {
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
-    const tree = tags.div(.{ .class = "container"[0..] }, .{
-        tags.h1(.{}, .{ html.text("Hello Zig!"){} }),
-        tags.p(.{}, .{ html.text("Rendered at comptime."){} }),
+    const tree = html.div(.{ .class = "container"[0..] }, .{
+        html.h1(.{}, .{ html.text("Hello Zig!"){} }),
+        html.p(.{}, .{ html.text("Rendered at comptime."){} }),
     });
 
     const rendered = try renderToString(tree, allocator);
@@ -36,7 +35,7 @@ test "html renderer: attributes handle strings, numbers, and booleans" {
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
-    const tree = tags.input(.{
+    const tree = html.input(.{
         .type = "checkbox"[0..],
         .checked = true,
         .value = 42,
@@ -56,14 +55,14 @@ test "html renderer: generated tag helpers cover diverse elements" {
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
 
-    const tree = tags.section(.{}, .{
-        tags.article(.{}, .{
-            tags.h2(.{}, .{ html.text("Example"){} }),
-            tags.img(.{ .src = "/logo.png"[0..], .alt = "logo"[0..] }, .{}),
-            tags.br(.{}, .{}),
-            tags.ul(.{}, .{
-                tags.li(.{}, .{ html.text("First"){} }),
-                tags.li(.{}, .{ html.text("Second"){} }),
+    const tree = html.section(.{}, .{
+        html.article(.{}, .{
+            html.h2(.{}, .{ html.text("Example"){} }),
+            html.img(.{ .src = "/logo.png"[0..], .alt = "logo"[0..] }, .{}),
+            html.br(.{}, .{}),
+            html.ul(.{}, .{
+                html.li(.{}, .{ html.text("First"){} }),
+                html.li(.{}, .{ html.text("Second"){} }),
             }),
         }),
     });
@@ -85,7 +84,7 @@ test "html renderer: runtime text escapes special characters" {
     const runtime_value = try std.fmt.allocPrint(allocator, "<price> \"low\" & 'fair'", .{});
     defer allocator.free(runtime_value);
 
-    const tree = tags.span(.{}, .{
+    const tree = html.span(.{}, .{
         html.textDynamic(runtime_value),
     });
 
@@ -106,7 +105,7 @@ test "html renderer: attributes escape special characters" {
     const href_value = try std.fmt.allocPrint(allocator, "https://example.com/?q=\"zig\"&unsafe<'", .{});
     defer allocator.free(href_value);
 
-    const tree = tags.a(.{
+    const tree = html.a(.{
         .href = href_value,
         .title = "5 > 3 & 2"[0..],
     }, .{
