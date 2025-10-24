@@ -23,11 +23,11 @@ pub const Renderer = struct {
     }
 
     pub fn render(self: Renderer, allocator: std.mem.Allocator, query: ast.Query) !RenderOutput {
-    var sql_buf = try std.ArrayList(u8).initCapacity(allocator, 128);
-    defer sql_buf.deinit(allocator);
+        var sql_buf = try std.ArrayList(u8).initCapacity(allocator, 128);
+        defer sql_buf.deinit(allocator);
 
-    var bindings = try std.ArrayList(db.BindValue).initCapacity(allocator, 4);
-    errdefer bindings.deinit(allocator);
+        var bindings = try std.ArrayList(db.BindValue).initCapacity(allocator, 4);
+        errdefer bindings.deinit(allocator);
 
         switch (query) {
             .raw => |text| try sql_buf.appendSlice(text),
