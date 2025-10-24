@@ -6,57 +6,6 @@ const blog_logging = @import("logging.zig");
 
 const Slot = blog_types.BlogSlot;
 
-const FallbackParseError = error{
-    InvalidFormat,
-    MissingField,
-    OutOfMemory,
-};
-
-fn parseLoosePost(ctx: *zerver.CtxBase, body: []const u8) FallbackParseError!blog_types.PostInput {
-    const trimmed_outer = std.mem.trim(u8, body, "{} \t\r\n");
-    if (trimmed_outer.len == 0) {
-        return error.InvalidFormat;
-    }
-
-    const trim_chars = " \t\r\n\"'";
-
-    var title: ?[]const u8 = null;
-    var content: ?[]const u8 = null;
-    var author: ?[]const u8 = null;
-
-    var iter = std.mem.splitSequence(u8, trimmed_outer, ",");
-    while (iter.next()) |segment| {
-        if (segment.len == 0) continue;
-        const colon_idx = std.mem.indexOfScalar(u8, segment, ':') orelse return error.InvalidFormat;
-        const key_raw = std.mem.trim(u8, segment[0..colon_idx], trim_chars);
-        const value_raw = std.mem.trim(u8, segment[colon_idx + 1 ..], trim_chars);
-
-        if (key_raw.len == 0 or value_raw.len == 0) {
-            return error.InvalidFormat;
-        }
-
-        if (std.mem.eql(u8, key_raw, "title")) {
-            title = try ctx.allocator.dupe(u8, value_raw);
-        } else if (std.mem.eql(u8, key_raw, "content")) {
-            content = try ctx.allocator.dupe(u8, value_raw);
-        } else if (std.mem.eql(u8, key_raw, "author")) {
-            author = try ctx.allocator.dupe(u8, value_raw);
-        } else {
-            // Ignore unknown keys
-        }
-    }
-
-    if (title == null or content == null or author == null) {
-        return error.MissingField;
-    }
-
-    return blog_types.PostInput{
-        .title = title.?,
-        .content = content.?,
-        .author = author.?,
-    };
-}
-
 inline fn slotId(comptime slot: Slot) u32 {
     return @intFromEnum(slot);
 }
@@ -191,19 +140,9 @@ pub fn step_parse_post(ctx: *zerver.CtxBase) !zerver.Decision {
     const body = ctx.body;
     blog_logging.logParseBody(body);
 
-    const input_post = blk: {
-        break :blk ctx.json(blog_types.PostInput) catch |err| {
-            blog_logging.logJsonError(@errorName(err));
-            if (err == error.SyntaxError) {
-                const fallback = parseLoosePost(ctx, body) catch |fallback_err| {
-                    blog_logging.logFallbackFailure(@errorName(fallback_err));
-                    return zerver.fail(zerver.ErrorCode.InvalidInput, "post", "invalid_json");
-                };
-                blog_logging.logFallbackSuccess(fallback);
-                break :blk fallback;
-            }
-            return err;
-        };
+    const input_post = ctx.json(blog_types.PostInput) catch |err| {
+        blog_logging.logJsonError(@errorName(err));
+        return zerver.fail(zerver.ErrorCode.InvalidInput, "post", "invalid_json");
     };
     slog.debug("step_parse_post parsed", &.{
         slog.Attr.string("title", input_post.title),
