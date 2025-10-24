@@ -16,20 +16,24 @@ fn mockEffectHandler(effect: *const zerver.Effect, _: u32) anyerror!zerver.execu
         .db_get => |e| {
             slog.infof("  [Effect] DbGet key={s}", .{e.key});
             // Simulate successful DB read
-            return .{ .success = "mock_data" };
+            const data = "mock_data";
+            return .{ .success = .{ .bytes = @constCast(data[0..data.len]), .allocator = null } };
         },
         .db_put => |e| {
             slog.infof("  [Effect] DbPut key={s} value={s}", .{ e.key, e.value });
             // Simulate successful DB write
-            return .{ .success = "" };
+            const empty_ptr = @constCast(&[_]u8{});
+            return .{ .success = .{ .bytes = empty_ptr[0..], .allocator = null } };
         },
         .http_get => |e| {
             slog.infof("  [Effect] HttpGet url={s}", .{e.url});
-            return .{ .success = "mock_response" };
+            const data = "mock_response";
+            return .{ .success = .{ .bytes = @constCast(data[0..data.len]), .allocator = null } };
         },
         else => {
             // Other effects: return dummy success
-            return .{ .success = "" };
+            const empty_ptr = @constCast(&[_]u8{});
+            return .{ .success = .{ .bytes = empty_ptr[0..], .allocator = null } };
         },
     }
 }

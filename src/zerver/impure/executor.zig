@@ -21,7 +21,10 @@ pub const ExecutionMode = enum {
 
 /// Effect result: either success with data, or failure with error.
 pub const EffectResult = union(enum) {
-    success: []const u8, // Result data (opaque bytes)
+    success: struct {
+        bytes: []u8,
+        allocator: ?std.mem.Allocator = null,
+    },
     failure: types.Error, // Failure details
 };
 
@@ -235,13 +238,22 @@ pub const Executor = struct {
             const result = entry.value_ptr.*;
 
             switch (result) {
-                .success => |data| {
+                .success => |payload| {
                     slog.debug("Effect success", &.{
                         slog.Attr.uint("token", @intCast(token)),
-                        slog.Attr.int("len", @intCast(data.len)),
+                        slog.Attr.int("len", @intCast(payload.bytes.len)),
                     });
-                    // Store success result as a string slice in the slot
+
+                    const data = payload.bytes;
+                    if (payload.allocator) |alloc| {
+                        errdefer alloc.free(data);
+                    }
+
                     try ctx_base.slotPutString(token, data);
+
+                    if (payload.allocator) |alloc| {
+                        alloc.free(data);
+                    }
                 },
                 .failure => |err| {
                     // Store error in last_error context
@@ -259,7 +271,8 @@ pub const Executor = struct {
 /// Production systems would implement actual HTTP/DB clients.
 pub fn defaultEffectHandler(_: *const types.Effect, _: u32) anyerror!EffectResult {
     // MVP: return a dummy success result
-    return .{ .success = "" };
+    const empty: []u8 = &[_]u8{};
+    return .{ .success = .{ .bytes = empty, .allocator = null } };
 }
 
 /// Tests

@@ -12,6 +12,7 @@ const validate_post_step = zerver.step("validate_post", steps.step_validate_post
 const db_create_post_step = zerver.step("db_create_post", steps.step_db_create_post);
 const parse_update_post_step = zerver.step("parse_update_post", steps.step_parse_update_post);
 const db_update_post_step = zerver.step("db_update_post", steps.step_db_update_post);
+const load_existing_post_step = zerver.step("load_existing_post", steps.step_load_existing_post);
 const delete_post_step = zerver.step("delete_post", steps.step_delete_post);
 const extract_post_id_for_comment_step = zerver.step("extract_post_id_for_comment", steps.step_extract_post_id_for_comment);
 const list_comments_step = zerver.step("list_comments", steps.step_list_comments);
@@ -79,10 +80,10 @@ pub fn registerRoutes(srv: *zerver.Server) !void {
         .steps = &.{ parse_post_step, validate_post_step, db_create_post_step },
     });
     try srv.addRoute(.PUT, "/blogs/api/posts/:id", .{
-        .steps = &.{ extract_post_id_step, parse_update_post_step, validate_post_step, db_update_post_step },
+        .steps = &.{ extract_post_id_step, load_existing_post_step, parse_update_post_step, validate_post_step, db_update_post_step },
     });
     try srv.addRoute(.PATCH, "/blogs/api/posts/:id", .{
-        .steps = &.{ extract_post_id_step, parse_update_post_step, validate_post_step, db_update_post_step }, // PATCH can reuse PUT steps for now
+        .steps = &.{ extract_post_id_step, load_existing_post_step, parse_update_post_step, validate_post_step, db_update_post_step }, // PATCH can reuse PUT steps for now
     });
     try srv.addRoute(.DELETE, "/blogs/api/posts/:id", .{
         .steps = &.{ extract_post_id_step, delete_post_step },

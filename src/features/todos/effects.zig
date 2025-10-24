@@ -16,7 +16,8 @@ pub fn effectHandler(effect: *const zerver.Effect, _timeout_ms: u32) anyerror!ze
                 slog.Attr.uint("token", db_get.token),
             });
             // Don't store in slots for now
-            return .{ .success = "" };
+            const empty_ptr = @constCast(&[_]u8{});
+            return .{ .success = .{ .bytes = empty_ptr[0..], .allocator = null } };
         },
         .db_put => |db_put| {
             slog.debug("Database PUT operation", &.{
@@ -24,20 +25,23 @@ pub fn effectHandler(effect: *const zerver.Effect, _timeout_ms: u32) anyerror!ze
                 slog.Attr.string("value", db_put.value),
                 slog.Attr.uint("token", db_put.token),
             });
-            return .{ .success = "" };
+            const empty_ptr = @constCast(&[_]u8{});
+            return .{ .success = .{ .bytes = empty_ptr[0..], .allocator = null } };
         },
         .db_del => |db_del| {
             slog.debug("Database DELETE operation", &.{
                 slog.Attr.string("key", db_del.key),
                 slog.Attr.uint("token", db_del.token),
             });
-            return .{ .success = "" };
+            const empty_ptr = @constCast(&[_]u8{});
+            return .{ .success = .{ .bytes = empty_ptr[0..], .allocator = null } };
         },
         else => {
             slog.warn("Unknown effect type encountered", &.{
                 slog.Attr.string("effect_type", @tagName(effect.*)),
             });
-            return .{ .success = "" };
+            const empty_ptr = @constCast(&[_]u8{});
+            return .{ .success = .{ .bytes = empty_ptr[0..], .allocator = null } };
         },
     }
 }

@@ -140,6 +140,16 @@ pub fn step_get_post(ctx: *zerver.CtxBase) !zerver.Decision {
     return .{ .need = .{ .effects = effects, .mode = .Sequential, .join = .all, .continuation = continuation_get_post } };
 }
 
+pub fn step_load_existing_post(ctx: *zerver.CtxBase) !zerver.Decision {
+    const post_id = try loadSlot(ctx, .PostId);
+
+    const effects = try ctx.allocator.alloc(zerver.Effect, 1);
+    effects[0] = .{
+        .db_get = .{ .key = ctx.bufFmt("posts/{s}", .{post_id}), .token = slotId(.PostJson), .required = true },
+    };
+    return .{ .need = .{ .effects = effects, .mode = .Sequential, .join = .all, .continuation = continuation_load_existing_post } };
+}
+
 fn continuation_get_post(ctx: *zerver.CtxBase) !zerver.Decision {
     const post_json = (try ctx._get(slotId(.PostJson), []const u8)) orelse {
         return zerver.fail(zerver.ErrorCode.NotFound, "post", "not_found");
@@ -155,6 +165,25 @@ fn continuation_get_post(ctx: *zerver.CtxBase) !zerver.Decision {
             .value = "application/json",
         }},
     });
+}
+
+fn continuation_load_existing_post(ctx: *zerver.CtxBase) !zerver.Decision {
+    const post_json = (try ctx._get(slotId(.PostJson), []const u8)) orelse {
+        return zerver.fail(zerver.ErrorCode.NotFound, "post", "not_found");
+    };
+    const parsed = try std.json.parseFromSlice(blog_types.Post, ctx.allocator, post_json, .{});
+    defer parsed.deinit();
+
+    const duplicated = blog_types.Post{
+        .id = try ctx.allocator.dupe(u8, parsed.value.id),
+        .title = try ctx.allocator.dupe(u8, parsed.value.title),
+        .content = try ctx.allocator.dupe(u8, parsed.value.content),
+        .author = try ctx.allocator.dupe(u8, parsed.value.author),
+        .created_at = parsed.value.created_at,
+        .updated_at = parsed.value.updated_at,
+    };
+    try storeSlot(ctx, .Post, duplicated);
+    return zerver.continue_();
 }
 
 pub fn step_parse_post(ctx: *zerver.CtxBase) !zerver.Decision {
@@ -280,14 +309,15 @@ pub fn step_parse_update_post(ctx: *zerver.CtxBase) !zerver.Decision {
 
 pub fn step_db_update_post(ctx: *zerver.CtxBase) !zerver.Decision {
     const post_id = try loadSlot(ctx, .PostId);
+    const existing_post = try loadSlot(ctx, .Post);
     const input_post = try loadSlot(ctx, .PostInput);
     const timestamp = getTimestamp(ctx);
     const post = blog_types.Post{
-        .id = post_id,
+        .id = existing_post.id,
         .title = input_post.title,
         .content = input_post.content,
         .author = input_post.author,
-        .created_at = timestamp,
+        .created_at = existing_post.created_at,
         .updated_at = timestamp,
     };
 

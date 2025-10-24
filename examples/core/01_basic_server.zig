@@ -7,7 +7,8 @@ const slog = @import("src/zerver/observability/slog.zig");
 fn mockEffectHandler(_effect: *const zerver.Effect, _timeout_ms: u32) anyerror!zerver.executor.EffectResult {
     _ = _effect;
     _ = _timeout_ms;
-    return .{ .success = "" };
+    const empty_ptr = @constCast(&[_]u8{});
+    return .{ .success = .{ .bytes = empty_ptr[0..], .allocator = null } };
 }
 
 /// Example step: list todos

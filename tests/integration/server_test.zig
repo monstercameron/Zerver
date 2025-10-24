@@ -18,7 +18,8 @@ pub fn main() !void {
     // Effect handler
     const defaultEffectHandler = struct {
         fn handle(_: *const root.Effect, _: u32) anyerror!root.executor.EffectResult {
-            return .{ .success = "" };
+            const empty_ptr = @constCast(&[_]u8{});
+            return .{ .success = .{ .bytes = empty_ptr[0..], .allocator = null } };
         }
     }.handle;
 

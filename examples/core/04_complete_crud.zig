@@ -229,8 +229,8 @@ pub fn middleware_logging(ctx: *zerver.CtxBase) !zerver.Decision {
 pub fn onError(ctx: *zerver.CtxBase) anyerror!zerver.Decision {
     std.debug.print("  [Error] onError called\n", .{});
     if (ctx.last_error) |err| {
-        std.debug.print("  [Error] Last error: kind={}, what='{s}', key='{s}'\n", .{err.kind, err.ctx.what, err.ctx.key});
-        
+        std.debug.print("  [Error] Last error: kind={}, what='{s}', key='{s}'\n", .{ err.kind, err.ctx.what, err.ctx.key });
+
         // Return appropriate error message based on the error
         if (std.mem.eql(u8, err.ctx.key, "missing_user")) {
             return zerver.done(.{
@@ -263,21 +263,25 @@ pub fn effectHandler(effect: *const zerver.Effect, _timeout_ms: u32) anyerror!ze
     _ = _timeout_ms;
     switch (effect.*) {
         .db_get => |db_get| {
-            std.debug.print("  [Effect] DB GET: {s} (token {})\n", .{db_get.key, db_get.token});
+            std.debug.print("  [Effect] DB GET: {s} (token {})\n", .{ db_get.key, db_get.token });
             // Don't store in slots for now
-            return .{ .success = "" };
+            const empty_ptr = @constCast(&[_]u8{});
+            return .{ .success = .{ .bytes = empty_ptr[0..], .allocator = null } };
         },
         .db_put => |db_put| {
-            std.debug.print("  [Effect] DB PUT: {s} = {s} (token {})\n", .{db_put.key, db_put.value, db_put.token});
-            return .{ .success = "" };
+            std.debug.print("  [Effect] DB PUT: {s} = {s} (token {})\n", .{ db_put.key, db_put.value, db_put.token });
+            const empty_ptr = @constCast(&[_]u8{});
+            return .{ .success = .{ .bytes = empty_ptr[0..], .allocator = null } };
         },
         .db_del => |db_del| {
-            std.debug.print("  [Effect] DB DEL: {s} (token {})\n", .{db_del.key, db_del.token});
-            return .{ .success = "" };
+            std.debug.print("  [Effect] DB DEL: {s} (token {})\n", .{ db_del.key, db_del.token });
+            const empty_ptr = @constCast(&[_]u8{});
+            return .{ .success = .{ .bytes = empty_ptr[0..], .allocator = null } };
         },
         else => {
             std.debug.print("  [Effect] Unknown effect type\n", .{});
-            return .{ .success = "" };
+            const empty_ptr = @constCast(&[_]u8{});
+            return .{ .success = .{ .bytes = empty_ptr[0..], .allocator = null } };
         },
     }
 }

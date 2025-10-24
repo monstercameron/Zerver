@@ -297,19 +297,23 @@ pub fn effectHandler(effect: *const zerver.Effect, _timeout_ms: u32) anyerror!ze
         .db_get => |db_get| {
             slog.infof("  [Effect] DB GET: {s} (token {})", .{ db_get.key, db_get.token });
             // Don't store in slots for now
-            return .{ .success = "" };
+            const empty_ptr = @constCast(&[_]u8{});
+            return .{ .success = .{ .bytes = empty_ptr[0..], .allocator = null } };
         },
         .db_put => |db_put| {
             slog.infof("  [Effect] DB PUT: {s} = {s} (token {})", .{ db_put.key, db_put.value, db_put.token });
-            return .{ .success = "" };
+            const empty_ptr = @constCast(&[_]u8{});
+            return .{ .success = .{ .bytes = empty_ptr[0..], .allocator = null } };
         },
         .db_del => |db_del| {
             slog.infof("  [Effect] DB DEL: {s} (token {})", .{ db_del.key, db_del.token });
-            return .{ .success = "" };
+            const empty_ptr = @constCast(&[_]u8{});
+            return .{ .success = .{ .bytes = empty_ptr[0..], .allocator = null } };
         },
         else => {
             slog.warnf("  [Effect] Unknown effect type", .{});
-            return .{ .success = "" };
+            const empty_ptr = @constCast(&[_]u8{});
+            return .{ .success = .{ .bytes = empty_ptr[0..], .allocator = null } };
         },
     }
 }

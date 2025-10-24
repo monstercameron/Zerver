@@ -109,10 +109,12 @@ fn handleDbPut(key: []const u8, value: []const u8) !zerver.executor.EffectResult
     if (db) |*database| {
         if (std.mem.startsWith(u8, key, "posts/")) {
             try putPost(database, value);
-            return .{ .success = "" };
+            const empty_ptr = @constCast(&[_]u8{});
+            return .{ .success = .{ .bytes = empty_ptr[0..], .allocator = null } };
         } else if (std.mem.startsWith(u8, key, "comments/")) {
             try putComment(database, value);
-            return .{ .success = "" };
+            const empty_ptr = @constCast(&[_]u8{});
+            return .{ .success = .{ .bytes = empty_ptr[0..], .allocator = null } };
         }
     }
 
@@ -126,10 +128,12 @@ fn handleDbDel(key: []const u8) !zerver.executor.EffectResult {
     if (db) |*database| {
         if (std.mem.startsWith(u8, key, "posts/")) {
             try deletePost(database, key[6..]);
-            return .{ .success = "" };
+            const empty_ptr = @constCast(&[_]u8{});
+            return .{ .success = .{ .bytes = empty_ptr[0..], .allocator = null } };
         } else if (std.mem.startsWith(u8, key, "comments/")) {
             try deleteComment(database, key[9..]);
-            return .{ .success = "" };
+            const empty_ptr = @constCast(&[_]u8{});
+            return .{ .success = .{ .bytes = empty_ptr[0..], .allocator = null } };
         }
     }
 
@@ -162,7 +166,7 @@ fn getAllPosts(database: *sql.db.Connection) !zerver.executor.EffectResult {
     try writer.writeByte(']');
 
     const data = try json_buf.toOwnedSlice(allocator);
-    return .{ .success = data };
+    return .{ .success = .{ .bytes = data, .allocator = allocator } };
 }
 
 fn getPost(database: *sql.db.Connection, id: []const u8) !zerver.executor.EffectResult {
@@ -178,7 +182,7 @@ fn getPost(database: *sql.db.Connection, id: []const u8) !zerver.executor.Effect
             var writer = json_buf.writer(allocator);
             try writePostRow(&writer, &stmt);
             const data = try json_buf.toOwnedSlice(allocator);
-            return .{ .success = data };
+            return .{ .success = .{ .bytes = data, .allocator = allocator } };
         },
         .done => {},
     }
@@ -214,7 +218,7 @@ fn getCommentsForPost(database: *sql.db.Connection, post_id: []const u8) !zerver
     try writer.writeByte(']');
 
     const data = try json_buf.toOwnedSlice(allocator);
-    return .{ .success = data };
+    return .{ .success = .{ .bytes = data, .allocator = allocator } };
 }
 
 fn getComment(database: *sql.db.Connection, id: []const u8) !zerver.executor.EffectResult {
@@ -230,7 +234,7 @@ fn getComment(database: *sql.db.Connection, id: []const u8) !zerver.executor.Eff
             var writer = json_buf.writer(allocator);
             try writeCommentRow(&writer, &stmt);
             const data = try json_buf.toOwnedSlice(allocator);
-            return .{ .success = data };
+            return .{ .success = .{ .bytes = data, .allocator = allocator } };
         },
         .done => {},
     }

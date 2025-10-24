@@ -78,7 +78,8 @@ fn effectHandler(effect: *const zerver.Effect, token: u32) anyerror!zerver.execu
             slog.debugf("db_get key={s}", .{db_get.key});
             if (std.mem.eql(u8, db_get.key, "posts")) {
                 slog.debugf("db_get posts -> returning empty list", .{});
-                return .{ .success = "[]" };
+                const empty_json = "[]";
+                return .{ .success = .{ .bytes = @constCast(empty_json[0..empty_json.len]), .allocator = null } };
             } else if (std.mem.startsWith(u8, db_get.key, "posts/")) {
                 slog.debugf("db_get post -> returning not_found", .{});
                 return .{ .failure = .{
@@ -87,7 +88,8 @@ fn effectHandler(effect: *const zerver.Effect, token: u32) anyerror!zerver.execu
                 } };
             } else if (std.mem.eql(u8, db_get.key, "comments")) {
                 slog.debugf("db_get comments -> returning empty list", .{});
-                return .{ .success = "[]" };
+                const empty_json = "[]";
+                return .{ .success = .{ .bytes = @constCast(empty_json[0..empty_json.len]), .allocator = null } };
             } else {
                 slog.warnf("db_get key '{s}' not recognized", .{db_get.key});
                 return .{ .failure = .{
@@ -98,11 +100,13 @@ fn effectHandler(effect: *const zerver.Effect, token: u32) anyerror!zerver.execu
         },
         .db_put => |db_put| {
             slog.debugf("db_put key={s}", .{db_put.key});
-            return .{ .success = "ok" };
+            const ok = "ok";
+            return .{ .success = .{ .bytes = @constCast(ok[0..ok.len]), .allocator = null } };
         },
         .db_del => |db_del| {
             slog.debugf("db_del key={s}", .{db_del.key});
-            return .{ .success = "ok" };
+            const ok = "ok";
+            return .{ .success = .{ .bytes = @constCast(ok[0..ok.len]), .allocator = null } };
         },
         else => {
             slog.warnf("Effect type {s} is not supported", .{effect_tag});

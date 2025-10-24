@@ -70,9 +70,11 @@ fn error_handler(ctx: *zerver.CtxBase) !zerver.Decision {
 
 fn mock_effect_handler(effect: *const zerver.Effect, timeout_ms: u32) anyerror!zerver.executor.EffectResult {
     _ = timeout_ms;
+    const empty_ptr = @constCast(&[_]u8{});
+    const payload = .{ .bytes = empty_ptr[0..], .allocator = null };
     return switch (effect.effect_type) {
-        .Other => .{ .success = "" },
-        else => .{ .success = "" },
+        .Other => .{ .success = payload },
+        else => .{ .success = payload },
     };
 }
 

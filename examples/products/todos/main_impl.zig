@@ -75,7 +75,8 @@ fn mock_effect_handler(
 ) anyerror!zerver.executor.EffectResult {
     _ = _effect;
     _ = _timeout_ms;
-    return .{ .success = "" };
+    const empty_ptr = @constCast(&[_]u8{});
+    return .{ .success = .{ .bytes = empty_ptr[0..], .allocator = null } };
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

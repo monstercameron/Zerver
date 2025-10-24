@@ -243,7 +243,8 @@ test "effect: DbPut with idempotency key" {
 // ============================================================================
 
 fn dummy_effect_handler(_: *const zerver.Effect, _: u32) anyerror!zerver.executor.EffectResult {
-    return .{ .success = "" };
+    const empty_ptr = @constCast(&[_]u8{});
+    return .{ .success = .{ .bytes = empty_ptr[0..], .allocator = null } };
 }
 
 test "executor: init" {

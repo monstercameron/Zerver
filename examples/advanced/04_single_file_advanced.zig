@@ -284,7 +284,8 @@ fn error_handler(ctx: *zerver.CtxBase) !zerver.Decision {
 fn mock_effect_handler(effect: *const zerver.Effect, timeout_ms: u32) anyerror!zerver.executor.EffectResult {
     _ = timeout_ms;
     _ = effect;
-    return .{ .success = "" };
+    const empty_ptr = @constCast(&[_]u8{});
+    return .{ .success = .{ .bytes = empty_ptr[0..], .allocator = null } };
 }
 
 // ═════════════════════════════════════════════════════════════════════════════

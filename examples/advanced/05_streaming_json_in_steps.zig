@@ -274,13 +274,16 @@ pub fn effectHandler(effect: *const zerver.Effect, _timeout_ms: u32) anyerror!ze
             // Mock large dataset response
             if (std.mem.eql(u8, db_get.key, "large_dataset:*")) {
                 // In real implementation, this would return actual data
-                return .{ .success = "mock_large_dataset" };
+                const data = "mock_large_dataset";
+                return .{ .success = .{ .bytes = @constCast(data[0..data.len]), .allocator = null } };
             }
 
-            return .{ .success = "[]" };
+            const empty_json = "[]";
+            return .{ .success = .{ .bytes = @constCast(empty_json[0..empty_json.len]), .allocator = null } };
         },
         else => {
-            return .{ .success = "" };
+            const empty_ptr = @constCast(&[_]u8{});
+            return .{ .success = .{ .bytes = empty_ptr[0..], .allocator = null } };
         },
     }
 }
