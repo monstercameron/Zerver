@@ -1,5 +1,5 @@
 const std = @import("std");
-const html = @import("html");
+const html = @import("html.zig");
 const tags = html.tags;
 
 fn renderToString(node: anytype, allocator: std.mem.Allocator) ![]u8 {
@@ -46,7 +46,7 @@ test "html renderer: attributes handle strings, numbers, and booleans" {
     defer allocator.free(rendered);
 
     try std.testing.expectEqualStrings(
-        "<input type=\"checkbox\" checked value=\"42\"></input>",
+        "<input type=\"checkbox\" checked value=\"42\">",
         rendered,
     );
 }
@@ -72,7 +72,52 @@ test "html renderer: generated tag helpers cover diverse elements" {
     defer allocator.free(rendered);
 
     try std.testing.expectEqualStrings(
-        "<section><article><h2>Example</h2><img src=\"/logo.png\" alt=\"logo\"></img><br></br><ul><li>First</li><li>Second</li></ul></article></section>",
+        "<section><article><h2>Example</h2><img src=\"/logo.png\" alt=\"logo\"><br><ul><li>First</li><li>Second</li></ul></article></section>",
+        rendered,
+    );
+}
+
+test "html renderer: runtime text escapes special characters" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+    const allocator = gpa.allocator();
+
+    const runtime_value = try std.fmt.allocPrint(allocator, "<price> \"low\" & 'fair'", .{});
+    defer allocator.free(runtime_value);
+
+    const tree = tags.span(.{}, .{
+        html.textDynamic(runtime_value),
+    });
+
+    const rendered = try renderToString(tree, allocator);
+    defer allocator.free(rendered);
+
+    try std.testing.expectEqualStrings(
+        "<span>&lt;price&gt; &quot;low&quot; &amp; &#39;fair&#39;</span>",
+        rendered,
+    );
+}
+
+test "html renderer: attributes escape special characters" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    defer _ = gpa.deinit();
+    const allocator = gpa.allocator();
+
+    const href_value = try std.fmt.allocPrint(allocator, "https://example.com/?q=\"zig\"&unsafe<'", .{});
+    defer allocator.free(href_value);
+
+    const tree = tags.a(.{
+        .href = href_value,
+        .title = "5 > 3 & 2"[0..],
+    }, .{
+        html.text("Example"){},
+    });
+
+    const rendered = try renderToString(tree, allocator);
+    defer allocator.free(rendered);
+
+    try std.testing.expectEqualStrings(
+        "<a href=\"https://example.com/?q=&quot;zig&quot;&amp;unsafe&lt;&#39;\" title=\"5 &gt; 3 &amp; 2\">Example</a>",
         rendered,
     );
 }

@@ -138,9 +138,9 @@ fn Element(
                 .array => |arr| if (arr.child == u8) blk: {
                     if (arr.sentinel_ptr != null) {
                         break :blk std.mem.sliceTo(&value, 0);
-                    }
-                    break :blk value[0..];
-                } else null,
+                            }
+                            break :blk value[0..];
+                        } else null,
                 else => null,
             };
         }
