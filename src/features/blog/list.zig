@@ -291,13 +291,13 @@ pub fn step_load_single_blog_post_card(ctx: *zerver.CtxBase) !zerver.Decision {
 
     const effects = try ctx.allocator.alloc(zerver.Effect, 1);
     effects[0] = .{
-        .db_get = .{ .key = ctx.bufFmt("posts/{s}", .{post_id}), .token = slotId(.Post), .required = true },
+        .db_get = .{ .key = ctx.bufFmt("posts/{s}", .{post_id}), .token = slotId(.PostJson), .required = true },
     };
     return .{ .need = .{ .effects = effects, .mode = .Sequential, .join = .all, .continuation = continuation_render_single_blog_post_card } };
 }
 
 fn continuation_render_single_blog_post_card(ctx: *zerver.CtxBase) !zerver.Decision {
-    const post_json = (try ctx._get(slotId(.Post), []const u8)) orelse {
+    const post_json = (try ctx._get(slotId(.PostJson), []const u8)) orelse {
         return zerver.fail(zerver.ErrorCode.NotFound, "blog_card", "not_found");
     };
 
@@ -374,7 +374,7 @@ pub fn step_load_blog_post_page(ctx: *zerver.CtxBase) !zerver.Decision {
 
     const effects = try ctx.allocator.alloc(zerver.Effect, 1);
     effects[0] = .{
-        .db_get = .{ .key = ctx.bufFmt("posts/{s}", .{post_id}), .token = slotId(.Post), .required = true },
+        .db_get = .{ .key = ctx.bufFmt("posts/{s}", .{post_id}), .token = slotId(.PostJson), .required = true },
     };
     return .{ .need = .{ .effects = effects, .mode = .Sequential, .join = .all, .continuation = continuation_render_blog_post_page } };
 }
@@ -382,7 +382,7 @@ pub fn step_load_blog_post_page(ctx: *zerver.CtxBase) !zerver.Decision {
 fn continuation_render_blog_post_page(ctx: *zerver.CtxBase) !zerver.Decision {
     @setEvalBranchQuota(5000);
 
-    const post_json = (try ctx._get(slotId(.Post), []const u8)) orelse {
+    const post_json = (try ctx._get(slotId(.PostJson), []const u8)) orelse {
         return zerver.fail(zerver.ErrorCode.NotFound, "blog_post", "not_found");
     };
 

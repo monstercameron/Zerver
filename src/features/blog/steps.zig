@@ -135,13 +135,13 @@ pub fn step_get_post(ctx: *zerver.CtxBase) !zerver.Decision {
 
     const effects = try ctx.allocator.alloc(zerver.Effect, 1);
     effects[0] = .{
-        .db_get = .{ .key = ctx.bufFmt("posts/{s}", .{post_id}), .token = slotId(.Post), .required = true },
+        .db_get = .{ .key = ctx.bufFmt("posts/{s}", .{post_id}), .token = slotId(.PostJson), .required = true },
     };
     return .{ .need = .{ .effects = effects, .mode = .Sequential, .join = .all, .continuation = continuation_get_post } };
 }
 
 fn continuation_get_post(ctx: *zerver.CtxBase) !zerver.Decision {
-    const post_json = (try ctx._get(slotId(.Post), []const u8)) orelse {
+    const post_json = (try ctx._get(slotId(.PostJson), []const u8)) orelse {
         return zerver.fail(zerver.ErrorCode.NotFound, "post", "not_found");
     };
     const parsed = try std.json.parseFromSlice(blog_types.Post, ctx.allocator, post_json, .{});
@@ -246,7 +246,7 @@ pub fn step_db_create_post(ctx: *zerver.CtxBase) !zerver.Decision {
     const effect_key = ctx.bufFmt("posts/{s}", .{new_post_id});
     const effects = try ctx.allocator.alloc(zerver.Effect, 1);
     effects[0] = .{
-        .db_put = .{ .key = effect_key, .value = post_json, .token = slotId(.Post), .required = true },
+        .db_put = .{ .key = effect_key, .value = post_json, .token = slotId(.PostJson), .required = true },
     };
     slog.debug("step_db_create_post queued effect", &.{
         slog.Attr.string("key", effect_key),
@@ -297,7 +297,7 @@ pub fn step_db_update_post(ctx: *zerver.CtxBase) !zerver.Decision {
 
     const effects = try ctx.allocator.alloc(zerver.Effect, 1);
     effects[0] = .{
-        .db_put = .{ .key = ctx.bufFmt("posts/{s}", .{post_id}), .value = post_json, .token = slotId(.Post), .required = true },
+        .db_put = .{ .key = ctx.bufFmt("posts/{s}", .{post_id}), .value = post_json, .token = slotId(.PostJson), .required = true },
     };
     return .{ .need = .{ .effects = effects, .mode = .Sequential, .join = .all, .continuation = continuation_update_post } };
 }
@@ -322,7 +322,7 @@ pub fn step_delete_post(ctx: *zerver.CtxBase) !zerver.Decision {
 
     const effects = try ctx.allocator.alloc(zerver.Effect, 1);
     effects[0] = .{
-        .db_del = .{ .key = ctx.bufFmt("posts/{s}", .{post_id}), .token = slotId(.PostId), .required = true },
+        .db_del = .{ .key = ctx.bufFmt("posts/{s}", .{post_id}), .token = slotId(.PostDeleteAck), .required = true },
     };
     return .{ .need = .{ .effects = effects, .mode = .Sequential, .join = .all, .continuation = continuation_delete_post } };
 }
@@ -397,7 +397,7 @@ pub fn step_db_create_comment(ctx: *zerver.CtxBase) !zerver.Decision {
 
     const effects = try ctx.allocator.alloc(zerver.Effect, 1);
     effects[0] = .{
-        .db_put = .{ .key = ctx.bufFmt("comments/{s}", .{new_comment_id}), .value = comment_json, .token = slotId(.Comment), .required = true },
+        .db_put = .{ .key = ctx.bufFmt("comments/{s}", .{new_comment_id}), .value = comment_json, .token = slotId(.CommentJson), .required = true },
     };
     return .{ .need = .{ .effects = effects, .mode = .Sequential, .join = .all, .continuation = continuation_create_comment } };
 }
@@ -422,7 +422,7 @@ pub fn step_delete_comment(ctx: *zerver.CtxBase) !zerver.Decision {
 
     const effects = try ctx.allocator.alloc(zerver.Effect, 1);
     effects[0] = .{
-        .db_del = .{ .key = ctx.bufFmt("comments/{s}", .{comment_id}), .token = slotId(.CommentId), .required = true },
+        .db_del = .{ .key = ctx.bufFmt("comments/{s}", .{comment_id}), .token = slotId(.CommentDeleteAck), .required = true },
     };
     return .{ .need = .{ .effects = effects, .mode = .Sequential, .join = .all, .continuation = continuation_delete_comment } };
 }
