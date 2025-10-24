@@ -27,6 +27,7 @@ pub const Retry = types.Retry;
 pub const Timeout = types.Timeout;
 pub const BackoffStrategy = types.BackoffStrategy;
 pub const AdvancedRetryPolicy = types.AdvancedRetryPolicy;
+pub const Header = types.Header;
 
 // Observability
 pub const slog = @import("observability/slog.zig");

@@ -1,5 +1,6 @@
 const zerver = @import("../../../src/zerver/root.zig");
 const steps = @import("steps.zig");
+const page = @import("page.zig");
 
 // Step definitions
 const list_posts_step = zerver.step("list_posts", steps.step_list_posts);
@@ -19,7 +20,15 @@ const db_create_comment_step = zerver.step("db_create_comment", steps.step_db_cr
 const extract_comment_id_step = zerver.step("extract_comment_id", steps.step_extract_comment_id);
 const delete_comment_step = zerver.step("delete_comment", steps.step_delete_comment);
 
+// Homepage step
+const homepage_step = zerver.step("homepage", page.homepageStep);
+
 pub fn registerRoutes(srv: *zerver.Server) !void {
+    // Homepage route
+    try srv.addRoute(.GET, "/blogs", .{
+        .steps = &.{homepage_step},
+    });
+
     // Posts
     try srv.addRoute(.GET, "/blog/posts", .{
         .steps = &.{list_posts_step},

@@ -32,7 +32,11 @@ inline fn writeEscaped(writer: anytype, value: []const u8) !void {
 }
 
 /// Text node helper for comptime-known contents.
-pub fn text(comptime contents: []const u8) type {
+pub fn text(comptime contents: []const u8) TextNode(contents) {
+    return TextNode(contents){};
+}
+
+fn TextNode(comptime contents: []const u8) type {
     return struct {
         pub fn render(self: @This(), writer: anytype) !void {
             _ = self;
@@ -55,7 +59,7 @@ pub const TextDynamic = struct {
 };
 
 /// HTML element representation generated per tag.
-fn Element(
+pub fn Element(
     comptime tag: []const u8,
     comptime Attrs: type,
     comptime Children: type,
