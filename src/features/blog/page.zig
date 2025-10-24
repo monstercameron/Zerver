@@ -1,11 +1,10 @@
-/// Blog homepage HTML generation
+/// Blog homepage HTML generation using component-based architecture
 const std = @import("std");
 const zerver = @import("../../zerver/root.zig");
 const html_lib = @import("../../shared/html.zig");
 
-// Import HTML functions
+// Import HTML functions directly for inline generation
 const text = html_lib.text;
-const html_fn = html_lib.html;
 const html_tag = html_lib.html;
 const head = html_lib.head;
 const meta = html_lib.meta;
@@ -27,13 +26,13 @@ const div = html_lib.div;
 const img = html_lib.img;
 const footer = html_lib.footer;
 
-/// Generate the complete homepage HTML
+/// Generate the complete homepage HTML (inline approach for dynamic content)
 pub fn generateHomepage() ![]const u8 {
     // Create a buffer to write HTML to
     var buffer = try std.ArrayList(u8).initCapacity(std.heap.page_allocator, 8192);
     defer buffer.deinit(std.heap.page_allocator);
 
-    // Create the full homepage inline
+    // Generate full homepage with inline HTML (works reliably with Zig's type system)
     const html_element = html_tag(.{
         .lang = "en",
     }, .{
@@ -49,7 +48,7 @@ pub fn generateHomepage() ![]const u8 {
         body(.{
             .class = "bg-gradient-to-b from-sky-50 to-sky-100 text-sky-800",
         }, .{
-            // Navbar
+            // Navbar with inline navigation links
             nav(.{
                 .class = "flex justify-between items-center px-8 py-5 bg-white/90 backdrop-blur-md shadow-md fixed top-0 w-full z-10 border-b border-sky-100",
             }, .{
@@ -61,43 +60,12 @@ pub fn generateHomepage() ![]const u8 {
                 ul(.{
                     .class = "flex space-x-8 font-medium text-sky-800",
                 }, .{
-                    li(.{}, .{
-                        a(.{
-                            .href = "#home",
-                            .class = "hover:text-sky-500 transition",
-                        }, .{text("Home")}),
-                    }),
-                    li(.{}, .{
-                        a(.{
-                            .href = "#resume",
-                            .class = "hover:text-sky-500 transition",
-                        }, .{text("Resume")}),
-                    }),
-                    li(.{}, .{
-                        a(.{
-                            .href = "#portfolio",
-                            .class = "hover:text-sky-500 transition",
-                        }, .{text("Portfolio")}),
-                    }),
-                    li(.{}, .{
-                        a(.{
-                            .href = "#blog",
-                            .class = "hover:text-sky-500 transition",
-                        }, .{text("Blog")}),
-                    }),
-                    li(.{}, .{
-                        a(.{
-                            .href = "#playground",
-                            .class = "hover:text-sky-500 transition",
-                        }, .{text("Playground")}),
-                    }),
-                    li(.{}, .{
-                        a(.{
-                            .href = "https://reader.earlcameron.com/i/?rid=68fae7c966445",
-                            .target = "_blank",
-                            .class = "hover:text-sky-500 transition",
-                        }, .{text("RSS")}),
-                    }),
+                    li(.{}, .{a(.{ .href = "#home", .class = "hover:text-sky-500 transition" }, .{text("Home")})}),
+                    li(.{}, .{a(.{ .href = "#resume", .class = "hover:text-sky-500 transition" }, .{text("Resume")})}),
+                    li(.{}, .{a(.{ .href = "#portfolio", .class = "hover:text-sky-500 transition" }, .{text("Portfolio")})}),
+                    li(.{}, .{a(.{ .href = "#blog", .class = "hover:text-sky-500 transition" }, .{text("Blog")})}),
+                    li(.{}, .{a(.{ .href = "#playground", .class = "hover:text-sky-500 transition" }, .{text("Playground")})}),
+                    li(.{}, .{a(.{ .href = "https://reader.earlcameron.com/i/?rid=68fae7c966445", .target = "_blank", .class = "hover:text-sky-500 transition" }, .{text("RSS")})}),
                 }),
             }),
             // Hero section
@@ -109,9 +77,7 @@ pub fn generateHomepage() ![]const u8 {
                     .class = "text-5xl md:text-6xl font-extrabold text-sky-900 leading-tight mb-6",
                 }, .{
                     text("Building "),
-                    span(.{
-                        .class = "text-orange-500",
-                    }, .{text("beautiful")}),
+                    span(.{ .class = "text-orange-500" }, .{text("beautiful")}),
                     text(" web experiences."),
                 }),
                 p(.{
@@ -129,15 +95,9 @@ pub fn generateHomepage() ![]const u8 {
                 .id = "resume",
                 .class = "py-20 px-8 bg-gradient-to-r from-sky-50 to-sky-100",
             }, .{
-                div(.{
-                    .class = "max-w-5xl mx-auto grid md:grid-cols-2 gap-10 items-center",
-                }, .{
-                    div(.{
-                        .class = "flex justify-center",
-                    }, .{
-                        div(.{
-                            .class = "w-64 h-64 rounded-full shadow-inner border-4 border-sky-200 overflow-hidden",
-                        }, .{
+                div(.{ .class = "max-w-5xl mx-auto grid md:grid-cols-2 gap-10 items-center" }, .{
+                    div(.{ .class = "flex justify-center" }, .{
+                        div(.{ .class = "w-64 h-64 rounded-full shadow-inner border-4 border-sky-200 overflow-hidden" }, .{
                             img(.{
                                 .src = "https://www.earlcameron.com/static/images/profile-sm.jpg",
                                 .alt = "Earl Cameron portrait",
@@ -145,20 +105,12 @@ pub fn generateHomepage() ![]const u8 {
                             }, .{}),
                         }),
                     }),
-                    div(.{
-                        .class = "text-center md:text-left",
-                    }, .{
-                        h3(.{
-                            .class = "text-3xl font-bold text-sky-900 mb-4",
-                        }, .{text("Resume")}),
-                        p(.{
-                            .class = "text-sky-700 text-lg leading-relaxed",
-                        }, .{
+                    div(.{ .class = "text-center md:text-left" }, .{
+                        h3(.{ .class = "text-3xl font-bold text-sky-900 mb-4" }, .{text("Resume")}),
+                        p(.{ .class = "text-sky-700 text-lg leading-relaxed" }, .{
                             text("I'm a full-stack engineer specializing in Go, Zig, and TypeScript. I love designing efficient, elegant systems — from server-side frameworks to modern, responsive UIs. This section highlights my background, experience, and passion for building performant tools."),
                         }),
-                        div(.{
-                            .class = "mt-6",
-                        }, .{
+                        div(.{ .class = "mt-6" }, .{
                             a(.{
                                 .href = "https://www.earlcameron.com/resume",
                                 .target = "_blank",
@@ -168,36 +120,22 @@ pub fn generateHomepage() ![]const u8 {
                     }),
                 }),
             }),
-            // Portfolio section
+            // Portfolio section with inline project cards
             section(.{
                 .id = "portfolio",
                 .class = "py-20 px-8 bg-gradient-to-b from-sky-50 to-sky-100",
             }, .{
-                div(.{
-                    .class = "max-w-6xl mx-auto text-center mb-12",
-                }, .{
-                    h2(.{
-                        .class = "text-4xl font-bold text-sky-900 mb-4",
-                    }, .{text("Project Portfolio")}),
-                    p(.{
-                        .class = "text-sky-700 text-lg max-w-3xl mx-auto",
-                    }, .{
+                div(.{ .class = "max-w-6xl mx-auto text-center mb-12" }, .{
+                    h2(.{ .class = "text-4xl font-bold text-sky-900 mb-4" }, .{text("Project Portfolio")}),
+                    p(.{ .class = "text-sky-700 text-lg max-w-3xl mx-auto" }, .{
                         text("A detailed look at my most impactful open-source and experimental projects — each combining performance, design, and innovation."),
                     }),
                 }),
-                div(.{
-                    .class = "grid md:grid-cols-2 gap-10",
-                }, .{
+                div(.{ .class = "grid md:grid-cols-2 gap-10" }, .{
                     // GoWebComponents
-                    div(.{
-                        .class = "bg-white rounded-xl shadow p-8 border border-sky-100",
-                    }, .{
-                        h3(.{
-                            .class = "text-2xl font-semibold text-sky-800 mb-2",
-                        }, .{text("GoWebComponents")}),
-                        p(.{
-                            .class = "text-sky-700 mb-4",
-                        }, .{
+                    div(.{ .class = "bg-white rounded-xl shadow p-8 border border-sky-100" }, .{
+                        h3(.{ .class = "text-2xl font-semibold text-sky-800 mb-2" }, .{text("GoWebComponents")}),
+                        p(.{ .class = "text-sky-700 mb-4" }, .{
                             text("GoWebComponents is a full-stack web framework that compiles Go code directly to WebAssembly, enabling developers to create dynamic frontends entirely in Go. It offers React-like hooks, a virtual DOM, and a fiber-based reconciliation engine — all leveraging Go's concurrency and type safety."),
                         }),
                         a(.{
@@ -208,15 +146,9 @@ pub fn generateHomepage() ![]const u8 {
                         }, .{text("View on GitHub")}),
                     }),
                     // SchemaFlow
-                    div(.{
-                        .class = "bg-white rounded-xl shadow p-8 border border-sky-100",
-                    }, .{
-                        h3(.{
-                            .class = "text-2xl font-semibold text-sky-800 mb-2",
-                        }, .{text("SchemaFlow")}),
-                        p(.{
-                            .class = "text-sky-700 mb-4",
-                        }, .{
+                    div(.{ .class = "bg-white rounded-xl shadow p-8 border border-sky-100" }, .{
+                        h3(.{ .class = "text-2xl font-semibold text-sky-800 mb-2" }, .{text("SchemaFlow")}),
+                        p(.{ .class = "text-sky-700 mb-4" }, .{
                             text("SchemaFlow is a production-ready typed LLM operations library for Go. It provides compile-time type safety for AI-driven applications, allowing developers to define strict data contracts and generate structured output with validation and retries built in."),
                         }),
                         a(.{
@@ -227,15 +159,9 @@ pub fn generateHomepage() ![]const u8 {
                         }, .{text("View on GitHub")}),
                     }),
                     // HTMLeX
-                    div(.{
-                        .class = "bg-white rounded-xl shadow p-8 border border-sky-100",
-                    }, .{
-                        h3(.{
-                            .class = "text-2xl font-semibold text-sky-800 mb-2",
-                        }, .{text("HTMLeX")}),
-                        p(.{
-                            .class = "text-sky-700 mb-4",
-                        }, .{
+                    div(.{ .class = "bg-white rounded-xl shadow p-8 border border-sky-100" }, .{
+                        h3(.{ .class = "text-2xl font-semibold text-sky-800 mb-2" }, .{text("HTMLeX")}),
+                        p(.{ .class = "text-sky-700 mb-4" }, .{
                             text("HTMLeX is a declarative HTML extension framework for server-driven UIs. It uses HTML attributes to define event-driven behavior, letting the backend control the UI flow through streaming HTML updates. Ideal for Go developers building fast, interactive web apps without heavy JavaScript frameworks."),
                         }),
                         a(.{
@@ -246,15 +172,9 @@ pub fn generateHomepage() ![]const u8 {
                         }, .{text("View on GitHub")}),
                     }),
                     // Zerver
-                    div(.{
-                        .class = "bg-white rounded-xl shadow p-8 border border-sky-100",
-                    }, .{
-                        h3(.{
-                            .class = "text-2xl font-semibold text-sky-800 mb-2",
-                        }, .{text("Zerver")}),
-                        p(.{
-                            .class = "text-sky-700 mb-4",
-                        }, .{
+                    div(.{ .class = "bg-white rounded-xl shadow p-8 border border-sky-100" }, .{
+                        h3(.{ .class = "text-2xl font-semibold text-sky-800 mb-2" }, .{text("Zerver")}),
+                        p(.{ .class = "text-sky-700 mb-4" }, .{
                             text("Zerver is a backend framework built in Zig that prioritizes low-level performance, observability, and zero-cost abstractions. It introduces a new request flow model where every route can be statically analyzed for effects and dependencies."),
                         }),
                         a(.{
@@ -271,19 +191,10 @@ pub fn generateHomepage() ![]const u8 {
                 .id = "blog",
                 .class = "py-16 bg-gradient-to-r from-sky-50 to-sky-100 border-t border-sky-100",
             }, .{
-                div(.{
-                    .class = "max-w-3xl mx-auto text-center",
-                }, .{
-                    h3(.{
-                        .class = "text-3xl font-bold text-sky-900 mb-4",
-                    }, .{text("Blog")}),
-                    p(.{
-                        .class = "text-sky-700 text-lg leading-relaxed mb-8",
-                    }, .{text("Stay up to date with my latest writings and experiments.")}),
-                    a(.{
-                        .href = "#",
-                        .class = "px-6 py-3 bg-orange-500 text-white rounded-full shadow hover:bg-orange-600 transition",
-                    }, .{text("Visit Blog")}),
+                div(.{ .class = "max-w-3xl mx-auto text-center" }, .{
+                    h3(.{ .class = "text-3xl font-bold text-sky-900 mb-4" }, .{text("Blog")}),
+                    p(.{ .class = "text-sky-700 text-lg leading-relaxed mb-8" }, .{text("Stay up to date with my latest writings and experiments.")}),
+                    a(.{ .href = "#", .class = "px-6 py-3 bg-orange-500 text-white rounded-full shadow hover:bg-orange-600 transition" }, .{text("Visit Blog")}),
                 }),
             }),
             // Playground section
@@ -291,43 +202,18 @@ pub fn generateHomepage() ![]const u8 {
                 .id = "playground",
                 .class = "py-20 px-8 bg-gradient-to-t from-sky-50 to-sky-100 text-center",
             }, .{
-                h3(.{
-                    .class = "text-3xl font-bold text-sky-900 mb-4",
-                }, .{text("Playground")}),
-                p(.{
-                    .class = "text-sky-700 text-lg mb-8",
-                }, .{text("An experimental space where I prototype frameworks, test ideas, and visualize systems.")}),
-                a(.{
-                    .href = "#",
-                    .class = "px-8 py-4 bg-orange-500 text-white rounded-full shadow hover:bg-orange-600 transition",
-                }, .{text("Explore the Playground")}),
+                h3(.{ .class = "text-3xl font-bold text-sky-900 mb-4" }, .{text("Playground")}),
+                p(.{ .class = "text-sky-700 text-lg mb-8" }, .{text("An experimental space where I prototype frameworks, test ideas, and visualize systems.")}),
+                a(.{ .href = "#", .class = "px-8 py-4 bg-orange-500 text-white rounded-full shadow hover:bg-orange-600 transition" }, .{text("Explore the Playground")}),
             }),
             // Footer
-            footer(.{
-                .class = "bg-sky-900 text-white py-10 text-center",
-            }, .{
-                h4(.{
-                    .class = "text-xl font-semibold mb-4",
-                }, .{text("Connect with Me")}),
-                div(.{
-                    .class = "flex justify-center space-x-8 mb-4",
-                }, .{
-                    a(.{
-                        .href = "https://www.linkedin.com/in/earl-cameron/",
-                        .target = "_blank",
-                        .rel = "noopener noreferrer",
-                        .class = "flex items-center space-x-2 hover:text-orange-400 transition",
-                    }, .{text("LinkedIn")}),
-                    a(.{
-                        .href = "https://www.youtube.com/@EarlCameron007",
-                        .target = "_blank",
-                        .rel = "noopener noreferrer",
-                        .class = "flex items-center space-x-2 hover:text-orange-400 transition",
-                    }, .{text("YouTube")}),
+            footer(.{ .class = "bg-sky-900 text-white py-10 text-center" }, .{
+                h4(.{ .class = "text-xl font-semibold mb-4" }, .{text("Connect with Me")}),
+                div(.{ .class = "flex justify-center space-x-8 mb-4" }, .{
+                    a(.{ .href = "https://www.linkedin.com/in/earl-cameron/", .target = "_blank", .rel = "noopener noreferrer", .class = "flex items-center space-x-2 hover:text-orange-400 transition" }, .{text("LinkedIn")}),
+                    a(.{ .href = "https://www.youtube.com/@EarlCameron007", .target = "_blank", .rel = "noopener noreferrer", .class = "flex items-center space-x-2 hover:text-orange-400 transition" }, .{text("YouTube")}),
                 }),
-                p(.{
-                    .class = "text-sky-200 text-sm",
-                }, .{text("© 2025 Earl Cameron. All rights reserved.")}),
+                p(.{ .class = "text-sky-200 text-sm" }, .{text("© 2025 Earl Cameron. All rights reserved.")}),
             }),
         }),
     });
