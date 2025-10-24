@@ -244,6 +244,9 @@ fn readChunkedBody(
         {
             return error.InvalidChunkedEncoding;
         }
+
+        // TODO: Bug - After consuming this chunk we never advance body_start/req_buf to the next chunk,
+        // so multi-chunk payloads keep reprocessing the same data and will spin or time out.
     }
 }
 
@@ -303,6 +306,8 @@ fn readWithTimeout(
             };
             return result;
         } else {
+            // TODO: Bug - On non-Windows platforms we call the blocking stream read directly, so a slow client
+            // can hang forever despite the outer timeout_ms guard. Use a poll/select based timeout.
             const result = connection.stream.read(buffer) catch |err| {
                 if (err == error.WouldBlock) {
                     continue;

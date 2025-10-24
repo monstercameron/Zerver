@@ -4,6 +4,8 @@ const components = @import("../../shared/components.zig");
 const blog_types = @import("types.zig");
 const slog = @import("../../zerver/observability/slog.zig");
 const html_lib = @import("../../shared/html.zig");
+const util = @import("util.zig");
+const http_util = @import("../../shared/http.zig");
 const http_status = zerver.HttpStatus;
 
 const Slot = blog_types.BlogSlot;
@@ -189,10 +191,9 @@ const BlogListContent = struct {
 
 pub fn step_load_blog_posts(ctx: *zerver.CtxBase) !zerver.Decision {
     slog.info("step_load_blog_posts", &.{});
-    const effects = try ctx.allocator.alloc(zerver.Effect, 1);
-    effects[0] = .{
+    const effects = try util.singleEffect(ctx, .{
         .db_get = .{ .key = "posts", .token = slotId(.PostList), .required = true },
-    };
+    });
     return .{ .need = .{ .effects = effects, .mode = .Sequential, .join = .all, .continuation = continuation_render_blog_list_page } };
 }
 
@@ -240,22 +241,14 @@ fn continuation_render_blog_list_page(ctx: *zerver.CtxBase) !zerver.Decision {
 
     const html = try buffer.toOwnedSlice(ctx.allocator);
 
-    return zerver.done(.{
-        .status = http_status.ok,
-        .body = .{ .complete = html },
-        .headers = &[_]zerver.types.Header{.{
-            .name = "Content-Type",
-            .value = "text/html; charset=utf-8",
-        }},
-    });
+    return http_util.htmlResponse(http_status.ok, html);
 }
 
 pub fn step_load_blog_post_cards(ctx: *zerver.CtxBase) !zerver.Decision {
     slog.info("step_load_blog_post_cards", &.{});
-    const effects = try ctx.allocator.alloc(zerver.Effect, 1);
-    effects[0] = .{
+    const effects = try util.singleEffect(ctx, .{
         .db_get = .{ .key = "posts", .token = slotId(.PostList), .required = true },
-    };
+    });
     return .{ .need = .{ .effects = effects, .mode = .Sequential, .join = .all, .continuation = continuation_render_blog_post_cards } };
 }
 
@@ -273,14 +266,7 @@ fn continuation_render_blog_post_cards(ctx: *zerver.CtxBase) !zerver.Decision {
 
     const html = try buffer.toOwnedSlice(ctx.allocator);
 
-    return zerver.done(.{
-        .status = http_status.ok,
-        .body = .{ .complete = html },
-        .headers = &[_]zerver.types.Header{.{
-            .name = "Content-Type",
-            .value = "text/html; charset=utf-8",
-        }},
-    });
+    return http_util.htmlResponse(http_status.ok, html);
 }
 
 pub fn step_load_single_blog_post_card(ctx: *zerver.CtxBase) !zerver.Decision {
@@ -290,10 +276,10 @@ pub fn step_load_single_blog_post_card(ctx: *zerver.CtxBase) !zerver.Decision {
 
     try storeSlot(ctx, .PostId, post_id);
 
-    const effects = try ctx.allocator.alloc(zerver.Effect, 1);
-    effects[0] = .{
-        .db_get = .{ .key = ctx.bufFmt("posts/{s}", .{post_id}), .token = slotId(.PostJson), .required = true },
-    };
+    const effect_key = try util.postKey(ctx, post_id);
+    const effects = try util.singleEffect(ctx, .{
+        .db_get = .{ .key = effect_key, .token = slotId(.PostJson), .required = true },
+    });
     return .{ .need = .{ .effects = effects, .mode = .Sequential, .join = .all, .continuation = continuation_render_single_blog_post_card } };
 }
 
@@ -335,14 +321,7 @@ fn continuation_render_single_blog_post_card(ctx: *zerver.CtxBase) !zerver.Decis
 
     const html = try buffer.toOwnedSlice(ctx.allocator);
 
-    return zerver.done(.{
-        .status = http_status.ok,
-        .body = .{ .complete = html },
-        .headers = &[_]zerver.types.Header{.{
-            .name = "Content-Type",
-            .value = "text/html; charset=utf-8",
-        }},
-    });
+    return http_util.htmlResponse(http_status.ok, html);
 }
 
 pub fn step_render_blog_list_header(ctx: *zerver.CtxBase) !zerver.Decision {
@@ -356,14 +335,7 @@ pub fn step_render_blog_list_header(ctx: *zerver.CtxBase) !zerver.Decision {
 
     const html = try buffer.toOwnedSlice(ctx.allocator);
 
-    return zerver.done(.{
-        .status = http_status.ok,
-        .body = .{ .complete = html },
-        .headers = &[_]zerver.types.Header{.{
-            .name = "Content-Type",
-            .value = "text/html; charset=utf-8",
-        }},
-    });
+    return http_util.htmlResponse(http_status.ok, html);
 }
 
 pub fn step_load_blog_post_page(ctx: *zerver.CtxBase) !zerver.Decision {
@@ -373,10 +345,10 @@ pub fn step_load_blog_post_page(ctx: *zerver.CtxBase) !zerver.Decision {
 
     try storeSlot(ctx, .PostId, post_id);
 
-    const effects = try ctx.allocator.alloc(zerver.Effect, 1);
-    effects[0] = .{
-        .db_get = .{ .key = ctx.bufFmt("posts/{s}", .{post_id}), .token = slotId(.PostJson), .required = true },
-    };
+    const effect_key = try util.postKey(ctx, post_id);
+    const effects = try util.singleEffect(ctx, .{
+        .db_get = .{ .key = effect_key, .token = slotId(.PostJson), .required = true },
+    });
     return .{ .need = .{ .effects = effects, .mode = .Sequential, .join = .all, .continuation = continuation_render_blog_post_page } };
 }
 
@@ -442,12 +414,5 @@ fn continuation_render_blog_post_page(ctx: *zerver.CtxBase) !zerver.Decision {
 
     const html = try buffer.toOwnedSlice(ctx.allocator);
 
-    return zerver.done(.{
-        .status = http_status.ok,
-        .body = .{ .complete = html },
-        .headers = &[_]zerver.types.Header{.{
-            .name = "Content-Type",
-            .value = "text/html; charset=utf-8",
-        }},
-    });
+    return http_util.htmlResponse(http_status.ok, html);
 }

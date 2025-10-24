@@ -64,11 +64,6 @@ pub fn registerRoutes(srv: *zerver.Server) !void {
         .steps = &.{load_blog_post_page_step},
     });
 
-    // Legacy blog routes for backward compatibility
-    try srv.addRoute(.GET, "/blog/posts/:id", .{
-        .steps = &.{load_blog_post_page_step},
-    });
-
     // Posts API
     try srv.addRoute(.GET, "/blogs/api/posts", .{
         .steps = &.{list_posts_step},

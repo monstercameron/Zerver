@@ -138,9 +138,13 @@ pub const Router = struct {
 
             if (std.mem.startsWith(u8, seg, ":")) {
                 const param_name = seg[1..];
+                // TODO: Bug - `param_name` still references the caller-owned `path` slice; if the caller frees
+                // that buffer after registration these stored slices dangle and routing dereferences freed memory.
                 try segments.append(self.allocator, .{ .param = param_name });
                 try param_names.append(self.allocator, param_name);
             } else {
+                // TODO: Bug - Literal segments are also kept as slices into `path`, so the compiled pattern can
+                // outlive the original buffer and hit use-after-free. Duplicate into `self.allocator` here.
                 try segments.append(self.allocator, .{ .literal = seg });
                 literal_count += 1;
             }
