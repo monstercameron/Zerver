@@ -3,33 +3,42 @@ const zerver = @import("../../zerver/root.zig");
 const slog = @import("../../zerver/observability/slog.zig");
 const schema = @import("schema.zig");
 const sql = @import("../../zerver/sql/mod.zig");
+const runtime_resources = @import("../../zerver/runtime/resources.zig");
+const runtime_global = @import("../../zerver/runtime/global.zig");
 
 const allocator = std.heap.c_allocator;
-const sqlite_driver = &sql.dialects.sqlite.driver.driver;
 const ValueConvertError = error{UnexpectedType};
 
-var db: ?sql.db.Connection = null;
-var db_initialized = false;
+var schema_mutex: std.Thread.Mutex = .{};
+var schema_initialized = false;
 
-fn initDb() !void {
-    if (db_initialized) return;
+pub fn initialize(resources: *runtime_resources.RuntimeResources) !void {
+    schema_mutex.lock();
+    defer schema_mutex.unlock();
 
-    var conn = try sql.db.openWithDriver(sqlite_driver, allocator, .{
-        .target = .{ .path = "blog.db" },
-        .busy_timeout_ms = 5_000,
-    });
-    errdefer conn.deinit();
+    if (schema_initialized) return;
 
-    try schema.initSchema(&conn);
+    var lease = try resources.acquireConnection();
+    defer lease.release();
 
-    db = conn;
-    db_initialized = true;
-    slog.info("blog sqlite initialized", &.{});
+    try schema.initSchema(lease.connection());
+    schema_initialized = true;
+    slog.info("blog sqlite schema ensured", &.{});
 }
 
 pub fn effectHandler(effect: *const zerver.Effect, _timeout_ms: u32) anyerror!zerver.executor.EffectResult {
     _ = _timeout_ms;
-    try initDb();
+    const resources = runtime_global.get();
+
+    var lease = resources.acquireConnection() catch |err| {
+        slog.err("blog db acquire failed", &.{
+            slog.Attr.string("error", @errorName(err)),
+        });
+        return .{ .failure = unexpectedError("db_acquire") };
+    };
+    defer lease.release();
+
+    const conn = lease.connection();
 
     switch (effect.*) {
         .db_get => |db_get| {
@@ -38,7 +47,7 @@ pub fn effectHandler(effect: *const zerver.Effect, _timeout_ms: u32) anyerror!ze
                 slog.Attr.uint("token", db_get.token),
             });
 
-            return handleDbGet(db_get.key) catch |err| {
+            return handleDbGet(conn, db_get.key) catch |err| {
                 slog.err("blog db_get error", &.{
                     slog.Attr.string("key", db_get.key),
                     slog.Attr.string("error", @errorName(err)),
@@ -52,7 +61,7 @@ pub fn effectHandler(effect: *const zerver.Effect, _timeout_ms: u32) anyerror!ze
                 slog.Attr.uint("token", db_put.token),
             });
 
-            return handleDbPut(db_put.key, db_put.value) catch |err| {
+            return handleDbPut(conn, db_put.key, db_put.value) catch |err| {
                 slog.err("blog db_put error", &.{
                     slog.Attr.string("key", db_put.key),
                     slog.Attr.string("error", @errorName(err)),
@@ -66,7 +75,7 @@ pub fn effectHandler(effect: *const zerver.Effect, _timeout_ms: u32) anyerror!ze
                 slog.Attr.uint("token", db_del.token),
             });
 
-            return handleDbDel(db_del.key) catch |err| {
+            return handleDbDel(conn, db_del.key) catch |err| {
                 slog.err("blog db_del error", &.{
                     slog.Attr.string("key", db_del.key),
                     slog.Attr.string("error", @errorName(err)),
@@ -86,17 +95,15 @@ pub fn effectHandler(effect: *const zerver.Effect, _timeout_ms: u32) anyerror!ze
     }
 }
 
-fn handleDbGet(key: []const u8) !zerver.executor.EffectResult {
-    if (db) |*database| {
-        if (std.mem.eql(u8, key, "posts")) {
-            return getAllPosts(database);
-        } else if (std.mem.startsWith(u8, key, "posts/")) {
-            return getPost(database, key[6..]);
-        } else if (std.mem.startsWith(u8, key, "comments/post/")) {
-            return getCommentsForPost(database, key["comments/post/".len..]);
-        } else if (std.mem.startsWith(u8, key, "comments/")) {
-            return getComment(database, key[9..]);
-        }
+fn handleDbGet(database: *sql.db.Connection, key: []const u8) !zerver.executor.EffectResult {
+    if (std.mem.eql(u8, key, "posts")) {
+        return getAllPosts(database);
+    } else if (std.mem.startsWith(u8, key, "posts/")) {
+        return getPost(database, key[6..]);
+    } else if (std.mem.startsWith(u8, key, "comments/post/")) {
+        return getCommentsForPost(database, key["comments/post/".len..]);
+    } else if (std.mem.startsWith(u8, key, "comments/")) {
+        return getComment(database, key[9..]);
     }
 
     return .{ .failure = .{
@@ -105,17 +112,15 @@ fn handleDbGet(key: []const u8) !zerver.executor.EffectResult {
     } };
 }
 
-fn handleDbPut(key: []const u8, value: []const u8) !zerver.executor.EffectResult {
-    if (db) |*database| {
-        if (std.mem.startsWith(u8, key, "posts/")) {
-            try putPost(database, value);
-            const empty_ptr = @constCast(&[_]u8{});
-            return .{ .success = .{ .bytes = empty_ptr[0..], .allocator = null } };
-        } else if (std.mem.startsWith(u8, key, "comments/")) {
-            try putComment(database, value);
-            const empty_ptr = @constCast(&[_]u8{});
-            return .{ .success = .{ .bytes = empty_ptr[0..], .allocator = null } };
-        }
+fn handleDbPut(database: *sql.db.Connection, key: []const u8, value: []const u8) !zerver.executor.EffectResult {
+    if (std.mem.startsWith(u8, key, "posts/")) {
+        try putPost(database, value);
+        const empty_ptr = @constCast(&[_]u8{});
+        return .{ .success = .{ .bytes = empty_ptr[0..], .allocator = null } };
+    } else if (std.mem.startsWith(u8, key, "comments/")) {
+        try putComment(database, value);
+        const empty_ptr = @constCast(&[_]u8{});
+        return .{ .success = .{ .bytes = empty_ptr[0..], .allocator = null } };
     }
 
     return .{ .failure = .{
@@ -124,17 +129,15 @@ fn handleDbPut(key: []const u8, value: []const u8) !zerver.executor.EffectResult
     } };
 }
 
-fn handleDbDel(key: []const u8) !zerver.executor.EffectResult {
-    if (db) |*database| {
-        if (std.mem.startsWith(u8, key, "posts/")) {
-            try deletePost(database, key[6..]);
-            const empty_ptr = @constCast(&[_]u8{});
-            return .{ .success = .{ .bytes = empty_ptr[0..], .allocator = null } };
-        } else if (std.mem.startsWith(u8, key, "comments/")) {
-            try deleteComment(database, key[9..]);
-            const empty_ptr = @constCast(&[_]u8{});
-            return .{ .success = .{ .bytes = empty_ptr[0..], .allocator = null } };
-        }
+fn handleDbDel(database: *sql.db.Connection, key: []const u8) !zerver.executor.EffectResult {
+    if (std.mem.startsWith(u8, key, "posts/")) {
+        try deletePost(database, key[6..]);
+        const empty_ptr = @constCast(&[_]u8{});
+        return .{ .success = .{ .bytes = empty_ptr[0..], .allocator = null } };
+    } else if (std.mem.startsWith(u8, key, "comments/")) {
+        try deleteComment(database, key[9..]);
+        const empty_ptr = @constCast(&[_]u8{});
+        return .{ .success = .{ .bytes = empty_ptr[0..], .allocator = null } };
     }
 
     return .{ .failure = .{

@@ -16,12 +16,12 @@ pub fn main() !void {
     const allocator = gpa.allocator();
 
     // Initialize server with routes
-    var srv = try server_init.initializeServer(allocator);
-    defer srv.deinit();
+    var init_bundle = try server_init.initializeServer(allocator);
+    defer init_bundle.deinit(allocator);
 
     // Print demo information
     server_init.printDemoInfo();
 
     // Start listening and serving
-    try listener.listenAndServe(&srv, allocator);
+    try listener.listenAndServe(&init_bundle.server, allocator);
 }

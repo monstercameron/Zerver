@@ -5,6 +5,9 @@
 const std = @import("std");
 const root = @import("../root.zig");
 const slog = @import("../observability/slog.zig");
+const runtime_config = @import("../runtime/config.zig");
+const runtime_resources = @import("../runtime/resources.zig");
+const runtime_global = @import("../runtime/global.zig");
 
 // Import features
 const todos = @import("../../features/todos/routes.zig");
@@ -46,12 +49,39 @@ const hello_world_step = root.types.Step{
     .writes = &.{},
 };
 
+pub const Initialization = struct {
+    server: root.Server,
+    resources: *runtime_resources.RuntimeResources,
+
+    pub fn deinit(self: *Initialization, allocator: std.mem.Allocator) void {
+        self.server.deinit();
+        self.resources.deinit();
+        allocator.destroy(self.resources);
+        runtime_global.clear();
+    }
+};
+
 /// Initialize and configure the server
-pub fn initializeServer(allocator: std.mem.Allocator) !root.Server {
+pub fn initializeServer(allocator: std.mem.Allocator) !Initialization {
     slog.info("Zerver MVP Server Starting", &[_]slog.Attr{
         slog.Attr.string("version", "mvp"),
         slog.Attr.int("port", 8080),
     });
+
+    const app_config = try runtime_config.load(allocator, "config.json");
+    var resources = runtime_resources.create(allocator, app_config) catch |err| {
+        app_config.deinit(allocator);
+        return err;
+    };
+    errdefer {
+        runtime_global.clear();
+        resources.deinit();
+        allocator.destroy(resources);
+    }
+    // app_config ownership transferred to runtime resources
+    runtime_global.set(resources);
+
+    try blog_effects.initialize(resources);
 
     // Create server config
     const config = root.Config{
@@ -76,7 +106,10 @@ pub fn initializeServer(allocator: std.mem.Allocator) !root.Server {
     // Print available routes
     printRoutes();
 
-    return srv;
+    return Initialization{
+        .server = srv,
+        .resources = resources,
+    };
 }
 
 /// Print available routes for documentation

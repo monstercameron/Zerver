@@ -1,0 +1,11 @@
+{
+  "database": {
+    "driver": "sqlite",
+    "path": "blog.db",
+    "pool_size": 2,
+    "busy_timeout_ms": 5000
+  },
+  "thread_pool": {
+    "worker_count": 4
+  }
+}
