@@ -323,7 +323,7 @@ pub fn CtxView(comptime spec: anytype) type {
 
             // Runtime: retrieve the slot value
             const T = SlotTypeFn(slot_tag);
-            return self.base._get(@intFromEnum(slot_tag), T) orelse error.SlotMissing;
+            return (try self.base._get(@intFromEnum(slot_tag), T)) orelse error.SlotMissing;
         }
 
         /// Optionally read a slot (returns null if not set)
@@ -353,7 +353,7 @@ pub fn CtxView(comptime spec: anytype) type {
 
             // Runtime: retrieve slot or return null
             const T = SlotTypeFn(slot_tag);
-            return self.base._get(@intFromEnum(slot_tag), T);
+            return try self.base._get(@intFromEnum(slot_tag), T);
         }
 
         /// Write a value to a slot (must be in .writes)

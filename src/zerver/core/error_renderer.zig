@@ -35,6 +35,7 @@ pub const ErrorRenderer = struct {
         return types.Response{
             .status = status,
             .headers = headers,
+            // TODO: Bug - `body` is a raw slice; we must wrap it in the `.complete` union tag or the response misrepresents its payload and miscompiles.
             .body = body,
         };
     }
