@@ -702,7 +702,7 @@ pub const NavbarDynamic = struct {
 
     pub fn render(self: NavbarDynamic, writer: anytype) !void {
         const navbar = nav(Attrs{ .class = self.config.class }, .{
-            h1(Attrs{ .class = self.config.title_class }, .{ textDynamic(self.config.title) }),
+            h1(Attrs{ .class = self.config.title_class }, .{textDynamic(self.config.title)}),
             NavbarDynamicList{
                 .links = self.config.links,
                 .list_class = self.config.list_class,
@@ -760,14 +760,14 @@ pub const FooterDynamic = struct {
 
     pub fn render(self: FooterDynamic, writer: anytype) !void {
         const footer_el = footer(Attrs{ .class = self.config.class }, .{
-            h4(Attrs{ .class = self.config.title_class }, .{ textDynamic(self.config.title) }),
+            h4(Attrs{ .class = self.config.title_class }, .{textDynamic(self.config.title)}),
             html.div(Attrs{ .class = self.config.links_class }, .{
                 FooterDynamicLinks{
                     .links = self.config.social_links,
                     .link_class = self.config.link_class,
                 },
             }),
-            p(Attrs{ .class = self.config.text_class }, .{ textDynamic(self.config.copyright) }),
+            p(Attrs{ .class = self.config.text_class }, .{textDynamic(self.config.copyright)}),
         });
         try footer_el.render(writer);
     }
@@ -813,7 +813,7 @@ pub const BlogPostCardDynamic = struct {
                     .hx_target = self.props.hx_target,
                     .hx_swap = self.props.hx_swap,
                     .class = "text-orange-500 hover:underline cursor-pointer",
-                }, .{ text("Read More →") }),
+                }, .{text("Read More →")}),
             }),
         });
         try card.render(writer);
@@ -864,8 +864,8 @@ pub const BlogListHeaderDynamic = struct {
 
     pub fn render(self: BlogListHeaderDynamic, writer: anytype) !void {
         const header_div = div(Attrs{ .class = "max-w-5xl mx-auto text-center mb-12" }, .{
-            h2(Attrs{ .class = "text-4xl font-bold text-sky-900 mb-4" }, .{ textDynamic(self.props.title) }),
-            p(Attrs{ .class = "text-sky-700 text-lg max-w-2xl mx-auto" }, .{ textDynamic(self.props.description) }),
+            h2(Attrs{ .class = "text-4xl font-bold text-sky-900 mb-4" }, .{textDynamic(self.props.title)}),
+            p(Attrs{ .class = "text-sky-700 text-lg max-w-2xl mx-auto" }, .{textDynamic(self.props.description)}),
         });
         try header_div.render(writer);
     }
@@ -914,7 +914,7 @@ pub const HeroSectionDynamic = struct {
         }, .{
             h2(Attrs{ .class = "text-5xl md:text-6xl font-extrabold text-sky-900 leading-tight mb-6" }, .{
                 textDynamic(self.config.title_start),
-                span(Attrs{ .class = "text-orange-500" }, .{ textDynamic(self.config.highlight) }),
+                span(Attrs{ .class = "text-orange-500" }, .{textDynamic(self.config.highlight)}),
                 textDynamic(self.config.title_end),
             }),
             p(Attrs{ .class = "text-lg md:text-xl text-sky-700 mb-8 max-w-2xl" }, .{
@@ -923,7 +923,7 @@ pub const HeroSectionDynamic = struct {
             a(Attrs{
                 .href = self.config.cta_href,
                 .class = "px-8 py-4 bg-orange-500 text-white text-lg font-medium rounded-full shadow hover:bg-orange-600 transition",
-            }, .{ textDynamic(self.config.cta_text) }),
+            }, .{textDynamic(self.config.cta_text)}),
         });
         try section_el.render(writer);
     }
@@ -961,7 +961,7 @@ pub const ResumeSectionDynamic = struct {
                     }),
                 }),
                 div(Attrs{ .class = "text-center md:text-left" }, .{
-                    h3(Attrs{ .class = "text-3xl font-bold text-sky-900 mb-4" }, .{ text("Resume") }),
+                    h3(Attrs{ .class = "text-3xl font-bold text-sky-900 mb-4" }, .{text("Resume")}),
                     p(Attrs{ .class = "text-sky-700 text-lg leading-relaxed" }, .{
                         textDynamic(self.config.description),
                     }),
@@ -970,7 +970,7 @@ pub const ResumeSectionDynamic = struct {
                             .href = self.config.resume_url,
                             .target = "_blank",
                             .class = "inline-block px-6 py-3 bg-orange-500 text-white rounded-full hover:bg-orange-600 transition",
-                        }, .{ text("View Full Resume") }),
+                        }, .{text("View Full Resume")}),
                     }),
                 }),
             }),
@@ -996,14 +996,14 @@ const PortfolioProjectCardRenderer = struct {
 
     pub fn render(self: @This(), writer: anytype) !void {
         const card = div(Attrs{ .class = "bg-white rounded-xl shadow p-8 border border-sky-100" }, .{
-            h3(Attrs{ .class = "text-2xl font-semibold text-sky-800 mb-2" }, .{ textDynamic(self.project.title) }),
-            p(Attrs{ .class = "text-sky-700 mb-4" }, .{ textDynamic(self.project.description) }),
+            h3(Attrs{ .class = "text-2xl font-semibold text-sky-800 mb-2" }, .{textDynamic(self.project.title)}),
+            p(Attrs{ .class = "text-sky-700 mb-4" }, .{textDynamic(self.project.description)}),
             a(Attrs{
                 .href = self.project.github_url,
                 .target = "_blank",
                 .rel = "noopener noreferrer",
                 .class = "inline-block px-5 py-2 bg-orange-500 text-white rounded-full hover:bg-orange-600 transition",
-            }, .{ text("View on GitHub") }),
+            }, .{text("View on GitHub")}),
         });
         try card.render(writer);
     }
@@ -1033,7 +1033,7 @@ pub const PortfolioSectionDynamic = struct {
             .class = "py-24 px-8 bg-white",
         }, .{
             div(Attrs{ .class = "max-w-5xl mx-auto text-center mb-12" }, .{
-                h3(Attrs{ .class = "text-3xl font-bold text-sky-900 mb-4" }, .{ text("Portfolio") }),
+                h3(Attrs{ .class = "text-3xl font-bold text-sky-900 mb-4" }, .{text("Portfolio")}),
                 p(Attrs{ .class = "text-sky-700 text-lg leading-relaxed" }, .{
                     text("A detailed look at my most impactful open-source and experimental projects — each combining performance, design, and innovation."),
                 }),
@@ -1070,7 +1070,7 @@ pub const BlogSectionDynamic = struct {
             .class = "py-16 bg-gradient-to-r from-sky-50 to-sky-100 border-t border-sky-100",
         }, .{
             div(Attrs{ .class = "max-w-3xl mx-auto text-center" }, .{
-                h3(Attrs{ .class = "text-3xl font-bold text-sky-900 mb-4" }, .{ text("Blog") }),
+                h3(Attrs{ .class = "text-3xl font-bold text-sky-900 mb-4" }, .{text("Blog")}),
                 p(Attrs{ .class = "text-sky-700 text-lg leading-relaxed mb-8" }, .{
                     textDynamic(self.config.description),
                 }),
@@ -1080,7 +1080,7 @@ pub const BlogSectionDynamic = struct {
                     .hx_target = self.config.cta_hx_target,
                     .hx_swap = self.config.cta_hx_swap,
                     .class = "px-6 py-3 bg-orange-500 text-white rounded-full shadow hover:bg-orange-600 transition",
-                }, .{ textDynamic(self.config.cta_text) }),
+                }, .{textDynamic(self.config.cta_text)}),
             }),
         });
         try section_el.render(writer);
@@ -1107,12 +1107,12 @@ pub const PlaygroundSectionDynamic = struct {
             .id = "playground",
             .class = "py-20 px-8 bg-gradient-to-t from-sky-50 to-sky-100 text-center",
         }, .{
-            h3(Attrs{ .class = "text-3xl font-bold text-sky-900 mb-4" }, .{ text("Playground") }),
-            p(Attrs{ .class = "text-sky-700 text-lg mb-8" }, .{ textDynamic(self.config.description) }),
+            h3(Attrs{ .class = "text-3xl font-bold text-sky-900 mb-4" }, .{text("Playground")}),
+            p(Attrs{ .class = "text-sky-700 text-lg mb-8" }, .{textDynamic(self.config.description)}),
             a(Attrs{
                 .href = self.config.cta_href,
                 .class = "px-8 py-4 bg-orange-500 text-white rounded-full shadow hover:bg-orange-600 transition",
-            }, .{ textDynamic(self.config.cta_text) }),
+            }, .{textDynamic(self.config.cta_text)}),
         });
         try section_el.render(writer);
     }
@@ -1145,7 +1145,7 @@ const InlineScriptRenderer = struct {
 
     pub fn render(self: @This(), writer: anytype) !void {
         if (self.content) |value| {
-            const script_el = script(Attrs{}, .{ textDynamic(value) });
+            const script_el = script(Attrs{}, .{textDynamic(value)});
             try script_el.render(writer);
         }
     }
@@ -1170,7 +1170,7 @@ pub const HomepageHeadDynamic = struct {
         const head_el = head(Attrs{}, .{
             meta(Attrs{ .charset = "UTF-8" }, .{}),
             meta(Attrs{ .name = "viewport", .content = "width=device-width, initial-scale=1.0" }, .{}),
-            title(Attrs{}, .{ textDynamic(self.config.title) }),
+            title(Attrs{}, .{textDynamic(self.config.title)}),
             ScriptIncludeListRenderer{ .includes = self.config.script_includes },
             InlineScriptRenderer{ .content = self.config.inline_script },
         });
