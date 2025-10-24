@@ -422,8 +422,8 @@ pub fn errf(comptime fmt: []const u8, args: anytype) void {
 
 /// Test the logging library
 pub fn testLogger() !void {
-    var buf = std.ArrayList(u8).init(std.testing.allocator);
-    defer buf.deinit();
+    var buf = try std.ArrayList(u8).initCapacity(std.testing.allocator, 256);
+    defer buf.deinit(std.testing.allocator);
 
     var text_handler = TextHandler.init(buf.writer().write);
     const handler = text_handler.handler();

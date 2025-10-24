@@ -8,6 +8,7 @@ const slog = @import("../observability/slog.zig");
 const runtime_config = @import("../runtime/config.zig");
 const runtime_resources = @import("../runtime/resources.zig");
 const runtime_global = @import("../runtime/global.zig");
+const http_status = root.HttpStatus;
 
 // Import features
 const todos = @import("../../features/todos/routes.zig");
@@ -31,7 +32,7 @@ fn helloStep(ctx: *root.CtxBase) !root.Decision {
     });
     _ = ctx;
     return root.done(.{
-        .status = 200,
+        .status = http_status.ok,
         .body = .{ .complete = "Hello from Zerver! Try /todos endpoints with X-User-ID header." },
     });
 }
@@ -68,7 +69,7 @@ pub fn initializeServer(allocator: std.mem.Allocator) !Initialization {
         slog.Attr.int("port", 8080),
     });
 
-    const app_config = try runtime_config.load(allocator, "config.json");
+    var app_config = try runtime_config.load(allocator, "config.json");
     var resources = runtime_resources.create(allocator, app_config) catch |err| {
         app_config.deinit(allocator);
         return err;

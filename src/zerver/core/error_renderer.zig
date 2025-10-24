@@ -3,6 +3,7 @@ const std = @import("std");
 const types = @import("types.zig");
 const ctx = @import("ctx.zig");
 const slog = @import("../observability/slog.zig");
+const http_status = @import("http_status.zig").HttpStatus;
 
 pub const ErrorRenderer = struct {
     /// Render an error as a formatted HTTP response with JSON body
@@ -11,7 +12,7 @@ pub const ErrorRenderer = struct {
 
         // Build JSON error response
         var buf = std.ArrayList(u8).initCapacity(allocator, 256) catch return types.Response{
-            .status = 500,
+            .status = http_status.internal_server_error,
             .body = .{ .complete = "Internal Server Error" }, // TODO: Logical Error - The fallback Response in ErrorRenderer.render returns a raw '[]const u8' for the body, but 'types.Response.body' expects a 'types.ResponseBody' union. This is a type mismatch and needs to be corrected to '.complete = "Internal Server Error"'.
         };
         defer buf.deinit();
@@ -42,16 +43,16 @@ pub const ErrorRenderer = struct {
     fn errorCodeToStatus(code: u16) u16 {
         // TODO: RFC 9110 - Expand error code to HTTP status mapping to cover a wider range of relevant status codes as defined in Section 15, beyond just the current set.
         return switch (code) {
-            400 => 400, // InvalidInput
-            401 => 401, // Unauthorized
-            403 => 403, // Forbidden
-            404 => 404, // NotFound
-            409 => 409, // Conflict
-            429 => 429, // TooManyRequests
-            502 => 502, // UpstreamUnavailable
-            504 => 504, // Timeout
-            500 => 500, // InternalError
-            else => 500, // Default to Internal Server Error
+            http_status.bad_request => http_status.bad_request,
+            http_status.unauthorized => http_status.unauthorized,
+            http_status.forbidden => http_status.forbidden,
+            http_status.not_found => http_status.not_found,
+            http_status.conflict => http_status.conflict,
+            http_status.too_many_requests => http_status.too_many_requests,
+            http_status.bad_gateway => http_status.bad_gateway,
+            http_status.gateway_timeout => http_status.gateway_timeout,
+            http_status.internal_server_error => http_status.internal_server_error,
+            else => http_status.internal_server_error,
         };
     }
 

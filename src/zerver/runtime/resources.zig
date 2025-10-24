@@ -10,7 +10,7 @@ pub const RuntimeResources = struct {
     registry: sql.db.Registry,
     connections: std.ArrayList(*sql.db.Connection),
     pool_mutex: std.Thread.Mutex = .{},
-    pool_cond: std.Thread.Condvar = .{},
+    pool_cond: std.Thread.Condition = .{},
     thread_pool: std.Thread.Pool,
     shutting_down: bool = false,
 
@@ -22,8 +22,8 @@ pub const RuntimeResources = struct {
 
         const driver = registry.get(config.database.driver) orelse return error.UnknownDriver;
 
-        var connections = std.ArrayList(*sql.db.Connection).init(allocator);
-        errdefer connections.deinit();
+    var connections = try std.ArrayList(*sql.db.Connection).initCapacity(allocator, config.database.pool_size);
+    errdefer connections.deinit(allocator);
 
         var created: usize = 0;
         while (created < config.database.pool_size) : (created += 1) {
@@ -36,12 +36,17 @@ pub const RuntimeResources = struct {
             });
             errdefer conn_ptr.deinit();
 
-            try connections.append(conn_ptr);
+            try connections.append(allocator, conn_ptr);
         }
 
-        var pool = std.Thread.Pool{};
-        try pool.init(.{ .allocator = allocator, .n_threads = config.thread_pool.worker_count });
-        errdefer pool.deinit();
+    var pool: std.Thread.Pool = undefined;
+        try std.Thread.Pool.init(&pool, .{
+            .allocator = allocator,
+            .n_jobs = config.thread_pool.worker_count,
+            .track_ids = false,
+            .stack_size = 0,
+        });
+    errdefer pool.deinit();
 
         return RuntimeResources{
             .allocator = allocator,
@@ -62,7 +67,7 @@ pub const RuntimeResources = struct {
             conn_ptr.deinit();
             self.allocator.destroy(conn_ptr);
         }
-        self.connections.deinit();
+    self.connections.deinit(self.allocator);
 
         self.thread_pool.deinit();
         self.registry.deinit();
@@ -98,7 +103,7 @@ pub const RuntimeResources = struct {
             self.pool_cond.wait(&self.pool_mutex);
         }
 
-        const conn_ptr = self.connections.pop();
+    const conn_ptr = self.connections.pop().?;
         return ConnectionLease{
             .resources = self,
             .conn_ptr = conn_ptr,
@@ -113,7 +118,7 @@ pub const RuntimeResources = struct {
             self.allocator.destroy(conn_ptr);
             return;
         }
-        self.connections.append(conn_ptr) catch {
+    self.connections.append(self.allocator, conn_ptr) catch {
             conn_ptr.deinit();
             self.allocator.destroy(conn_ptr);
             return;

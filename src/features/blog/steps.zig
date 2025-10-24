@@ -3,6 +3,7 @@ const zerver = @import("../../zerver/root.zig");
 const slog = @import("../../zerver/observability/slog.zig");
 const blog_types = @import("types.zig");
 const blog_logging = @import("logging.zig");
+const http_status = zerver.HttpStatus;
 
 const Slot = blog_types.BlogSlot;
 
@@ -69,7 +70,7 @@ fn continuation_list_posts(ctx: *zerver.CtxBase) !zerver.Decision {
         slog.Attr.int("len", @as(i64, @intCast(post_list_json.len))),
     });
     return zerver.done(.{
-        .status = 200,
+        .status = http_status.ok,
         .body = .{ .complete = post_list_json },
         .headers = &[_]zerver.types.Header{.{
             .name = "Content-Type",
@@ -107,7 +108,7 @@ fn continuation_get_post(ctx: *zerver.CtxBase) !zerver.Decision {
     defer parsed.deinit();
 
     return zerver.done(.{
-        .status = 200,
+        .status = http_status.ok,
         .body = .{ .complete = post_json },
         .headers = &[_]zerver.types.Header{.{
             .name = "Content-Type",
@@ -231,7 +232,7 @@ fn continuation_create_post(ctx: *zerver.CtxBase) !zerver.Decision {
     });
 
     return zerver.done(.{
-        .status = 201,
+        .status = http_status.created,
         .body = .{ .complete = post_json },
         .headers = &[_]zerver.types.Header{.{
             .name = "Content-Type",
@@ -276,7 +277,7 @@ fn continuation_update_post(ctx: *zerver.CtxBase) !zerver.Decision {
     const post_json = try ctx.toJson(post);
 
     return zerver.done(.{
-        .status = 200,
+        .status = http_status.ok,
         .body = .{ .complete = post_json },
         .headers = &[_]zerver.types.Header{.{
             .name = "Content-Type",
@@ -299,7 +300,7 @@ pub fn step_delete_post(ctx: *zerver.CtxBase) !zerver.Decision {
 fn continuation_delete_post(ctx: *zerver.CtxBase) !zerver.Decision {
     _ = ctx;
     return zerver.done(.{
-        .status = 204,
+        .status = http_status.no_content,
         .body = .{ .complete = "" },
     });
 }
@@ -320,7 +321,7 @@ pub fn step_list_comments(ctx: *zerver.CtxBase) !zerver.Decision {
 fn continuation_list_comments(ctx: *zerver.CtxBase) !zerver.Decision {
     const comment_list_json = (try ctx._get(slotId(.CommentList), []const u8)) orelse "[]";
     return zerver.done(.{
-        .status = 200,
+        .status = http_status.ok,
         .body = .{ .complete = comment_list_json },
         .headers = &[_]zerver.types.Header{.{
             .name = "Content-Type",
@@ -376,7 +377,7 @@ fn continuation_create_comment(ctx: *zerver.CtxBase) !zerver.Decision {
     const comment_json = try ctx.toJson(comment);
 
     return zerver.done(.{
-        .status = 201,
+        .status = http_status.created,
         .body = .{ .complete = comment_json },
         .headers = &[_]zerver.types.Header{.{
             .name = "Content-Type",
@@ -399,7 +400,7 @@ pub fn step_delete_comment(ctx: *zerver.CtxBase) !zerver.Decision {
 fn continuation_delete_comment(ctx: *zerver.CtxBase) !zerver.Decision {
     _ = ctx;
     return zerver.done(.{
-        .status = 204,
+        .status = http_status.no_content,
         .body = .{ .complete = "" },
     });
 }

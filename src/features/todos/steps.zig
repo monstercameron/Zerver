@@ -3,6 +3,7 @@ const std = @import("std");
 const zerver = @import("../../zerver/root.zig");
 const types = @import("types.zig");
 const slog = @import("../../zerver/observability/slog.zig");
+const http_status = zerver.HttpStatus;
 
 // Step 1: Extract and validate user from header
 pub fn step_auth(ctx: *zerver.CtxBase) !zerver.Decision {
@@ -104,7 +105,7 @@ fn continuation_list(ctx: *zerver.CtxBase) !zerver.Decision {
     });
 
     return zerver.done(.{
-        .status = 200,
+        .status = http_status.ok,
         .body = "[{\"id\":\"1\",\"title\":\"Buy milk\",\"done\":false},{\"id\":\"2\",\"title\":\"Pay bills\",\"done\":true}]",
     });
 }
@@ -117,7 +118,7 @@ fn continuation_get(ctx: *zerver.CtxBase) !zerver.Decision {
     });
 
     return zerver.done(.{
-        .status = 200,
+        .status = http_status.ok,
         .body = "{\"id\":\"1\",\"title\":\"Buy milk\",\"done\":false}",
     });
 }
@@ -157,7 +158,7 @@ fn continuation_create(ctx: *zerver.CtxBase) !zerver.Decision {
     });
 
     return zerver.done(.{
-        .status = 201,
+        .status = http_status.created,
         .body = "{\"id\":\"1\",\"title\":\"New todo\",\"done\":false}",
     });
 }
@@ -202,7 +203,7 @@ fn continuation_update(ctx: *zerver.CtxBase) !zerver.Decision {
     });
 
     return zerver.done(.{
-        .status = 200,
+        .status = http_status.ok,
         .body = "{\"id\":\"1\",\"title\":\"Updated todo\",\"done\":true}",
     });
 }
@@ -245,7 +246,7 @@ fn continuation_delete(ctx: *zerver.CtxBase) !zerver.Decision {
     });
 
     return zerver.done(.{
-        .status = 204,
+        .status = http_status.no_content,
         .body = "",
     });
 }

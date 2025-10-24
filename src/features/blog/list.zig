@@ -4,6 +4,7 @@ const components = @import("../../shared/components.zig");
 const blog_types = @import("types.zig");
 const slog = @import("../../zerver/observability/slog.zig");
 const html_lib = @import("../../shared/html.zig");
+const http_status = zerver.HttpStatus;
 
 const Slot = blog_types.BlogSlot;
 const Attrs = components.Attrs;
@@ -240,7 +241,7 @@ fn continuation_render_blog_list_page(ctx: *zerver.CtxBase) !zerver.Decision {
     const html = try buffer.toOwnedSlice(ctx.allocator);
 
     return zerver.done(.{
-        .status = 200,
+        .status = http_status.ok,
         .body = .{ .complete = html },
         .headers = &[_]zerver.types.Header{.{
             .name = "Content-Type",
@@ -273,7 +274,7 @@ fn continuation_render_blog_post_cards(ctx: *zerver.CtxBase) !zerver.Decision {
     const html = try buffer.toOwnedSlice(ctx.allocator);
 
     return zerver.done(.{
-        .status = 200,
+        .status = http_status.ok,
         .body = .{ .complete = html },
         .headers = &[_]zerver.types.Header{.{
             .name = "Content-Type",
@@ -335,7 +336,7 @@ fn continuation_render_single_blog_post_card(ctx: *zerver.CtxBase) !zerver.Decis
     const html = try buffer.toOwnedSlice(ctx.allocator);
 
     return zerver.done(.{
-        .status = 200,
+        .status = http_status.ok,
         .body = .{ .complete = html },
         .headers = &[_]zerver.types.Header{.{
             .name = "Content-Type",
@@ -356,7 +357,7 @@ pub fn step_render_blog_list_header(ctx: *zerver.CtxBase) !zerver.Decision {
     const html = try buffer.toOwnedSlice(ctx.allocator);
 
     return zerver.done(.{
-        .status = 200,
+        .status = http_status.ok,
         .body = .{ .complete = html },
         .headers = &[_]zerver.types.Header{.{
             .name = "Content-Type",
@@ -442,7 +443,7 @@ fn continuation_render_blog_post_page(ctx: *zerver.CtxBase) !zerver.Decision {
     const html = try buffer.toOwnedSlice(ctx.allocator);
 
     return zerver.done(.{
-        .status = 200,
+        .status = http_status.ok,
         .body = .{ .complete = html },
         .headers = &[_]zerver.types.Header{.{
             .name = "Content-Type",

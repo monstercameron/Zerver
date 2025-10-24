@@ -5,6 +5,7 @@ pub const core = @import("core/core.zig");
 pub const ctx_module = @import("core/ctx.zig");
 pub const types = @import("core/types.zig");
 pub const error_renderer_module = @import("core/error_renderer.zig");
+pub const http_status = @import("core/http_status.zig");
 pub const server = @import("impure/server.zig");
 pub const router = @import("routes/router.zig");
 pub const executor = @import("impure/executor.zig");
@@ -29,6 +30,7 @@ pub const Timeout = types.Timeout;
 pub const BackoffStrategy = types.BackoffStrategy;
 pub const AdvancedRetryPolicy = types.AdvancedRetryPolicy;
 pub const Header = types.Header;
+pub const HttpStatus = http_status.HttpStatus;
 
 // Observability
 pub const slog = @import("observability/slog.zig");

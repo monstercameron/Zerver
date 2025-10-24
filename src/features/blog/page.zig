@@ -1,6 +1,7 @@
 const std = @import("std");
 const zerver = @import("../../zerver/root.zig");
 const components = @import("../../shared/components.zig");
+const http_status = zerver.HttpStatus;
 
 pub fn generateHomepage() ![]const u8 {
     @setEvalBranchQuota(5000);
@@ -154,7 +155,7 @@ pub fn homepageStep(ctx: *zerver.CtxBase) !zerver.Decision {
 
     return zerver.Decision{
         .Done = .{
-            .status = 200,
+            .status = http_status.ok,
             .headers = &[_]zerver.Header{
                 .{ .name = "Content-Type", .value = "text/html; charset=utf-8" },
             },

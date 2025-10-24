@@ -1,6 +1,7 @@
 const std = @import("std");
 const zerver = @import("../../../src/zerver/root.zig");
 const slog = @import("../../../src/zerver/observability/slog.zig");
+const http_status = zerver.HttpStatus;
 
 pub fn onError(ctx: *zerver.CtxBase) anyerror!zerver.Decision {
     slog.warn("blog error handler invoked", &.{});
@@ -56,7 +57,7 @@ pub fn onError(ctx: *zerver.CtxBase) anyerror!zerver.Decision {
     } else {
         slog.err("blog error with no details", &.{});
         return zerver.done(.{
-            .status = 500,
+            .status = http_status.internal_server_error,
             .body = .{ .complete = "{\"error\":\"Internal server error - no error details\"}" },
             .headers = &[_]zerver.types.Header{
                 .{ .name = "Content-Type", .value = "application/json" },

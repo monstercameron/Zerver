@@ -6,6 +6,7 @@ const router_module = @import("../routes/router.zig");
 const executor_module = @import("executor.zig");
 const tracer_module = @import("../observability/tracer.zig");
 const slog = @import("../observability/slog.zig");
+const http_status = @import("../core/http_status.zig").HttpStatus;
 
 pub const Address = struct {
     ip: [4]u8,
@@ -102,7 +103,7 @@ pub const Server = struct {
     pub fn createSSEResponse(self: *Server, writer: *const fn (*anyopaque, []const u8) anyerror!void, context: *anyopaque) types.Response {
         _ = self;
         return .{
-            .status = 200,
+            .status = http_status.ok,
             .headers = &.{
                 .{ .name = "Content-Type", .value = "text/event-stream" },
                 .{ .name = "Cache-Control", .value = "no-cache" },
@@ -229,7 +230,7 @@ pub const Server = struct {
                     // RFC 9110 Section 7.2 - Missing Host header in HTTP/1.1
                     tracer.recordRequestEnd();
                     return ResponseResult{ .complete = try self.httpResponse(.{
-                        .status = 400,
+                        .status = http_status.bad_request,
                         .body = .{ .complete = "Bad Request: Missing Host header (required for HTTP/1.1)" },
                         .headers = &[_]types.Header{
                             .{ .name = "Content-Type", .value = "text/plain" },
@@ -239,7 +240,7 @@ pub const Server = struct {
                 error.InvalidRequest, error.InvalidMethod, error.UnsupportedVersion, error.InvalidUri, error.UserinfoNotAllowed => {
                     tracer.recordRequestEnd();
                     return ResponseResult{ .complete = try self.httpResponse(.{
-                        .status = 400,
+                        .status = http_status.bad_request,
                         .body = .{ .complete = "Bad Request" },
                         .headers = &[_]types.Header{
                             .{ .name = "Content-Type", .value = "text/plain" },
@@ -250,7 +251,7 @@ pub const Server = struct {
                     // RFC 9110 Section 6 - Message body framing errors and RFC 3986 - URL decoding errors
                     tracer.recordRequestEnd();
                     return ResponseResult{ .complete = try self.httpResponse(.{
-                        .status = 400,
+                        .status = http_status.bad_request,
                         .body = .{ .complete = "Bad Request: Invalid request format" },
                         .headers = &[_]types.Header{
                             .{ .name = "Content-Type", .value = "text/plain" },
@@ -260,7 +261,7 @@ pub const Server = struct {
                 else => {
                     tracer.recordRequestEnd();
                     return ResponseResult{ .complete = try self.httpResponse(.{
-                        .status = 500,
+                        .status = http_status.internal_server_error,
                         .body = .{ .complete = "Internal Server Error" },
                         .headers = &[_]types.Header{
                             .{ .name = "Content-Type", .value = "text/plain" },
@@ -320,7 +321,7 @@ pub const Server = struct {
             const response_body = try std.fmt.allocPrint(arena, "Allow: {s}", .{allowed_methods});
             const keep_alive = self.shouldKeepAlive(parsed.headers);
             return ResponseResult{ .complete = try self.httpResponse(.{
-                .status = 200,
+                .status = http_status.ok,
                 .body = .{ .complete = response_body },
                 .headers = &[_]types.Header{
                     .{ .name = "Allow", .value = allowed_methods },
@@ -672,7 +673,7 @@ pub const Server = struct {
         keep_alive: bool,
     ) !ResponseResult {
         const response = switch (decision) {
-            .Continue => types.Response{ .status = 200, .body = .{ .complete = "OK" } },
+            .Continue => types.Response{ .status = http_status.ok, .body = .{ .complete = "OK" } },
             .Done => |resp| resp,
             .Fail => |err| {
                 slog.debug("Decision failed", &.{
@@ -682,7 +683,7 @@ pub const Server = struct {
                 });
                 return self.renderError(ctx, err, arena, keep_alive);
             },
-            .need => types.Response{ .status = 500, .body = .{ .complete = "Pipeline incomplete" } },
+            .need => types.Response{ .status = http_status.internal_server_error, .body = .{ .complete = "Pipeline incomplete" } },
         };
 
         switch (response.body) {
@@ -742,9 +743,9 @@ pub const Server = struct {
         const is_head = std.mem.eql(u8, ctx.method_str, "HEAD");
 
         return switch (response) {
-            .Continue => ResponseResult{ .complete = try self.httpResponse(.{ .status = 500, .body = .{ .complete = "Error" } }, arena, is_head, keep_alive) },
+            .Continue => ResponseResult{ .complete = try self.httpResponse(.{ .status = http_status.internal_server_error, .body = .{ .complete = "Error" } }, arena, is_head, keep_alive) },
             .Done => |resp| ResponseResult{ .complete = try self.httpResponse(resp, arena, is_head, keep_alive) },
-            else => ResponseResult{ .complete = try self.httpResponse(.{ .status = 500, .body = .{ .complete = "Error" } }, arena, is_head, keep_alive) },
+            else => ResponseResult{ .complete = try self.httpResponse(.{ .status = http_status.internal_server_error, .body = .{ .complete = "Error" } }, arena, is_head, keep_alive) },
         };
     }
 

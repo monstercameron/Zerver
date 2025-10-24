@@ -2,6 +2,7 @@
 const std = @import("std");
 const zerver = @import("../../zerver/root.zig");
 const slog = @import("../../zerver/observability/slog.zig");
+const http_status = zerver.HttpStatus;
 
 // Error handler
 pub fn onError(ctx: *zerver.CtxBase) anyerror!zerver.Decision {
@@ -39,7 +40,7 @@ pub fn onError(ctx: *zerver.CtxBase) anyerror!zerver.Decision {
             slog.Attr.string("feature", "todos"),
         });
         return zerver.done(.{
-            .status = 500,
+            .status = http_status.internal_server_error,
             .body = .{ .complete = "{\"error\":\"Internal server error - no error details\"}" },
         });
     }

@@ -28,14 +28,14 @@ pub const SelectBuilder = struct {
     pub fn init(allocator: std.mem.Allocator) SelectBuilder {
         return SelectBuilder{
             .allocator = allocator,
-            .columns = std.ArrayList(ast.Identifier).init(allocator),
-            .orderings = std.ArrayList(ast.Ordering).init(allocator),
+            .columns = std.ArrayList(ast.Identifier).initCapacity(allocator, 0) catch unreachable,
+            .orderings = std.ArrayList(ast.Ordering).initCapacity(allocator, 0) catch unreachable,
         };
     }
 
     pub fn deinit(self: *SelectBuilder) void {
-        self.columns.deinit();
-        self.orderings.deinit();
+        self.columns.deinit(self.allocator);
+        self.orderings.deinit(self.allocator);
     }
 
     pub fn from(self: *SelectBuilder, table_name: []const u8) *SelectBuilder {

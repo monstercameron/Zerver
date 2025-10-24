@@ -62,7 +62,7 @@ pub fn load(allocator: std.mem.Allocator, path: []const u8) !AppConfig {
     errdefer allocator.free(db_path);
 
     const default_workers = blk: {
-        const cpu_count = std.Thread.cpuCount() catch 4;
+        const cpu_count = std.Thread.getCpuCount() catch 4;
         break :blk if (cpu_count == 0) 1 else cpu_count;
     };
 

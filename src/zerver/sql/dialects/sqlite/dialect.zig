@@ -14,8 +14,8 @@ pub const dialect = base.Dialect{
 };
 
 fn quoteIdentifier(allocator: std.mem.Allocator, identifier: []const u8) anyerror![]u8 {
-    var buffer = std.ArrayList(u8).init(allocator);
-    errdefer buffer.deinit();
+    var buffer = try std.ArrayList(u8).initCapacity(allocator, identifier.len * 2 + 2);
+    errdefer buffer.deinit(allocator);
 
     try buffer.append('"');
     for (identifier) |byte| {
@@ -36,8 +36,8 @@ fn placeholder(allocator: std.mem.Allocator, position: usize) anyerror![]u8 {
 }
 
 fn escapeStringLiteral(allocator: std.mem.Allocator, literal: []const u8) anyerror![]u8 {
-    var buffer = std.ArrayList(u8).init(allocator);
-    errdefer buffer.deinit();
+    var buffer = try std.ArrayList(u8).initCapacity(allocator, literal.len * 2 + 2);
+    errdefer buffer.deinit(allocator);
 
     try buffer.append('\'');
     for (literal) |byte| {

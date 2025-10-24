@@ -107,12 +107,16 @@ pub const Executor = struct {
             slog.Attr.uint("fn_ptr", @as(u64, @intCast(ptr))),
             slog.Attr.uint("depth", @as(u64, @intCast(depth))),
         });
-        var decision = try step_fn(ctx_base);
+        var decision = step_fn(ctx_base) catch |err| {
+            return failFromCrash(self, ctx_base, "step", err, depth);
+        };
 
         // Handle any Need decisions by executing effects
         while (decision == .need) {
             const need = decision.need;
-            decision = try self.executeNeed(ctx_base, need, depth + 1);
+            decision = self.executeNeed(ctx_base, need, depth + 1) catch |err| {
+                return failFromCrash(self, ctx_base, "continuation", err, depth + 1);
+            };
         }
 
         return decision;
@@ -266,6 +270,30 @@ pub const Executor = struct {
         return self.executeStepInternal(ctx_base, need.continuation, depth + 1);
     }
 };
+
+fn failFromCrash(
+    self: *Executor,
+    ctx_base: *ctx_module.CtxBase,
+    phase: []const u8,
+    err: anyerror,
+    depth: usize,
+) types.Decision {
+    _ = self;
+    const err_name = @errorName(err);
+    slog.err("Executor phase crashed", &.{
+        slog.Attr.string("phase", phase),
+        slog.Attr.string("error", err_name),
+        slog.Attr.uint("depth", @as(u64, @intCast(depth))),
+    });
+
+    const failure = types.Error{
+        .kind = types.ErrorCode.InternalServerError,
+        .ctx = .{ .what = phase, .key = err_name },
+    };
+    ctx_base.last_error = failure;
+    ctx_base.status_code = failure.kind;
+    return .{ .Fail = failure };
+}
 
 /// Default effect handler that returns dummy results.
 /// Production systems would implement actual HTTP/DB clients.
