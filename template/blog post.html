@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Earl Cameron | Blog Post</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+  </head>
+  <body class="bg-neutral-100 text-gray-800">
+    <!-- Navbar -->
+    <nav class="flex justify-between items-center px-8 py-5 bg-white/90 backdrop-blur-md shadow-md fixed top-0 w-full z-10 border-b border-gray-200">
+      <h1 class="text-2xl font-bold text-blue-700">Earl Cameron</h1>
+      <ul class="flex space-x-8 font-medium text-gray-700">
+        <li><a href="index.html#home" class="hover:text-blue-500 transition">Home</a></li>
+        <li><a href="index.html#resume" class="hover:text-blue-500 transition">Resume</a></li>
+        <li><a href="index.html#portfolio" class="hover:text-blue-500 transition">Portfolio</a></li>
+        <li><a href="blog.html" class="hover:text-blue-500 transition text-orange-500">Blog</a></li>
+        <li><a href="index.html#playground" class="hover:text-blue-500 transition">Playground</a></li>
+        <li><a href="https://reader.earlcameron.com/i/?rid=68fae7c966445" target="_blank" class="hover:text-blue-500 transition">RSS</a></li>
+      </ul>
+    </nav>
+
+    <!-- Blog Post -->
+    <article class="pt-32 pb-20 px-6">
+      <div class="max-w-3xl mx-auto mb-8 flex justify-start">
+        <a href="blog.html" class="px-5 py-3 bg-blue-600 text-white rounded-full hover:bg-blue-700 transition">← Back to Blog List</a>
+      </div>
+
+      <div class="max-w-3xl mx-auto bg-white shadow-lg rounded-lg p-8 leading-relaxed">
+        <header class="mb-8 text-center">
+          <h1 class="text-4xl font-bold text-gray-900 mb-2">The Architecture Behind GoWebComponents</h1>
+          <p class="text-gray-500 text-sm">April 2025 • Framework Design</p>
+        </header>
+
+        <img src="https://raw.githubusercontent.com/monstercameron/GoWebComponents/main/docs/architecture-diagram.png" alt="GoWebComponents Diagram" class="rounded-md shadow mb-8 w-full" />
+
+        <div class="prose prose-lg max-w-none text-gray-700">
+          <p>
+            GoWebComponents is a modern frontend framework written in Go that compiles directly to WebAssembly (WASM). Its goal is to provide a type-safe, concurrent, and fully compiled alternative to JavaScript-based frameworks such as React or Vue.
+          </p>
+
+          <h2>Core Concepts</h2>
+          <p>
+            The framework uses React-like hooks such as <code>GoUseState</code> and <code>GoUseEffect</code> to maintain state and trigger UI updates, but the logic is compiled directly to WASM. This enables near-native performance and a unified Go-based developer experience.
+          </p>
+          <ul class="list-disc list-inside">
+            <li>Virtual DOM implementation optimized for WASM.</li>
+            <li>Fiber-based reconciliation for efficient updates.</li>
+            <li>Built-in development server with live reload.</li>
+          </ul>
+
+          <h2>Performance</h2>
+          <p>
+            GoWebComponents leverages Go’s strong concurrency model, allowing UI components to execute independently in lightweight goroutines. This eliminates most event-loop bottlenecks and provides deterministic performance across browsers.
+          </p>
+
+          <blockquote class="border-l-4 border-blue-500 pl-4 italic text-gray-600 bg-blue-50 py-2">
+            “It’s like writing React in Go, but with the predictability and speed of a compiled language.”
+          </blockquote>
+
+          <h2>Sample Usage</h2>
+          <pre class="bg-gray-900 text-gray-100 p-4 rounded-md overflow-x-auto text-sm">
+package main
+
+import "gowebcomponents"
+
+func Counter() {
+  count, setCount := gowebcomponents.GoUseState(0)
+  gowebcomponents.Div(nil,
+    gowebcomponents.Text(fmt.Sprintf("Count: %d", count)),
+    gowebcomponents.Button(map[string]any{"onClick": func() { setCount(count + 1) }}, "Increment"),
+  )
+}
+          </pre>
+
+          <h2>Future Plans</h2>
+          <p>
+            Future releases aim to include SSR (Server-Side Rendering), router integration, and a stateful hot-reload compiler inspired by Vite. GoWebComponents continues to evolve toward a production-ready Go-native UI ecosystem.
+          </p>
+
+          <p>
+            Explore the project on <a href="https://github.com/monstercameron/GoWebComponents" target="_blank" class="text-blue-600 hover:underline">GitHub</a> for source code, examples, and development updates.
+          </p>
+        </div>
+      </div>
+
+      <div class="max-w-3xl mx-auto mt-10 flex justify-between items-center">
+        <div class="flex space-x-4 w-full justify-between">
+          <a href="#" class="flex-1 text-left px-5 py-4 bg-gray-200 text-gray-800 rounded-lg hover:bg-gray-300 transition">
+            <span class="block text-sm text-gray-500">← Previous Post</span>
+            <span class="block font-semibold text-gray-900">SchemaFlow: Typed Pipelines for LLM Operations</span>
+          </a>
+          <a href="#" class="flex-1 text-right px-5 py-4 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition">
+            <span class="block text-sm text-blue-200">Next Post →</span>
+            <span class="block font-semibold">HTMLeX and the Future of Server-Driven UI</span>
+          </a>
+        </div>
+      </div>
+    </article>
+
+    <!-- Footer -->
+    <footer class="bg-gray-900 text-gray-200 py-10 text-center mt-10">
+      <h4 class="text-xl font-semibold mb-4">Connect with Me</h4>
+      <div class="flex justify-center space-x-8 mb-4">
+        <a href="https://www.linkedin.com/in/earl-cameron/" target="_blank" rel="noopener noreferrer" class="hover:text-orange-400 transition">LinkedIn</a>
+        <a href="https://www.youtube.com/@EarlCameron007" target="_blank" rel="noopener noreferrer" class="hover:text-orange-400 transition">YouTube</a>
+      </div>
+      <p class="text-gray-400 text-sm">© 2025 Earl Cameron. All rights reserved.</p>
+    </footer>
+  </body>
+</html>

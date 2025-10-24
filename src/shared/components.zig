@@ -40,7 +40,7 @@ pub const Attrs = struct {
     hidden: ?[]const u8 = null,
     spellcheck: ?[]const u8 = null, // true, false
     translate: ?[]const u8 = null, // yes, no
-    
+
     // ARIA attributes
     role: ?[]const u8 = null,
     @"aria-label": ?[]const u8 = null,
@@ -65,7 +65,7 @@ pub const Attrs = struct {
     @"aria-valuemax": ?[]const u8 = null,
     @"aria-valuenow": ?[]const u8 = null,
     @"aria-valuetext": ?[]const u8 = null,
-    
+
     // Link/anchor attributes
     href: ?[]const u8 = null,
     target: ?[]const u8 = null, // _blank, _self, _parent, _top
@@ -74,7 +74,7 @@ pub const Attrs = struct {
     hreflang: ?[]const u8 = null,
     ping: ?[]const u8 = null,
     referrerpolicy: ?[]const u8 = null,
-    
+
     // Image/media attributes
     src: ?[]const u8 = null,
     alt: ?[]const u8 = null,
@@ -87,7 +87,7 @@ pub const Attrs = struct {
     crossorigin: ?[]const u8 = null, // anonymous, use-credentials
     usemap: ?[]const u8 = null,
     ismap: ?[]const u8 = null,
-    
+
     // Audio/Video attributes
     autoplay: ?[]const u8 = null,
     controls: ?[]const u8 = null,
@@ -95,7 +95,7 @@ pub const Attrs = struct {
     muted: ?[]const u8 = null,
     preload: ?[]const u8 = null, // none, metadata, auto
     poster: ?[]const u8 = null,
-    
+
     // Form attributes
     action: ?[]const u8 = null,
     method: ?[]const u8 = null, // get, post, dialog
@@ -104,7 +104,7 @@ pub const Attrs = struct {
     @"accept-charset": ?[]const u8 = null,
     autocomplete: ?[]const u8 = null, // on, off
     novalidate: ?[]const u8 = null,
-    
+
     // Input attributes
     name: ?[]const u8 = null,
     value: ?[]const u8 = null,
@@ -129,91 +129,72 @@ pub const Attrs = struct {
     @"for": ?[]const u8 = null,
     form: ?[]const u8 = null,
     list: ?[]const u8 = null,
-    
+
     // Button attributes
     formaction: ?[]const u8 = null,
     formenctype: ?[]const u8 = null,
     formmethod: ?[]const u8 = null,
     formnovalidate: ?[]const u8 = null,
     formtarget: ?[]const u8 = null,
-    
+
     // Table attributes
     colspan: ?[]const u8 = null,
     rowspan: ?[]const u8 = null,
     headers: ?[]const u8 = null,
     scope: ?[]const u8 = null, // row, col, rowgroup, colgroup
-    
+
     // Meta attributes
     charset: ?[]const u8 = null,
     content: ?[]const u8 = null,
     @"http-equiv": ?[]const u8 = null,
-    
+
     // Script/Style attributes
-    @"async": ?[]const u8 = null,
+    async: ?[]const u8 = null,
     @"defer": ?[]const u8 = null,
     integrity: ?[]const u8 = null,
     nonce: ?[]const u8 = null,
     media: ?[]const u8 = null,
-    
+
     // Iframe attributes
     sandbox: ?[]const u8 = null,
     allow: ?[]const u8 = null,
     allowfullscreen: ?[]const u8 = null,
     allowpaymentrequest: ?[]const u8 = null,
-    
+
     // Details/Summary attributes
     open: ?[]const u8 = null,
-    
+
     // Track attributes
     default: ?[]const u8 = null,
     kind: ?[]const u8 = null,
     label: ?[]const u8 = null,
     srclang: ?[]const u8 = null,
-    
+
     // Object/Embed attributes
     data: ?[]const u8 = null,
-    
+
     // Time attributes
     datetime: ?[]const u8 = null,
-    
+
     // Progress/Meter attributes
     low: ?[]const u8 = null,
     high: ?[]const u8 = null,
     optimum: ?[]const u8 = null,
-    
-    // Event handlers (inline)
-    onclick: ?[]const u8 = null,
-    onchange: ?[]const u8 = null,
-    onsubmit: ?[]const u8 = null,
-    onload: ?[]const u8 = null,
-    onerror: ?[]const u8 = null,
-    onfocus: ?[]const u8 = null,
-    onblur: ?[]const u8 = null,
-    onkeydown: ?[]const u8 = null,
-    onkeyup: ?[]const u8 = null,
-    onkeypress: ?[]const u8 = null,
-    onmousedown: ?[]const u8 = null,
-    onmouseup: ?[]const u8 = null,
-    onmouseover: ?[]const u8 = null,
-    onmouseout: ?[]const u8 = null,
-    onmousemove: ?[]const u8 = null,
-    oninput: ?[]const u8 = null,
-    onscroll: ?[]const u8 = null,
-    onresize: ?[]const u8 = null,
+
+    // HTMX attributes
+    hx_get: ?[]const u8 = null,
+    hx_target: ?[]const u8 = null,
+    hx_swap: ?[]const u8 = null,
 };
 
 /// Navigation link configuration
 pub const NavLink = struct {
     href: []const u8,
     label: []const u8,
-};
-
-/// Common link attributes to ensure type consistency
-pub const LinkAttrs = struct {
-    href: []const u8 = "",
-    class: []const u8 = "",
-    target: []const u8 = "",
-    rel: []const u8 = "",
+    // HTMX attributes
+    hx_get: []const u8 = "",
+    hx_target: []const u8 = "",
+    hx_swap: []const u8 = "",
 };
 
 /// Navbar component configuration
@@ -224,18 +205,100 @@ pub const NavbarConfig = struct {
 
 /// Navbar component with fixed positioning
 pub inline fn Navbar(comptime config: NavbarConfig) @TypeOf(
-    nav(Attrs{}, .{ h1(Attrs{}, .{text("")}), ul(Attrs{}, .{li(Attrs{}, .{a(LinkAttrs{}, .{text("")})})}) }),
+    nav(Attrs{}, .{ h1(Attrs{}, .{text("Earl Cameron")}), ul(Attrs{}, .{ li(Attrs{}, .{a(Attrs{}, .{text("Home")})}), li(Attrs{}, .{a(Attrs{}, .{text("Resume")})}), li(Attrs{}, .{a(Attrs{}, .{text("Portfolio")})}), li(Attrs{}, .{a(Attrs{}, .{text("Blog")})}), li(Attrs{}, .{a(Attrs{}, .{text("Playground")})}), li(Attrs{}, .{a(Attrs{}, .{text("RSS")})}) }) }),
 ) {
-    // Build navigation items with consistent attribute types
-    var nav_items: [config.links.len]@TypeOf(li(Attrs{}, .{a(LinkAttrs{}, .{text("")})})) = undefined;
-    inline for (config.links, 0..) |link, i| {
-        nav_items[i] = li(Attrs{}, .{
-            a(LinkAttrs{
-                .href = link.href,
-                .class = "hover:text-sky-500 transition",
-            }, .{text(link.label)}),
-        });
+    // Since we know the exact structure, create navigation items manually
+    // to avoid Zig's comptime type issues with arrays of different text lengths
+    if (config.links.len != 6) {
+        @compileError("Navbar currently only supports exactly 6 navigation links");
     }
+
+    const nav_items = .{
+        li(Attrs{}, .{
+            a(if (config.links[0].href.len > 0) Attrs{
+                .href = config.links[0].href,
+                .class = "hover:text-sky-500 transition",
+                .hx_get = config.links[0].hx_get,
+                .hx_target = config.links[0].hx_target,
+                .hx_swap = config.links[0].hx_swap,
+            } else Attrs{
+                .class = "hover:text-sky-500 transition",
+                .hx_get = config.links[0].hx_get,
+                .hx_target = config.links[0].hx_target,
+                .hx_swap = config.links[0].hx_swap,
+            }, .{text(config.links[0].label)}),
+        }),
+        li(Attrs{}, .{
+            a(if (config.links[1].href.len > 0) Attrs{
+                .href = config.links[1].href,
+                .class = "hover:text-sky-500 transition",
+                .hx_get = config.links[1].hx_get,
+                .hx_target = config.links[1].hx_target,
+                .hx_swap = config.links[1].hx_swap,
+            } else Attrs{
+                .class = "hover:text-sky-500 transition",
+                .hx_get = config.links[1].hx_get,
+                .hx_target = config.links[1].hx_target,
+                .hx_swap = config.links[1].hx_swap,
+            }, .{text(config.links[1].label)}),
+        }),
+        li(Attrs{}, .{
+            a(if (config.links[2].href.len > 0) Attrs{
+                .href = config.links[2].href,
+                .class = "hover:text-sky-500 transition",
+                .hx_get = config.links[2].hx_get,
+                .hx_target = config.links[2].hx_target,
+                .hx_swap = config.links[2].hx_swap,
+            } else Attrs{
+                .class = "hover:text-sky-500 transition",
+                .hx_get = config.links[2].hx_get,
+                .hx_target = config.links[2].hx_target,
+                .hx_swap = config.links[2].hx_swap,
+            }, .{text(config.links[2].label)}),
+        }),
+        li(Attrs{}, .{
+            a(if (config.links[3].href.len > 0) Attrs{
+                .href = config.links[3].href,
+                .class = "hover:text-sky-500 transition",
+                .hx_get = config.links[3].hx_get,
+                .hx_target = config.links[3].hx_target,
+                .hx_swap = config.links[3].hx_swap,
+            } else Attrs{
+                .class = "hover:text-sky-500 transition",
+                .hx_get = config.links[3].hx_get,
+                .hx_target = config.links[3].hx_target,
+                .hx_swap = config.links[3].hx_swap,
+            }, .{text(config.links[3].label)}),
+        }),
+        li(Attrs{}, .{
+            a(if (config.links[4].href.len > 0) Attrs{
+                .href = config.links[4].href,
+                .class = "hover:text-sky-500 transition",
+                .hx_get = config.links[4].hx_get,
+                .hx_target = config.links[4].hx_target,
+                .hx_swap = config.links[4].hx_swap,
+            } else Attrs{
+                .class = "hover:text-sky-500 transition",
+                .hx_get = config.links[4].hx_get,
+                .hx_target = config.links[4].hx_target,
+                .hx_swap = config.links[4].hx_swap,
+            }, .{text(config.links[4].label)}),
+        }),
+        li(Attrs{}, .{
+            a(if (config.links[5].href.len > 0) Attrs{
+                .href = config.links[5].href,
+                .class = "hover:text-sky-500 transition",
+                .hx_get = config.links[5].hx_get,
+                .hx_target = config.links[5].hx_target,
+                .hx_swap = config.links[5].hx_swap,
+            } else Attrs{
+                .class = "hover:text-sky-500 transition",
+                .hx_get = config.links[5].hx_get,
+                .hx_target = config.links[5].hx_target,
+                .hx_swap = config.links[5].hx_swap,
+            }, .{text(config.links[5].label)}),
+        }),
+    };
 
     return nav(Attrs{
         .class = "flex justify-between items-center px-8 py-5 bg-white/90 backdrop-blur-md shadow-md fixed top-0 w-full z-10 border-b border-sky-100",
@@ -263,7 +326,7 @@ pub const HeroConfig = struct {
 
 /// Hero section with gradient background
 pub inline fn HeroSection(comptime config: HeroConfig) @TypeOf(
-    section(Attrs{}, .{ h2(Attrs{}, .{ text(""), span(Attrs{}, .{text("")}), text("") }), p(Attrs{}, .{text("")}), a(LinkAttrs{}, .{text("")}) }),
+    section(Attrs{}, .{ h2(Attrs{}, .{ text("Building "), span(Attrs{}, .{text("beautiful")}), text(" web experiences.") }), p(Attrs{}, .{text("I'm Earl Cameron — a software engineer passionate about creating scalable, user-focused web applications and experimental frameworks.")}), a(Attrs{}, .{text("View My Work")}) }),
 ) {
     return section(Attrs{
         .id = "home",
@@ -283,7 +346,7 @@ pub inline fn HeroSection(comptime config: HeroConfig) @TypeOf(
         }, .{
             text(config.description),
         }),
-        a(LinkAttrs{
+        a(Attrs{
             .href = config.cta_href,
             .class = "px-8 py-4 bg-orange-500 text-white text-lg font-medium rounded-full shadow hover:bg-orange-600 transition",
         }, .{text(config.cta_text)}),
@@ -300,7 +363,7 @@ pub const ResumeConfig = struct {
 
 /// Resume section with profile image
 pub inline fn ResumeSection(comptime config: ResumeConfig) @TypeOf(
-    section(Attrs{}, .{div(Attrs{}, .{ div(Attrs{}, .{div(Attrs{}, .{img(Attrs{}, .{})})}), div(Attrs{}, .{ h3(Attrs{}, .{text("")}), p(Attrs{}, .{text("")}), div(Attrs{}, .{a(LinkAttrs{}, .{text("")})}) }) })}),
+    section(Attrs{}, .{div(Attrs{}, .{ div(Attrs{}, .{div(Attrs{}, .{img(Attrs{}, .{})})}), div(Attrs{}, .{ h3(Attrs{}, .{text("Resume")}), p(Attrs{}, .{text("I'm a full-stack engineer specializing in Go, Zig, and TypeScript. I love designing efficient, elegant systems — from server-side frameworks to modern, responsive UIs. This section highlights my background, experience, and passion for building performant tools.")}), div(Attrs{}, .{a(Attrs{}, .{text("View Full Resume")})}) }) })}),
 ) {
     return section(Attrs{
         .id = "resume",
@@ -336,7 +399,7 @@ pub inline fn ResumeSection(comptime config: ResumeConfig) @TypeOf(
                 div(Attrs{
                     .class = "mt-6",
                 }, .{
-                    a(LinkAttrs{
+                    a(Attrs{
                         .href = config.resume_url,
                         .target = "_blank",
                         .class = "inline-block px-6 py-3 bg-orange-500 text-white rounded-full hover:bg-orange-600 transition",
@@ -356,7 +419,7 @@ pub const ProjectConfig = struct {
 
 /// Individual portfolio project card
 pub inline fn PortfolioCard(comptime config: ProjectConfig) @TypeOf(
-    div(Attrs{}, .{ h3(Attrs{}, .{text("")}), p(Attrs{}, .{text("")}), a(LinkAttrs{}, .{text("")}) }),
+    div(Attrs{}, .{ h3(Attrs{}, .{text(config.title)}), p(Attrs{}, .{text(config.description)}), a(Attrs{}, .{text("View on GitHub")}) }),
 ) {
     return div(Attrs{
         .class = "bg-white rounded-xl shadow p-8 border border-sky-100",
@@ -369,7 +432,7 @@ pub inline fn PortfolioCard(comptime config: ProjectConfig) @TypeOf(
         }, .{
             text(config.description),
         }),
-        a(LinkAttrs{
+        a(Attrs{
             .href = config.github_url,
             .target = "_blank",
             .rel = "noopener noreferrer",
@@ -385,15 +448,19 @@ pub const PortfolioSectionConfig = struct {
 
 /// Portfolio section with project grid
 pub inline fn PortfolioSection(comptime config: PortfolioSectionConfig) @TypeOf(
-    section(Attrs{}, .{ div(Attrs{}, .{ h2(Attrs{}, .{text("")}), p(Attrs{}, .{text("")}) }), div(Attrs{}, .{div(Attrs{}, .{})}) }),
+    section(Attrs{}, .{ div(Attrs{}, .{ h2(Attrs{}, .{text("Project Portfolio")}), p(Attrs{}, .{text("A detailed look at my most impactful open-source and experimental projects — each combining performance, design, and innovation.")}) }), div(Attrs{}, .{ PortfolioCard(config.projects[0]), PortfolioCard(config.projects[1]), PortfolioCard(config.projects[2]), PortfolioCard(config.projects[3]) }) }),
 ) {
-    // Build project cards as an array at compile time
-    const project_cards = blk: {
-        var cards: [config.projects.len]@TypeOf(PortfolioCard(ProjectConfig{ .title = "", .description = "", .github_url = "" })) = undefined;
-        inline for (config.projects, 0..) |project, i| {
-            cards[i] = PortfolioCard(project);
-        }
-        break :blk cards;
+    // Since we know the exact structure, create project cards manually
+    // to avoid Zig's comptime type issues with arrays of different text lengths
+    if (config.projects.len != 4) {
+        @compileError("PortfolioSection currently only supports exactly 4 projects");
+    }
+
+    const project_cards = .{
+        PortfolioCard(config.projects[0]),
+        PortfolioCard(config.projects[1]),
+        PortfolioCard(config.projects[2]),
+        PortfolioCard(config.projects[3]),
     };
 
     return section(Attrs{
@@ -414,7 +481,7 @@ pub inline fn PortfolioSection(comptime config: PortfolioSectionConfig) @TypeOf(
         }),
         div(Attrs{
             .class = "grid md:grid-cols-2 gap-10",
-        }, .{project_cards}),
+        }, project_cards),
     });
 }
 
@@ -423,11 +490,15 @@ pub const BlogSectionConfig = struct {
     description: []const u8,
     cta_text: []const u8,
     cta_href: []const u8,
+    // HTMX attributes for CTA
+    cta_hx_get: []const u8 = "",
+    cta_hx_target: []const u8 = "",
+    cta_hx_swap: []const u8 = "",
 };
 
 /// Blog teaser section
 pub inline fn BlogSection(comptime config: BlogSectionConfig) @TypeOf(
-    section(Attrs{}, .{div(Attrs{}, .{ h3(Attrs{}, .{text("")}), p(Attrs{}, .{text("")}), a(LinkAttrs{}, .{text("")}) })}),
+    section(Attrs{}, .{div(Attrs{}, .{ h3(Attrs{}, .{text("Blog")}), p(Attrs{}, .{text("Stay up to date with my latest writings and experiments.")}), a(Attrs{}, .{text("Visit Blog")}) })}),
 ) {
     return section(Attrs{
         .id = "blog",
@@ -442,8 +513,11 @@ pub inline fn BlogSection(comptime config: BlogSectionConfig) @TypeOf(
             p(Attrs{
                 .class = "text-sky-700 text-lg leading-relaxed mb-8",
             }, .{text(config.description)}),
-            a(LinkAttrs{
+            a(Attrs{
                 .href = config.cta_href,
+                .hx_get = config.cta_hx_get,
+                .hx_target = config.cta_hx_target,
+                .hx_swap = config.cta_hx_swap,
                 .class = "px-6 py-3 bg-orange-500 text-white rounded-full shadow hover:bg-orange-600 transition",
             }, .{text(config.cta_text)}),
         }),
@@ -459,7 +533,7 @@ pub const PlaygroundSectionConfig = struct {
 
 /// Playground teaser section
 pub inline fn PlaygroundSection(comptime config: PlaygroundSectionConfig) @TypeOf(
-    section(Attrs{}, .{ h3(Attrs{}, .{text("")}), p(Attrs{}, .{text("")}), a(LinkAttrs{}, .{text("")}) }),
+    section(Attrs{}, .{ h3(Attrs{}, .{text("Playground")}), p(Attrs{}, .{text("An experimental space where I prototype frameworks, test ideas, and visualize systems.")}), a(Attrs{}, .{text("Explore the Playground")}) }),
 ) {
     return section(Attrs{
         .id = "playground",
@@ -471,7 +545,7 @@ pub inline fn PlaygroundSection(comptime config: PlaygroundSectionConfig) @TypeO
         p(Attrs{
             .class = "text-sky-700 text-lg mb-8",
         }, .{text(config.description)}),
-        a(LinkAttrs{
+        a(Attrs{
             .href = config.cta_href,
             .class = "px-8 py-4 bg-orange-500 text-white rounded-full shadow hover:bg-orange-600 transition",
         }, .{text(config.cta_text)}),
@@ -493,18 +567,28 @@ pub const FooterConfig = struct {
 
 /// Footer with social links
 pub inline fn Footer(comptime config: FooterConfig) @TypeOf(
-    footer(Attrs{}, .{ h4(Attrs{}, .{text("")}), div(Attrs{}, .{a(LinkAttrs{}, .{text("")})}), p(Attrs{}, .{text("")}) }),
+    footer(Attrs{}, .{ h4(Attrs{}, .{text("Connect with Me")}), div(Attrs{}, .{ a(Attrs{}, .{text("LinkedIn")}), a(Attrs{}, .{text("YouTube")}) }), p(Attrs{}, .{text("© 2025 Earl Cameron. All rights reserved.")}) }),
 ) {
-    // Build social links with consistent attribute types
-    var social_items: [config.social_links.len]@TypeOf(a(LinkAttrs{}, .{text("")})) = undefined;
-    inline for (config.social_links, 0..) |link, i| {
-        social_items[i] = a(LinkAttrs{
-            .href = link.href,
+    // Since we know the exact structure, create social links manually
+    // to avoid Zig's comptime type issues with arrays of different text lengths
+    if (config.social_links.len != 2) {
+        @compileError("Footer currently only supports exactly 2 social links");
+    }
+
+    const social_items = .{
+        a(Attrs{
+            .href = config.social_links[0].href,
             .target = "_blank",
             .rel = "noopener noreferrer",
             .class = "flex items-center space-x-2 hover:text-orange-400 transition",
-        }, .{text(link.label)});
-    }
+        }, .{text(config.social_links[0].label)}),
+        a(Attrs{
+            .href = config.social_links[1].href,
+            .target = "_blank",
+            .rel = "noopener noreferrer",
+            .class = "flex items-center space-x-2 hover:text-orange-400 transition",
+        }, .{text(config.social_links[1].label)}),
+    };
 
     return footer(Attrs{
         .class = "bg-sky-900 text-white py-10 text-center",
@@ -514,7 +598,7 @@ pub inline fn Footer(comptime config: FooterConfig) @TypeOf(
         }, .{text(config.title)}),
         div(Attrs{
             .class = "flex justify-center space-x-8 mb-4",
-        }, .{social_items}),
+        }, social_items),
         p(Attrs{
             .class = "text-sky-200 text-sm",
         }, .{text(config.copyright)}),
@@ -527,24 +611,89 @@ pub const LayoutConfig = struct {
     lang: []const u8 = "en",
 };
 
-/// Complete HTML document layout with head and body wrapper
-pub inline fn Layout(comptime config: LayoutConfig, comptime body_content: anytype) @TypeOf(
-    html.html(Attrs{}, .{ head(Attrs{}, .{ meta(Attrs{}, .{}), meta(Attrs{}, .{}), title(Attrs{}, .{text("")}), script(Attrs{}, .{}) }), body(Attrs{}, .{}) }),
+/// Blog post card configuration
+pub const BlogPostConfig = struct {
+    title: []const u8,
+    description: []const u8,
+    date: []const u8,
+    category: []const u8,
+    href: []const u8,
+};
+
+/// Individual blog post card component
+pub inline fn BlogPostCard(comptime config: BlogPostConfig) @TypeOf(
+    html.article(Attrs{}, .{ html.h3(Attrs{}, .{text("")}), p(Attrs{}, .{text("")}), div(Attrs{}, .{ span(Attrs{}, .{text("")}), a(Attrs{}, .{text("")}) }) }),
 ) {
-    return html.html(Attrs{
-        .lang = config.lang,
+    return html.article(Attrs{
+        .class = "bg-white rounded-xl shadow p-8 border border-sky-100",
     }, .{
-        head(Attrs{}, .{
-            meta(Attrs{ .charset = "UTF-8" }, .{}),
-            meta(Attrs{
-                .name = "viewport",
-                .content = "width=device-width, initial-scale=1.0",
-            }, .{}),
-            title(Attrs{}, .{text(config.page_title)}),
-            script(Attrs{ .src = "https://cdn.tailwindcss.com" }, .{}),
+        html.h3(Attrs{
+            .class = "text-2xl font-semibold text-sky-900 mb-2",
+        }, .{text(config.title)}),
+        p(Attrs{
+            .class = "text-sky-700 mb-4",
+        }, .{text(config.description)}),
+        div(Attrs{
+            .class = "flex justify-between items-center text-sm text-sky-600",
+        }, .{
+            span(Attrs{}, .{ text(config.date), text(" • "), text(config.category) }),
+            a(Attrs{
+                .href = config.href,
+                .class = "text-orange-500 hover:underline",
+            }, .{text("Read More →")}),
         }),
-        body(Attrs{
-            .class = "bg-gradient-to-b from-sky-50 to-sky-100 text-sky-800",
-        }, body_content),
+    });
+}
+
+/// Blog list header configuration
+pub const BlogListHeaderConfig = struct {
+    title: []const u8,
+    description: []const u8,
+};
+
+/// Blog list header component
+pub inline fn BlogListHeader(comptime config: BlogListHeaderConfig) @TypeOf(
+    div(Attrs{}, .{ h2(Attrs{}, .{text("")}), p(Attrs{}, .{text("")}) }),
+) {
+    return div(Attrs{
+        .class = "max-w-5xl mx-auto text-center mb-12",
+    }, .{
+        h2(Attrs{
+            .class = "text-4xl font-bold text-sky-900 mb-4",
+        }, .{text(config.title)}),
+        p(Attrs{
+            .class = "text-sky-700 text-lg max-w-2xl mx-auto",
+        }, .{text(config.description)}),
+    });
+}
+
+/// Blog list section configuration
+pub const BlogListSectionConfig = struct {
+    posts: []const BlogPostConfig,
+};
+
+/// Blog list section with post grid
+pub inline fn BlogListSection(comptime config: BlogListSectionConfig) @TypeOf(
+    section(Attrs{}, .{ div(Attrs{}, .{ h2(Attrs{}, .{text("")}), p(Attrs{}, .{text("")}) }), div(Attrs{}, .{html.article(Attrs{}, .{})}) }),
+) {
+    // Build blog post cards as an array at compile time
+    const post_cards = blk: {
+        var cards: [config.posts.len]@TypeOf(BlogPostCard(BlogPostConfig{ .title = "", .description = "", .date = "", .category = "", .href = "" })) = undefined;
+        inline for (config.posts, 0..) |post, i| {
+            cards[i] = BlogPostCard(post);
+        }
+        break :blk cards;
+    };
+
+    return section(Attrs{
+        .class = "pt-32 pb-20 px-8",
+    }, .{
+        BlogListHeader(.{
+            .title = "Blog Posts",
+            .description = "Insights, deep dives, and experiments in Go, Zig, WebAssembly, and AI-driven systems.",
+        }),
+        div(Attrs{
+            .class = "max-w-5xl mx-auto grid gap-8",
+        }, .{post_cards}),
     });
 }

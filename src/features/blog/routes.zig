@@ -1,6 +1,7 @@
 const zerver = @import("../../../src/zerver/root.zig");
 const steps = @import("steps.zig");
 const page = @import("page.zig");
+const list = @import("list.zig");
 
 // Step definitions
 const list_posts_step = zerver.step("list_posts", steps.step_list_posts);
@@ -23,10 +24,34 @@ const delete_comment_step = zerver.step("delete_comment", steps.step_delete_comm
 // Homepage step
 const homepage_step = zerver.step("homepage", page.homepageStep);
 
+// Blog list page steps
+const load_blog_posts_step = zerver.step("load_blog_posts", list.step_load_blog_posts);
+const load_blog_post_cards_step = zerver.step("load_blog_post_cards", list.step_load_blog_post_cards);
+const load_single_blog_post_card_step = zerver.step("load_single_blog_post_card", list.step_load_single_blog_post_card);
+const render_blog_list_header_step = zerver.step("render_blog_list_header", list.step_render_blog_list_header);
+
 pub fn registerRoutes(srv: *zerver.Server) !void {
     // Homepage route
     try srv.addRoute(.GET, "/blogs", .{
         .steps = &.{homepage_step},
+    });
+
+    // Blog list page with full HTML
+    try srv.addRoute(.GET, "/blog/list", .{
+        .steps = &.{load_blog_posts_step},
+    });
+
+    // HTMX fragment endpoints
+    try srv.addRoute(.GET, "/blog/htmx/cards", .{
+        .steps = &.{load_blog_post_cards_step},
+    });
+
+    try srv.addRoute(.GET, "/blog/htmx/card/:id", .{
+        .steps = &.{load_single_blog_post_card_step},
+    });
+
+    try srv.addRoute(.GET, "/blog/htmx/header", .{
+        .steps = &.{render_blog_list_header_step},
     });
 
     // Posts
