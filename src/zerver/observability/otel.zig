@@ -556,7 +556,6 @@ const RequestRecord = struct {
         self.response_streaming = event.response_streaming;
         try self.pushAttribute(try Attribute.initInt(self.allocator, "http.response_content_length", @as(i64, @intCast(event.response_body_bytes))));
         try self.pushAttribute(try Attribute.initBool(self.allocator, "zerver.response_streaming", event.response_streaming));
-        try self.pushAttribute(try Attribute.initInt(self.allocator, "zerver.request_bytes", @as(i64, @intCast(event.request_bytes))));
         try self.pushAttribute(try Attribute.initInt(self.allocator, "http.status_code", @as(i64, @intCast(event.status_code))));
         try self.pushAttribute(try Attribute.initString(self.allocator, "zerver.outcome", event.outcome));
 

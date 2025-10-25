@@ -4,12 +4,14 @@ const std = @import("std");
 pub const AppConfig = struct {
     database: DatabaseConfig,
     thread_pool: ThreadPoolConfig = .{},
-    observability: ObservabilityConfig = .{},
+    observability: ObservabilityConfig,
+    server: ServerConfig,
 
     pub fn deinit(self: *AppConfig, allocator: std.mem.Allocator) void {
         allocator.free(self.database.driver);
         allocator.free(self.database.path);
         self.observability.deinit(allocator);
+        self.server.deinit(allocator);
         self.* = undefined;
     }
 };
@@ -25,13 +27,40 @@ pub const ThreadPoolConfig = struct {
     worker_count: usize = 1,
 };
 
+pub const ServerConfig = struct {
+    host: []const u8 = "",
+    port: u16 = 0,
+
+    pub fn deinit(self: *ServerConfig, allocator: std.mem.Allocator) void {
+        if (self.host.len != 0) allocator.free(self.host);
+    }
+};
+
 pub const ObservabilityConfig = struct {
     otlp_endpoint: []const u8 = "",
     otlp_headers: []const u8 = "",
+    service_name: []const u8,
+    service_version: []const u8,
+    environment: []const u8,
+    scope_name: []const u8,
+    scope_version: []const u8,
+    autodetect_enabled: bool,
+    autodetect_host: []const u8,
+    autodetect_port: u16,
+    autodetect_path: []const u8,
+    autodetect_scheme: []const u8,
 
     pub fn deinit(self: *ObservabilityConfig, allocator: std.mem.Allocator) void {
         if (self.otlp_endpoint.len != 0) allocator.free(self.otlp_endpoint);
         if (self.otlp_headers.len != 0) allocator.free(self.otlp_headers);
+        allocator.free(self.service_name);
+        allocator.free(self.service_version);
+        allocator.free(self.environment);
+        allocator.free(self.scope_name);
+        allocator.free(self.scope_version);
+        if (self.autodetect_host.len != 0) allocator.free(self.autodetect_host);
+        if (self.autodetect_path.len != 0) allocator.free(self.autodetect_path);
+        if (self.autodetect_scheme.len != 0) allocator.free(self.autodetect_scheme);
     }
 };
 
@@ -46,24 +75,39 @@ const RawThreadPoolConfig = struct {
     worker_count: ?usize = null,
 };
 
+const RawServerConfig = struct {
+    host: ?[]const u8 = null,
+    port: ?u16 = null,
+};
+
 const RawObservabilityConfig = struct {
     otlp_endpoint: ?[]const u8 = null,
     otlp_headers: ?[]const u8 = null,
+    service_name: ?[]const u8 = null,
+    service_version: ?[]const u8 = null,
+    environment: ?[]const u8 = null,
+    scope_name: ?[]const u8 = null,
+    scope_version: ?[]const u8 = null,
+    autodetect_enabled: ?bool = null,
+    autodetect_host: ?[]const u8 = null,
+    autodetect_port: ?u16 = null,
+    autodetect_path: ?[]const u8 = null,
+    autodetect_scheme: ?[]const u8 = null,
 };
 
 const RawAppConfig = struct {
     database: RawDatabaseConfig,
     thread_pool: ?RawThreadPoolConfig = null,
     observability: ?RawObservabilityConfig = null,
+    server: ?RawServerConfig = null,
 };
 
-/// Load configuration from disk, returning an AppConfig with owned slices.
 pub fn load(allocator: std.mem.Allocator, path: []const u8) !AppConfig {
     const file = try std.fs.cwd().openFile(path, .{});
     defer file.close();
 
     const file_size = try file.getEndPos();
-    if (file_size > 1_048_576) return error.ConfigTooLarge; // 1 MiB safety guard
+    if (file_size > 1_048_576) return error.ConfigTooLarge;
 
     const buffer = try file.readToEndAlloc(allocator, @intCast(file_size));
     defer allocator.free(buffer);
@@ -84,21 +128,10 @@ pub fn load(allocator: std.mem.Allocator, path: []const u8) !AppConfig {
         break :blk if (cpu_count == 0) 1 else cpu_count;
     };
 
-    var observability = ObservabilityConfig{};
-    if (raw.observability) |obs| {
-        if (obs.otlp_endpoint) |endpoint| {
-            if (endpoint.len != 0) {
-                observability.otlp_endpoint = try allocator.dupe(u8, endpoint);
-                errdefer allocator.free(observability.otlp_endpoint);
-            }
-        }
-        if (obs.otlp_headers) |headers| {
-            if (headers.len != 0) {
-                observability.otlp_headers = try allocator.dupe(u8, headers);
-                errdefer allocator.free(observability.otlp_headers);
-            }
-        }
-    }
+    var observability = try buildObservabilityConfig(allocator, raw.observability);
+    errdefer observability.deinit(allocator);
+    var server = try buildServerConfig(allocator, raw.server);
+    errdefer server.deinit(allocator);
 
     return AppConfig{
         .database = .{
@@ -114,7 +147,156 @@ pub fn load(allocator: std.mem.Allocator, path: []const u8) !AppConfig {
                 default_workers,
         },
         .observability = observability,
+        .server = server,
     };
+}
+
+const DEFAULT_SERVICE_NAME = "zerver";
+const DEFAULT_SERVICE_VERSION = "0.1.0";
+const DEFAULT_ENVIRONMENT = "development";
+const DEFAULT_SCOPE_NAME = "zerver.telemetry";
+const DEFAULT_SCOPE_VERSION = "0.1.0";
+const DEFAULT_SERVER_HOST = "127.0.0.1";
+const DEFAULT_SERVER_PORT: u16 = 8080;
+const DEFAULT_OTLP_AUTODETECT_ENABLED = true;
+const DEFAULT_OTLP_AUTODETECT_HOST = "127.0.0.1";
+const DEFAULT_OTLP_AUTODETECT_PORT: u16 = 4318;
+const DEFAULT_OTLP_AUTODETECT_PATH = "/v1/traces";
+const DEFAULT_OTLP_AUTODETECT_SCHEME = "http";
+
+fn buildObservabilityConfig(
+    allocator: std.mem.Allocator,
+    raw: ?RawObservabilityConfig,
+) !ObservabilityConfig {
+    var config = ObservabilityConfig{
+        .service_name = try allocator.dupe(u8, DEFAULT_SERVICE_NAME),
+        .service_version = try allocator.dupe(u8, DEFAULT_SERVICE_VERSION),
+        .environment = try allocator.dupe(u8, DEFAULT_ENVIRONMENT),
+        .scope_name = try allocator.dupe(u8, DEFAULT_SCOPE_NAME),
+        .scope_version = try allocator.dupe(u8, DEFAULT_SCOPE_VERSION),
+        .autodetect_enabled = DEFAULT_OTLP_AUTODETECT_ENABLED,
+        .autodetect_host = try allocator.dupe(u8, DEFAULT_OTLP_AUTODETECT_HOST),
+        .autodetect_port = DEFAULT_OTLP_AUTODETECT_PORT,
+        .autodetect_path = try allocator.dupe(u8, DEFAULT_OTLP_AUTODETECT_PATH),
+        .autodetect_scheme = try allocator.dupe(u8, DEFAULT_OTLP_AUTODETECT_SCHEME),
+        .otlp_endpoint = "",
+        .otlp_headers = "",
+    };
+    errdefer config.deinit(allocator);
+
+    if (raw) |obs| {
+        if (obs.otlp_endpoint) |endpoint| {
+            if (endpoint.len != 0) {
+                config.otlp_endpoint = try allocator.dupe(u8, endpoint);
+            }
+        }
+
+        if (obs.otlp_headers) |headers| {
+            if (headers.len != 0) {
+                config.otlp_headers = try allocator.dupe(u8, headers);
+            }
+        }
+
+        if (obs.service_name) |value| {
+            if (config.service_name.len != 0) allocator.free(config.service_name);
+            config.service_name = if (value.len == 0)
+                try allocator.dupe(u8, DEFAULT_SERVICE_NAME)
+            else
+                try allocator.dupe(u8, value);
+        }
+
+        if (obs.service_version) |value| {
+            if (config.service_version.len != 0) allocator.free(config.service_version);
+            config.service_version = if (value.len == 0)
+                try allocator.dupe(u8, DEFAULT_SERVICE_VERSION)
+            else
+                try allocator.dupe(u8, value);
+        }
+
+        if (obs.environment) |value| {
+            if (config.environment.len != 0) allocator.free(config.environment);
+            config.environment = if (value.len == 0)
+                try allocator.dupe(u8, DEFAULT_ENVIRONMENT)
+            else
+                try allocator.dupe(u8, value);
+        }
+
+        if (obs.scope_name) |value| {
+            if (config.scope_name.len != 0) allocator.free(config.scope_name);
+            config.scope_name = if (value.len == 0)
+                try allocator.dupe(u8, DEFAULT_SCOPE_NAME)
+            else
+                try allocator.dupe(u8, value);
+        }
+
+        if (obs.scope_version) |value| {
+            if (config.scope_version.len != 0) allocator.free(config.scope_version);
+            config.scope_version = if (value.len == 0)
+                try allocator.dupe(u8, DEFAULT_SCOPE_VERSION)
+            else
+                try allocator.dupe(u8, value);
+        }
+
+        if (obs.autodetect_enabled) |flag| {
+            config.autodetect_enabled = flag;
+        }
+
+        if (obs.autodetect_host) |value| {
+            if (config.autodetect_host.len != 0) allocator.free(config.autodetect_host);
+            config.autodetect_host = if (value.len == 0)
+                ""
+            else
+                try allocator.dupe(u8, value);
+        }
+
+        if (obs.autodetect_port) |value| {
+            if (value == 0) return error.InvalidAutodetectPort;
+            config.autodetect_port = value;
+        }
+
+        if (obs.autodetect_path) |value| {
+            if (config.autodetect_path.len != 0) allocator.free(config.autodetect_path);
+            config.autodetect_path = if (value.len == 0)
+                ""
+            else
+                try allocator.dupe(u8, value);
+        }
+
+        if (obs.autodetect_scheme) |value| {
+            if (config.autodetect_scheme.len != 0) allocator.free(config.autodetect_scheme);
+            config.autodetect_scheme = if (value.len == 0)
+                ""
+            else
+                try allocator.dupe(u8, value);
+        }
+    }
+
+    return config;
+}
+
+fn buildServerConfig(
+    allocator: std.mem.Allocator,
+    raw: ?RawServerConfig,
+) !ServerConfig {
+    var config = ServerConfig{};
+    errdefer config.deinit(allocator);
+
+    config.host = try allocator.dupe(u8, DEFAULT_SERVER_HOST);
+    config.port = DEFAULT_SERVER_PORT;
+
+    if (raw) |srv| {
+        if (srv.host) |host_value| {
+            if (host_value.len == 0) return error.InvalidServerHost;
+            allocator.free(config.host);
+            config.host = try allocator.dupe(u8, host_value);
+        }
+        if (srv.port) |port_value| {
+            if (port_value == 0) return error.InvalidServerPort;
+            config.port = port_value;
+        }
+    }
+
+    return config;
 }
 
 fn resolveDatabasePath(allocator: std.mem.Allocator, raw_path: []const u8) ![]u8 {

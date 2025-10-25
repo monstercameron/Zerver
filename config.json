@@ -7,5 +7,23 @@
   },
   "thread_pool": {
     "worker_count": 4
+  },
+  "server": {
+    "host": "127.0.0.1",
+    "port": 8080
+  },
+  "observability": {
+    "otlp_endpoint": "",
+    "otlp_headers": "",
+    "service_name": "zerver",
+    "service_version": "0.1.0",
+    "environment": "development",
+    "scope_name": "zerver.telemetry",
+    "scope_version": "0.1.0",
+    "autodetect_enabled": true,
+    "autodetect_host": "127.0.0.1",
+    "autodetect_port": 4318,
+    "autodetect_path": "/v1/traces",
+    "autodetect_scheme": "http"
   }
 }

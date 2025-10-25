@@ -69,15 +69,19 @@ pub const Initialization = struct {
 
 /// Initialize and configure the server
 pub fn initializeServer(allocator: std.mem.Allocator) !Initialization {
+    var app_config = try runtime_config.load(allocator, "config.json");
+    const server_host = app_config.server.host;
+    const server_port = app_config.server.port;
+    const server_ip = try parseIpv4Host(server_host);
+
     slog.info("Zerver MVP Server Starting", &[_]slog.Attr{
         slog.Attr.string("version", "mvp"),
-        slog.Attr.int("port", 8080),
+        slog.Attr.string("host", server_host),
+        slog.Attr.int("port", @as(i64, @intCast(server_port))),
     });
 
-    var app_config = try runtime_config.load(allocator, "config.json");
-
     if (app_config.observability.otlp_endpoint.len == 0) {
-        if (try detectTempoEndpoint(allocator)) |detected_endpoint| {
+        if (try detectTempoEndpoint(allocator, &app_config.observability)) |detected_endpoint| {
             slog.info("tempo_auto_configured", &.{
                 slog.Attr.string("endpoint", detected_endpoint),
             });
@@ -104,8 +108,8 @@ pub fn initializeServer(allocator: std.mem.Allocator) !Initialization {
     // Create server config
     const mut_config = root.Config{
         .addr = .{
-            .ip = .{ 127, 0, 0, 1 },
-            .port = 8080,
+            .ip = server_ip,
+            .port = server_port,
         },
         .on_error = blog_errors.onError,
     };
@@ -126,10 +130,12 @@ pub fn initializeServer(allocator: std.mem.Allocator) !Initialization {
 
         const otel_config = root.otel.OtelConfig{
             .endpoint = observability.otlp_endpoint,
-            .service_name = "zerver", // TODO: surface via config when available
-            .service_version = "0.1.0",
-            .environment = "development",
+            .service_name = observability.service_name,
+            .service_version = observability.service_version,
+            .environment = observability.environment,
             .headers = header_slice,
+            .instrumentation_scope_name = observability.scope_name,
+            .instrumentation_scope_version = observability.scope_version,
         };
 
         otel_exporter = blk: {
@@ -177,9 +183,10 @@ fn printRoutes() void {
 }
 
 /// Print demonstration information
-pub fn printDemoInfo() void {
+pub fn printDemoInfo(app_config: *const runtime_config.AppConfig) void {
     slog.info("Server ready for HTTP requests", &[_]slog.Attr{
-        slog.Attr.int("port", 8080),
+        slog.Attr.string("host", app_config.server.host),
+        slog.Attr.int("port", @as(i64, @intCast(app_config.server.port))),
         slog.Attr.string("status", "running"),
     });
 
@@ -188,10 +195,54 @@ pub fn printDemoInfo() void {
     });
 }
 
-fn detectTempoEndpoint(allocator: std.mem.Allocator) !?[]const u8 {
-    const otlp_default = "http://127.0.0.1:4318/v1/traces";
+fn parseIpv4Host(host: []const u8) ![4]u8 {
+    var parts = std.mem.splitScalar(u8, host, '.');
+    var result: [4]u8 = undefined;
+    var index: usize = 0;
+
+    while (parts.next()) |segment| {
+        if (index >= 4) return error.InvalidServerHost;
+        if (segment.len == 0) return error.InvalidServerHost;
+        const value = std.fmt.parseUnsigned(u8, segment, 10) catch return error.InvalidServerHost;
+        result[index] = value;
+        index += 1;
+    }
+
+    if (index != 4) return error.InvalidServerHost;
+    return result;
+}
+
+fn detectTempoEndpoint(
+    allocator: std.mem.Allocator,
+    observability: *const runtime_config.ObservabilityConfig,
+) !?[]const u8 {
+    if (!observability.autodetect_enabled) {
+        slog.debug("tempo_autodetect_disabled", &.{});
+        return null;
+    }
+
+    if (observability.autodetect_host.len == 0) {
+        slog.debug("tempo_autodetect_host_missing", &.{});
+        return null;
+    }
+
+    if (observability.autodetect_port == 0) {
+        slog.warn("tempo_autodetect_invalid_port", &.{
+            slog.Attr.string("host", observability.autodetect_host),
+        });
+        return null;
+    }
+
+    const host_ip = parseIpv4Host(observability.autodetect_host) catch |err| {
+        slog.warn("tempo_autodetect_host_parse_failed", &.{
+            slog.Attr.string("host", observability.autodetect_host),
+            slog.Attr.string("error", @errorName(err)),
+        });
+        return null;
+    };
+
+    const address = std.net.Address.initIp4(host_ip, observability.autodetect_port);
     const max_attempts: u32 = 5;
-    const address = std.net.Address.initIp4(.{ 127, 0, 0, 1 }, 4318);
 
     var attempt: u32 = 0;
     while (attempt < max_attempts) : (attempt += 1) {
@@ -199,14 +250,34 @@ fn detectTempoEndpoint(allocator: std.mem.Allocator) !?[]const u8 {
             slog.debug("tempo_detect_connection_error", &.{
                 slog.Attr.string("error", @errorName(err)),
                 slog.Attr.uint("attempt", attempt + 1),
+                slog.Attr.string("host", observability.autodetect_host),
+                slog.Attr.int("port", @as(i64, @intCast(observability.autodetect_port))),
             });
             std.Thread.sleep(tempoDetectBackoff(attempt));
             continue;
         };
         stream.close();
-        return try allocator.dupe(u8, otlp_default);
+
+        const scheme = if (observability.autodetect_scheme.len == 0)
+            "http"
+        else
+            observability.autodetect_scheme;
+        const path = observability.autodetect_path;
+
+        return try std.fmt.allocPrint(allocator, "{s}://{s}:{d}{s}{s}", .{
+            scheme,
+            observability.autodetect_host,
+            observability.autodetect_port,
+            if (path.len != 0 and path[0] != '/') "/" else "",
+            path,
+        });
     }
 
+    slog.debug("tempo_autodetect_unreachable", &.{
+        slog.Attr.string("host", observability.autodetect_host),
+        slog.Attr.int("port", @as(i64, @intCast(observability.autodetect_port))),
+        slog.Attr.uint("attempts", max_attempts),
+    });
     return null;
 }
 

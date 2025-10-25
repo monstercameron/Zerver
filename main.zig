@@ -20,7 +20,7 @@ pub fn main() !void {
     defer init_bundle.deinit(allocator);
 
     // Print demo information
-    server_init.printDemoInfo();
+    server_init.printDemoInfo(init_bundle.resources.configPtr());
 
     // Start listening and serving
     try listener.listenAndServe(&init_bundle.server, allocator);
