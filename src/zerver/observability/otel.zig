@@ -602,6 +602,7 @@ fn buildPayload(allocator: std.mem.Allocator, exporter: *const OtelExporter, rec
     try writer.writeAll(",\"startTimeUnixNano\":");
     try writer.print("\"{d}\"", .{record.start_time_unix_ns});
     try writer.writeAll(",\"endTimeUnixNano\":");
+    try writer.print("\"{d}\"", .{record.end_time_unix_ns});
 
     try writer.writeAll(",\"attributes\":");
     try writeAttributes(&writer, record.attributes.items);
@@ -643,7 +644,7 @@ fn writeAttributes(writer: anytype, attrs: []const Attribute) !void {
                 try writer.writeAll(if (value) "true" else "false");
             },
         }
-        try writer.writeAll("}}");
+        try writer.writeByte('}');
         try writer.writeByte('}');
     }
     try writer.writeByte(']');
