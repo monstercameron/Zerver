@@ -137,50 +137,79 @@ pub const Tracer = struct {
         self.events.append(self.allocator, e) catch {};
     }
 
-    /// Export trace as JSON.
+    /// Export trace as compact JSON suitable for header transmission.
     pub fn toJson(self: *Tracer, arena: std.mem.Allocator) ![]const u8 {
-        var buf = std.ArrayList(u8).initCapacity(arena, 1024) catch unreachable;
-        // TODO: Safety - Replace 'catch unreachable' with proper error propagation or handling for allocation failures in toJson to prevent crashes.
-        const writer = buf.writer(arena);
+        var buf = try std.ArrayList(u8).initCapacity(arena, 512);
+        var writer = buf.writer(arena);
 
-        try writer.writeAll("{\n");
-        try writer.print("  \"events\": [\n", .{});
+        try writer.writeAll("{\"events\":[");
 
         for (self.events.items, 0..) |event, idx| {
-            try writer.writeAll("    {\n");
-            try writer.print("      \"kind\": \"{s}\",\n", .{@tagName(event.kind)});
-            try writer.print("      \"timestamp_ms\": {},\n", .{event.timestamp_ms});
+            if (idx != 0) {
+                try writer.writeByte(',');
+            }
+
+            try writer.writeByte('{');
+
+            try writer.writeAll("\"kind\":");
+            try writeJsonString(&writer, @tagName(event.kind));
+
+            try writer.writeByte(',');
+            try writer.writeAll("\"timestamp_ms\":");
+            try writer.print("{}", .{event.timestamp_ms});
 
             if (event.step_name) |name| {
-                try writer.print("      \"step_name\": \"{s}\",\n", .{name});
+                try writer.writeByte(',');
+                try writer.writeAll("\"step_name\":");
+                try writeJsonString(&writer, name);
             }
 
             if (event.effect_kind) |kind| {
-                try writer.print("      \"effect_kind\": \"{s}\",\n", .{kind});
+                try writer.writeByte(',');
+                try writer.writeAll("\"effect_kind\":");
+                try writeJsonString(&writer, kind);
             }
 
             if (event.status) |status| {
-                try writer.print("      \"status\": \"{s}\"\n", .{status});
+                try writer.writeByte(',');
+                try writer.writeAll("\"status\":");
+                try writeJsonString(&writer, status);
             } else if (event.error_msg) |msg| {
-                try writer.print("      \"error\": \"{s}\"\n", .{msg});
-            } else {
-                // TODO: Logical Error - In toJson, if both 'event.status' and 'event.error_msg' are null, it prints '"timestamp_ms": 0'. This seems like a logical inconsistency; consider what should be printed in this case.
-                try writer.writeAll("      \"timestamp_ms\": 0\n");
+                try writer.writeByte(',');
+                try writer.writeAll("\"error\":");
+                try writeJsonString(&writer, msg);
             }
 
-            if (idx < self.events.items.len - 1) {
-                try writer.writeAll("    },\n");
-            } else {
-                try writer.writeAll("    }\n");
-            }
+            try writer.writeByte('}');
         }
 
-        try writer.writeAll("  ]\n");
-        try writer.writeAll("}\n");
+        try writer.writeByte(']');
+        try writer.writeByte('}');
 
         return buf.items;
     }
 };
+
+fn writeJsonString(writer: anytype, value: []const u8) !void {
+    try writer.writeByte('"');
+    for (value) |c| {
+        switch (c) {
+            '"' => try writer.writeAll("\\\""),
+            '\\' => try writer.writeAll("\\\\"),
+            '\n' => try writer.writeAll("\\n"),
+            '\r' => try writer.writeAll("\\r"),
+            '\t' => try writer.writeAll("\\t"),
+            else => {
+                if (c < 0x20) {
+                    try writer.print("\\u{x:0>4}", .{@as(u16, c)});
+                } else {
+                    try writer.writeByte(c);
+                }
+            },
+        }
+    }
+    try writer.writeByte('"');
+}
 
 /// Tests
 pub fn testTracer() !void {

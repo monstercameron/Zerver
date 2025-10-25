@@ -88,11 +88,19 @@ pub const CtxBase = struct {
     }
 
     pub fn ensureRequestId(self: *CtxBase) void {
-        if (self.request_id.len == 0) {
-            var buf: [32]u8 = undefined;
-            // TODO: Safety/Memory - The fixed-size buffer in ensureRequestId might lead to truncation or errors for very long timestamps. Consider using an allocator for dynamic sizing or a larger buffer.
-            self.request_id = std.fmt.bufPrint(&buf, "{d}", .{std.time.nanoTimestamp()}) catch "";
-        }
+        if (self.request_id.len != 0) return;
+
+        var buf: [32]u8 = undefined;
+        const generated = std.fmt.bufPrint(&buf, "{d}", .{std.time.nanoTimestamp()}) catch return;
+        self.request_id = self.allocator.dupe(u8, generated) catch return;
+    }
+
+    pub fn requestId(self: *CtxBase) []const u8 {
+        return self.request_id;
+    }
+
+    pub fn setRequestId(self: *CtxBase, id: []const u8) void {
+        self.request_id = id;
     }
 
     pub fn status(self: *CtxBase) u16 {

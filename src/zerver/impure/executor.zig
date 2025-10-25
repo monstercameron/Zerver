@@ -11,8 +11,8 @@
 const std = @import("std");
 const types = @import("../core/types.zig");
 const ctx_module = @import("../core/ctx.zig");
-const tracer_module = @import("../observability/tracer.zig");
 const slog = @import("../observability/slog.zig");
+const telemetry = @import("../observability/telemetry.zig");
 
 pub const ExecutionMode = enum {
     Synchronous, // Block on each effect
@@ -37,8 +37,8 @@ pub const Executor = struct {
     /// Signature: fn (*const Effect, timeout_ms: u32) anyerror!EffectResult
     effect_handler: *const fn (*const types.Effect, u32) anyerror!EffectResult,
 
-    /// Optional tracer for recording events
-    tracer: ?*tracer_module.Tracer = null,
+    /// Optional telemetry sink for tracing spans/events
+    telemetry_ctx: ?*telemetry.Telemetry = null,
 
     pub fn init(
         allocator: std.mem.Allocator,
@@ -47,18 +47,6 @@ pub const Executor = struct {
         return .{
             .allocator = allocator,
             .effect_handler = effect_handler,
-        };
-    }
-
-    pub fn initWithTracer(
-        allocator: std.mem.Allocator,
-        effect_handler: *const fn (*const types.Effect, u32) anyerror!EffectResult,
-        tracer: *tracer_module.Tracer,
-    ) Executor {
-        return .{
-            .allocator = allocator,
-            .effect_handler = effect_handler,
-            .tracer = tracer,
         };
     }
 
@@ -71,18 +59,18 @@ pub const Executor = struct {
         ctx_base: *ctx_module.CtxBase,
         step_fn: *const fn (*ctx_module.CtxBase) anyerror!types.Decision,
     ) !types.Decision {
+        self.telemetry_ctx = null;
         return self.executeStepInternal(ctx_base, step_fn, 0);
     }
 
-    /// Execute a single step with tracing.
-    pub fn executeStepWithTracer(
+    /// Execute a single step with telemetry instrumentation.
+    pub fn executeStepWithTelemetry(
         self: *Executor,
         ctx_base: *ctx_module.CtxBase,
         step_fn: *const fn (*ctx_module.CtxBase) anyerror!types.Decision,
-        tracer: *tracer_module.Tracer,
+        telemetry_ctx: *telemetry.Telemetry,
     ) !types.Decision {
-        // Set the tracer for this execution
-        self.tracer = tracer;
+        self.telemetry_ctx = telemetry_ctx;
         return self.executeStepInternal(ctx_base, step_fn, 0);
     }
 
@@ -114,7 +102,16 @@ pub const Executor = struct {
         // Handle any Need decisions by executing effects
         while (decision == .need) {
             const need = decision.need;
-            decision = self.executeNeed(ctx_base, need, depth + 1) catch |err| {
+            const need_sequence = if (self.telemetry_ctx) |t|
+                t.needScheduled(.{
+                    .effect_count = need.effects.len,
+                    .mode = need.mode,
+                    .join = need.join,
+                })
+            else
+                0;
+
+            decision = self.executeNeed(ctx_base, need, depth + 1, need_sequence) catch |err| {
                 return failFromCrash(self, ctx_base, "continuation", err, depth + 1);
             };
         }
@@ -128,6 +125,7 @@ pub const Executor = struct {
         ctx_base: *ctx_module.CtxBase,
         need: types.Need,
         depth: usize,
+        need_sequence: usize,
     ) anyerror!types.Decision {
         // Track effect results by token (slot identifier)
         var results = std.AutoHashMap(u32, EffectResult).init(ctx_base.allocator);
@@ -141,58 +139,42 @@ pub const Executor = struct {
         // TODO: Logical Error - The 'mode' (Parallel/Sequential) and 'join' strategies (all_required, any) are currently not fully respected due to sequential MVP execution. Revisit this logic when parallel execution is implemented to ensure correct behavior and avoid unintended side effects.
         for (need.effects) |effect| {
             const effect_kind = @tagName(effect);
+            const token = effectToken(effect);
+            const timeout_ms = effectTimeout(effect);
+            const required = effectRequired(effect);
+            const target = effectTarget(effect);
 
-            // Record effect start
-            if (self.tracer) |tracer| {
-                tracer.recordEffectStart(effect_kind);
-            }
+            const effect_sequence = if (self.telemetry_ctx) |t|
+                t.effectStart(.{
+                    .kind = effect_kind,
+                    .token = token,
+                    .required = required,
+                    .mode = need.mode,
+                    .join = need.join,
+                    .timeout_ms = timeout_ms,
+                    .target = target,
+                    .need_sequence = need_sequence,
+                })
+            else
+                0;
 
-            const token = switch (effect) {
-                .http_get => |e| e.token,
-                .http_post => |e| e.token,
-                .db_get => |e| e.token,
-                .db_put => |e| e.token,
-                .db_del => |e| e.token,
-                .db_scan => |e| e.token,
-                .file_json_read => |e| e.token,
-                .file_json_write => |e| e.token,
-            };
-
-            const timeout_ms = switch (effect) {
-                .http_get => |e| e.timeout_ms,
-                .http_post => |e| e.timeout_ms,
-                .db_get => |e| e.timeout_ms,
-                .db_put => |e| e.timeout_ms,
-                .db_del => |e| e.timeout_ms,
-                .db_scan => |e| e.timeout_ms,
-                .file_json_read => 1000, // Default 1s timeout for file reads
-                .file_json_write => 1000, // Default 1s timeout for file writes
-            };
-            // TODO: Safety/Memory - The hardcoded 1s timeout for file_json_read/write might be insufficient or too long; consider adding a 'timeout_ms' field to FileJsonRead/Write structs.
-            // TODO: RFC 9110 - Consider how `timeout_ms` should explicitly influence HTTP-level timeout responses (e.g., 408 Request Timeout) or retry behavior as per RFC 9110 Section 2.4 and 15.5.9.
-
-            const required = switch (effect) {
-                .http_get => |e| e.required,
-                .http_post => |e| e.required,
-                .db_get => |e| e.required,
-                .db_put => |e| e.required,
-                .db_del => |e| e.required,
-                .db_scan => |e| e.required,
-                .file_json_read => |e| e.required,
-                .file_json_write => |e| e.required,
-            };
-
-            // Execute the effect via the handler
             const result = self.effect_handler(&effect, timeout_ms) catch {
                 const error_result: types.Error = .{
                     .kind = types.ErrorCode.UpstreamUnavailable,
                     .ctx = .{ .what = "effect", .key = @tagName(effect) },
                 };
                 try results.put(token, .{ .failure = error_result });
-
-                // Record effect end (failure)
-                if (self.tracer) |tracer| {
-                    tracer.recordEffectEnd(effect_kind, false);
+                if (self.telemetry_ctx) |t| {
+                    t.effectEnd(.{
+                        .sequence = effect_sequence,
+                        .need_sequence = need_sequence,
+                        .kind = effect_kind,
+                        .token = token,
+                        .required = required,
+                        .success = false,
+                        .bytes_len = null,
+                        .error_ctx = error_result.ctx,
+                    });
                 }
 
                 if (required) {
@@ -204,15 +186,38 @@ pub const Executor = struct {
 
             try results.put(token, result);
 
-            // Record effect end (success)
-            if (self.tracer) |tracer| {
-                tracer.recordEffectEnd(effect_kind, result == .success);
+            var bytes_len: ?usize = null;
+            var error_ctx: ?types.ErrorCtx = null;
+            var failure_details: ?types.Error = null;
+            const is_success = switch (result) {
+                .success => |payload| blk: {
+                    bytes_len = payload.bytes.len;
+                    break :blk true;
+                },
+                .failure => |err| blk: {
+                    error_ctx = err.ctx;
+                    failure_details = err;
+                    break :blk false;
+                },
+            };
+
+            if (self.telemetry_ctx) |t| {
+                t.effectEnd(.{
+                    .sequence = effect_sequence,
+                    .need_sequence = need_sequence,
+                    .kind = effect_kind,
+                    .token = token,
+                    .required = required,
+                    .success = is_success,
+                    .bytes_len = bytes_len,
+                    .error_ctx = error_ctx,
+                });
             }
 
             // If this is a required effect that failed, mark failure
-            if (required and result == .failure) {
+            if (required and !is_success) {
                 had_required_failure = true;
-                failure_error = result.failure;
+                failure_error = failure_details;
             }
         }
 
@@ -267,9 +272,65 @@ pub const Executor = struct {
         }
 
         // Call the continuation function
+        if (self.telemetry_ctx) |t| {
+            t.continuationResume(need_sequence, @intFromPtr(need.continuation), need.mode, need.join);
+        }
+
         return self.executeStepInternal(ctx_base, need.continuation, depth + 1);
     }
 };
+
+fn effectToken(effect: types.Effect) u32 {
+    return switch (effect) {
+        .http_get => |e| e.token,
+        .http_post => |e| e.token,
+        .db_get => |e| e.token,
+        .db_put => |e| e.token,
+        .db_del => |e| e.token,
+        .db_scan => |e| e.token,
+        .file_json_read => |e| e.token,
+        .file_json_write => |e| e.token,
+    };
+}
+
+fn effectTimeout(effect: types.Effect) u32 {
+    return switch (effect) {
+        .http_get => |e| e.timeout_ms,
+        .http_post => |e| e.timeout_ms,
+        .db_get => |e| e.timeout_ms,
+        .db_put => |e| e.timeout_ms,
+        .db_del => |e| e.timeout_ms,
+        .db_scan => |e| e.timeout_ms,
+        .file_json_read => 1000,
+        .file_json_write => 1000,
+    };
+}
+
+fn effectRequired(effect: types.Effect) bool {
+    return switch (effect) {
+        .http_get => |e| e.required,
+        .http_post => |e| e.required,
+        .db_get => |e| e.required,
+        .db_put => |e| e.required,
+        .db_del => |e| e.required,
+        .db_scan => |e| e.required,
+        .file_json_read => |e| e.required,
+        .file_json_write => |e| e.required,
+    };
+}
+
+fn effectTarget(effect: types.Effect) []const u8 {
+    return switch (effect) {
+        .http_get => |e| e.url,
+        .http_post => |e| e.url,
+        .db_get => |e| e.key,
+        .db_put => |e| e.key,
+        .db_del => |e| e.key,
+        .db_scan => |e| e.prefix,
+        .file_json_read => |e| e.path,
+        .file_json_write => |e| e.path,
+    };
+}
 
 fn failFromCrash(
     self: *Executor,
@@ -278,8 +339,10 @@ fn failFromCrash(
     err: anyerror,
     depth: usize,
 ) types.Decision {
-    _ = self;
     const err_name = @errorName(err);
+    if (self.telemetry_ctx) |t| {
+        t.executorCrash(phase, err_name);
+    }
     slog.err("Executor phase crashed", &.{
         slog.Attr.string("phase", phase),
         slog.Attr.string("error", err_name),

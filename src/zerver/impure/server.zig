@@ -7,6 +7,7 @@ const executor_module = @import("executor.zig");
 const tracer_module = @import("../observability/tracer.zig");
 const slog = @import("../observability/slog.zig");
 const http_status = @import("../core/http_status.zig").HttpStatus;
+const telemetry = @import("../observability/telemetry.zig");
 
 pub const Address = struct {
     ip: [4]u8,
@@ -17,6 +18,21 @@ pub const Config = struct {
     addr: Address,
     on_error: *const fn (*ctx_module.CtxBase) anyerror!types.Decision,
     debug: bool = false,
+    telemetry: telemetry.RequestTelemetryOptions = .{},
+};
+
+const CorrelationSource = enum {
+    traceparent,
+    x_request_id,
+    x_correlation_id,
+    generated,
+};
+
+const CorrelationContext = struct {
+    id: []const u8,
+    header_name: []const u8,
+    header_value: []const u8,
+    source: CorrelationSource,
 };
 
 /// Flow stores slug and spec.
@@ -54,6 +70,7 @@ pub const Server = struct {
     executor: executor_module.Executor,
     flows: std.ArrayList(Flow),
     global_before: std.ArrayList(types.Step),
+    telemetry_options: telemetry.RequestTelemetryOptions,
 
     /// SSE event structure per HTML Living Standard
     pub const SSEEvent = struct {
@@ -134,6 +151,7 @@ pub const Server = struct {
             .executor = executor_module.Executor.init(allocator, effect_handler),
             .flows = try std.ArrayList(Flow).initCapacity(allocator, 16),
             .global_before = try std.ArrayList(types.Step).initCapacity(allocator, 8),
+            .telemetry_options = cfg.telemetry,
         };
     }
 
@@ -165,15 +183,15 @@ pub const Server = struct {
     pub fn executePipeline(
         self: *Server,
         ctx_base: *ctx_module.CtxBase,
-        tracer: *tracer_module.Tracer,
+        telemetry_ctx: *telemetry.Telemetry,
         before_steps: []const types.Step,
         main_steps: []const types.Step,
     ) !types.Decision {
         // Execute global before chain
         for (self.global_before.items) |before_step| {
-            tracer.recordStepStart(before_step.name);
-            const decision = try self.executor.executeStepWithTracer(ctx_base, before_step.call, tracer);
-            tracer.recordStepEnd(before_step.name, @tagName(decision));
+            telemetry_ctx.stepStart(.global_before, before_step.name);
+            const decision = try self.executor.executeStepWithTelemetry(ctx_base, before_step.call, telemetry_ctx);
+            telemetry_ctx.stepEnd(.global_before, before_step.name, @tagName(decision));
             if (decision != .Continue) {
                 return decision;
             }
@@ -181,9 +199,9 @@ pub const Server = struct {
 
         // Execute route-specific before chain
         for (before_steps) |before_step| {
-            tracer.recordStepStart(before_step.name);
-            const decision = try self.executor.executeStepWithTracer(ctx_base, before_step.call, tracer);
-            tracer.recordStepEnd(before_step.name, @tagName(decision));
+            telemetry_ctx.stepStart(.route_before, before_step.name);
+            const decision = try self.executor.executeStepWithTelemetry(ctx_base, before_step.call, telemetry_ctx);
+            telemetry_ctx.stepEnd(.route_before, before_step.name, @tagName(decision));
             if (decision != .Continue) {
                 return decision;
             }
@@ -191,14 +209,14 @@ pub const Server = struct {
 
         // Execute main steps
         for (main_steps) |main_step| {
-            tracer.recordStepStart(main_step.name);
+            telemetry_ctx.stepStart(.main, main_step.name);
             const ptr = @intFromPtr(main_step.call);
             slog.debug("Executing step", &.{
                 slog.Attr.string("step", main_step.name),
                 slog.Attr.int("ptr", @as(i64, @intCast(ptr))),
             });
-            const decision = try self.executor.executeStepWithTracer(ctx_base, main_step.call, tracer);
-            tracer.recordStepEnd(main_step.name, @tagName(decision));
+            const decision = try self.executor.executeStepWithTelemetry(ctx_base, main_step.call, telemetry_ctx);
+            telemetry_ctx.stepEnd(.main, main_step.name, @tagName(decision));
             if (decision != .Continue) {
                 return decision;
             }
@@ -216,66 +234,50 @@ pub const Server = struct {
         request_text: []const u8,
         arena: std.mem.Allocator,
     ) !ResponseResult {
-        // Create tracer for this request
-        var tracer = tracer_module.Tracer.init(arena);
-        defer tracer.deinit();
-
-        tracer.recordRequestStart();
-
-        // Parse the HTTP request (simplified)
         const parsed = self.parseRequest(request_text, arena) catch |err| {
-            // Handle parsing errors
             switch (err) {
                 error.MissingHostHeader => {
-                    // RFC 9110 Section 7.2 - Missing Host header in HTTP/1.1
-                    tracer.recordRequestEnd();
                     return ResponseResult{ .complete = try self.httpResponse(.{
                         .status = http_status.bad_request,
                         .body = .{ .complete = "Bad Request: Missing Host header (required for HTTP/1.1)" },
                         .headers = &[_]types.Header{
                             .{ .name = "Content-Type", .value = "text/plain" },
                         },
-                    }, arena, false, false) };
+                    }, arena, false, false, "", null) };
                 },
                 error.InvalidRequest, error.InvalidMethod, error.UnsupportedVersion, error.InvalidUri, error.UserinfoNotAllowed => {
-                    tracer.recordRequestEnd();
                     return ResponseResult{ .complete = try self.httpResponse(.{
                         .status = http_status.bad_request,
                         .body = .{ .complete = "Bad Request" },
                         .headers = &[_]types.Header{
                             .{ .name = "Content-Type", .value = "text/plain" },
                         },
-                    }, arena, false, false) };
+                    }, arena, false, false, "", null) };
                 },
                 error.MultipleContentLength, error.InvalidContentLength, error.ContentLengthMismatch, error.UnexpectedBody, error.ContentLengthRequired, error.InvalidPercentEncoding => {
-                    // RFC 9110 Section 6 - Message body framing errors and RFC 3986 - URL decoding errors
-                    tracer.recordRequestEnd();
                     return ResponseResult{ .complete = try self.httpResponse(.{
                         .status = http_status.bad_request,
                         .body = .{ .complete = "Bad Request: Invalid request format" },
                         .headers = &[_]types.Header{
                             .{ .name = "Content-Type", .value = "text/plain" },
                         },
-                    }, arena, false, false) };
+                    }, arena, false, false, "", null) };
                 },
                 else => {
-                    tracer.recordRequestEnd();
                     return ResponseResult{ .complete = try self.httpResponse(.{
                         .status = http_status.internal_server_error,
                         .body = .{ .complete = "Internal Server Error" },
                         .headers = &[_]types.Header{
                             .{ .name = "Content-Type", .value = "text/plain" },
                         },
-                    }, arena, false, false) };
+                    }, arena, false, false, "", null) };
                 },
             }
         };
 
-        // Create request context
         var ctx = try ctx_module.CtxBase.init(arena);
         defer ctx.deinit();
 
-        // Populate context with parsed request data
         ctx.method_str = try self.methodToString(parsed.method, arena);
         ctx.path_str = parsed.path;
         ctx.body = parsed.body;
@@ -286,14 +288,11 @@ pub const Server = struct {
             slog.Attr.uint("body_len", parsed.body.len),
         });
 
-        // Copy headers to context
         var header_iter = parsed.headers.iterator();
         while (header_iter.next()) |entry| {
-            // RFC 9110 Section 5.3 - Combine multiple values with comma
             if (entry.value_ptr.items.len == 1) {
                 try ctx.headers.put(entry.key_ptr.*, entry.value_ptr.items[0]);
             } else {
-                // Combine multiple values with comma separator
                 var combined = try std.ArrayList(u8).initCapacity(arena, 64);
                 for (entry.value_ptr.items, 0..) |value, i| {
                     if (i > 0) try combined.appendSlice(arena, ", ");
@@ -303,80 +302,134 @@ pub const Server = struct {
             }
         }
 
-        // Copy query parameters to context (parsed.query is currently empty due to TODO)
         var query_iter = parsed.query.iterator();
         while (query_iter.next()) |entry| {
             try ctx.query.put(entry.key_ptr.*, entry.value_ptr.*);
         }
 
-        // RFC 9110 Section 9.3.7 - Handle OPTIONS method
+        const correlation = try self.resolveCorrelation(parsed.headers, arena);
+        ctx.setRequestId(correlation.id);
+
+        slog.debug("Correlation resolved", &.{
+            slog.Attr.string("correlation_id", correlation.id),
+            slog.Attr.string("correlation_source", @tagName(correlation.source)),
+        });
+
+        if (correlation.header_name.len != 0 and correlation.header_value.len != 0) {
+            if (ctx.headers.get(correlation.header_name) != null) {
+                ctx.headers.put(correlation.header_name, correlation.header_value) catch {};
+            } else {
+                const header_name_owned = ctx.allocator.dupe(u8, correlation.header_name) catch null;
+                const header_name_slice: []const u8 = if (header_name_owned) |owned|
+                    @as([]const u8, owned)
+                else
+                    correlation.header_name;
+                ctx.headers.put(header_name_slice, correlation.header_value) catch {};
+            }
+        }
+
+        var tracer = tracer_module.Tracer.init(arena);
+        defer tracer.deinit();
+
+        const telemetry_init = telemetry.buildInitOptions(self.telemetry_options, self.config.debug);
+        var telemetry_ctx = try telemetry.Telemetry.init(arena, &tracer, telemetry_init);
+        defer telemetry_ctx.deinit();
+
+        telemetry_ctx.requestStart(&ctx);
+
+        const keep_alive = self.shouldKeepAlive(parsed.headers);
+
         if (parsed.method == .OPTIONS) {
-            tracer.recordStepStart("options_handler");
-
-            // Determine allowed methods for this path
+            telemetry_ctx.stepStart(.system, "options_handler");
             const allowed_methods = try self.getAllowedMethods(parsed.path, arena);
-
-            tracer.recordStepEnd("options_handler", "Continue");
+            telemetry_ctx.stepEnd(.system, "options_handler", "Continue");
 
             const response_body = try std.fmt.allocPrint(arena, "Allow: {s}", .{allowed_methods});
-            const keep_alive = self.shouldKeepAlive(parsed.headers);
+            const trace_json = telemetry_ctx.finish(.{
+                .status_code = http_status.ok,
+                .outcome = "options",
+                .error_ctx = null,
+            }, arena) catch "";
+
             return ResponseResult{ .complete = try self.httpResponse(.{
                 .status = http_status.ok,
                 .body = .{ .complete = response_body },
                 .headers = &[_]types.Header{
                     .{ .name = "Allow", .value = allowed_methods },
                 },
-            }, arena, false, keep_alive) };
+            }, arena, false, keep_alive, trace_json, correlation) };
         }
 
-        // Try to match route
         if (try self.router.match(parsed.method, parsed.path, arena)) |route_match| {
-            tracer.recordStepStart("route_match");
-
-            // Copy route parameters into context
+            telemetry_ctx.stepStart(.system, "route_match");
             var param_iter = route_match.params.iterator();
             while (param_iter.next()) |entry| {
                 try ctx.params.put(entry.key_ptr.*, entry.value_ptr.*);
             }
+            telemetry_ctx.stepEnd(.system, "route_match", "Continue");
 
-            tracer.recordStepEnd("route_match", "Continue");
+            const decision = try self.executePipeline(&ctx, &telemetry_ctx, route_match.spec.before, route_match.spec.steps);
 
-            // Execute the pipeline
-            const decision = try self.executePipeline(&ctx, &tracer, route_match.spec.before, route_match.spec.steps);
+            var outcome = telemetry.RequestOutcome{
+                .status_code = ctx.status(),
+                .outcome = @tagName(decision),
+                .error_ctx = null,
+            };
+            switch (decision) {
+                .Done => |resp| outcome.status_code = resp.status,
+                .Fail => |err| {
+                    outcome.status_code = err.kind;
+                    outcome.error_ctx = err.ctx;
+                },
+                else => {},
+            }
 
-            tracer.recordRequestEnd();
-
-            // Render response based on decision
-            const keep_alive = self.shouldKeepAlive(parsed.headers);
-            return try self.renderResponse(&ctx, decision, arena, keep_alive);
+            const trace_json = telemetry_ctx.finish(outcome, arena) catch "";
+            return try self.renderResponse(&ctx, decision, arena, keep_alive, correlation, trace_json);
         }
 
-        // Try to match flow (if method is POST to /flow/v1/<slug>)
         if (parsed.method == .POST and std.mem.startsWith(u8, parsed.path, "/flow/v1/")) {
-            const slug = parsed.path[9..]; // Remove "/flow/v1/"
-
+            const slug = parsed.path[9..];
             for (self.flows.items) |flow| {
                 if (std.mem.eql(u8, flow.slug, slug)) {
-                    tracer.recordStepStart("flow_match");
-                    tracer.recordStepEnd("flow_match", "Continue");
+                    telemetry_ctx.stepStart(.system, "flow_match");
+                    telemetry_ctx.stepEnd(.system, "flow_match", "Continue");
 
-                    const decision = try self.executePipeline(&ctx, &tracer, flow.spec.before, flow.spec.steps);
+                    const decision = try self.executePipeline(&ctx, &telemetry_ctx, flow.spec.before, flow.spec.steps);
 
-                    tracer.recordRequestEnd();
+                    var outcome = telemetry.RequestOutcome{
+                        .status_code = ctx.status(),
+                        .outcome = @tagName(decision),
+                        .error_ctx = null,
+                    };
+                    switch (decision) {
+                        .Done => |resp| outcome.status_code = resp.status,
+                        .Fail => |err| {
+                            outcome.status_code = err.kind;
+                            outcome.error_ctx = err.ctx;
+                        },
+                        else => {},
+                    }
 
-                    const keep_alive = self.shouldKeepAlive(parsed.headers);
-                    return try self.renderResponse(&ctx, decision, arena, keep_alive);
+                    const trace_json = telemetry_ctx.finish(outcome, arena) catch "";
+                    return try self.renderResponse(&ctx, decision, arena, keep_alive, correlation, trace_json);
                 }
             }
         }
 
-        // No route matched: 404
-        tracer.recordRequestEnd();
-        const keep_alive = self.shouldKeepAlive(parsed.headers);
-        return self.renderError(&ctx, .{
+        const not_found_error = types.Error{
             .kind = types.ErrorCode.NotFound,
             .ctx = .{ .what = "routing", .key = parsed.path },
-        }, arena, keep_alive);
+        };
+        ctx.status_code = not_found_error.kind;
+
+        const trace_json = telemetry_ctx.finish(.{
+            .status_code = not_found_error.kind,
+            .outcome = "NotFound",
+            .error_ctx = not_found_error.ctx,
+        }, arena) catch "";
+
+        return self.renderError(&ctx, not_found_error, arena, keep_alive, correlation, trace_json);
     }
 
     /// Parse an HTTP request (MVP: very simplified).
@@ -671,6 +724,8 @@ pub const Server = struct {
         decision: types.Decision,
         arena: std.mem.Allocator,
         keep_alive: bool,
+        correlation: CorrelationContext,
+        trace_header: []const u8,
     ) !ResponseResult {
         const response = switch (decision) {
             .Continue => types.Response{ .status = http_status.ok, .body = .{ .complete = "OK" } },
@@ -681,7 +736,7 @@ pub const Server = struct {
                     slog.Attr.string("what", err.ctx.what),
                     slog.Attr.string("key", err.ctx.key),
                 });
-                return self.renderError(ctx, err, arena, keep_alive);
+                return self.renderError(ctx, err, arena, keep_alive, correlation, trace_header);
             },
             .need => types.Response{ .status = http_status.internal_server_error, .body = .{ .complete = "Pipeline incomplete" } },
         };
@@ -708,7 +763,7 @@ pub const Server = struct {
                     .status = response.status,
                     .headers = response.headers,
                     .body = .{ .complete = "" }, // Empty body for headers-only
-                }, arena, false, keep_alive);
+                }, arena, false, keep_alive, trace_header, correlation);
 
                 return ResponseResult{
                     .streaming = .{
@@ -720,7 +775,7 @@ pub const Server = struct {
             },
             .complete => {
                 // For complete responses, format normally
-                const formatted = try self.httpResponse(response, arena, false, keep_alive);
+                const formatted = try self.httpResponse(response, arena, false, keep_alive, trace_header, correlation);
                 return ResponseResult{ .complete = formatted };
             },
         }
@@ -732,6 +787,8 @@ pub const Server = struct {
         _err: types.Error,
         arena: std.mem.Allocator,
         keep_alive: bool,
+        correlation: CorrelationContext,
+        trace_header: []const u8,
     ) !ResponseResult {
         // Store the error in the context for the error handler
         ctx.last_error = _err;
@@ -743,9 +800,9 @@ pub const Server = struct {
         const is_head = std.mem.eql(u8, ctx.method_str, "HEAD");
 
         return switch (response) {
-            .Continue => ResponseResult{ .complete = try self.httpResponse(.{ .status = http_status.internal_server_error, .body = .{ .complete = "Error" } }, arena, is_head, keep_alive) },
-            .Done => |resp| ResponseResult{ .complete = try self.httpResponse(resp, arena, is_head, keep_alive) },
-            else => ResponseResult{ .complete = try self.httpResponse(.{ .status = http_status.internal_server_error, .body = .{ .complete = "Error" } }, arena, is_head, keep_alive) },
+            .Continue => ResponseResult{ .complete = try self.httpResponse(.{ .status = http_status.internal_server_error, .body = .{ .complete = "Error" } }, arena, is_head, keep_alive, trace_header, correlation) },
+            .Done => |resp| ResponseResult{ .complete = try self.httpResponse(resp, arena, is_head, keep_alive, trace_header, correlation) },
+            else => ResponseResult{ .complete = try self.httpResponse(.{ .status = http_status.internal_server_error, .body = .{ .complete = "Error" } }, arena, is_head, keep_alive, trace_header, correlation) },
         };
     }
 
@@ -846,6 +903,8 @@ pub const Server = struct {
         arena: std.mem.Allocator,
         is_head: bool,
         keep_alive: bool,
+        trace_header: []const u8,
+        correlation: ?CorrelationContext,
     ) ![]const u8 {
         _ = self;
 
@@ -945,11 +1004,16 @@ pub const Server = struct {
             try w.print("Connection: close\r\n", .{});
         }
 
-        // Export trace as JSON header
-        // const trace_json = tracer.toJson(arena) catch "";
-        const trace_json = "";
-        if (trace_json.len > 0) {
-            try w.print("X-Zerver-Trace: {s}\r\n", .{trace_json});
+        if (trace_header.len > 0) {
+            try w.print("X-Zerver-Trace: {s}\r\n", .{trace_header});
+        }
+
+        if (correlation) |ctx_corr| {
+            if (ctx_corr.header_name.len != 0 and ctx_corr.header_value.len != 0 and
+                !headerExists(response.headers, ctx_corr.header_name))
+            {
+                try w.print("{s}: {s}\r\n", .{ ctx_corr.header_name, ctx_corr.header_value });
+            }
         }
 
         // Add custom headers from the response
@@ -997,6 +1061,128 @@ pub const Server = struct {
         // TODO: RFC 9110 Section 9.3.2 - For HEAD responses, ensure the Content-Length header indicates the length of the content that would have been sent in a corresponding GET response.
 
         return buf.items;
+    }
+
+    fn headerExists(headers: []const types.Header, name: []const u8) bool {
+        for (headers) |header| {
+            if (std.ascii.eqlIgnoreCase(header.name, name)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    fn resolveCorrelation(
+        self: *Server,
+        headers: std.StringHashMap(std.ArrayList([]const u8)),
+        arena: std.mem.Allocator,
+    ) !CorrelationContext {
+        if (self.tryTraceparent(headers, arena)) |ctx| return ctx;
+        if (self.tryCorrelationHeader(headers, arena, "x-request-id", .x_request_id)) |ctx| return ctx;
+        if (self.tryCorrelationHeader(headers, arena, "x-correlation-id", .x_correlation_id)) |ctx| return ctx;
+        return try self.generateCorrelation(arena);
+    }
+
+    fn tryTraceparent(
+        self: *Server,
+        headers: std.StringHashMap(std.ArrayList([]const u8)),
+        arena: std.mem.Allocator,
+    ) ?CorrelationContext {
+        _ = self;
+        const values = headers.get("traceparent") orelse return null;
+        if (values.items.len == 0) return null;
+        const raw = std.mem.trim(u8, values.items[0], " \t");
+        if (raw.len == 0) return null;
+
+        if (parseTraceparent(arena, raw)) |parsed| {
+            return CorrelationContext{
+                .id = parsed.trace_id,
+                .header_name = "traceparent",
+                .header_value = parsed.header_value,
+                .source = .traceparent,
+            };
+        }
+
+        return null;
+    }
+
+    fn tryCorrelationHeader(
+        self: *Server,
+        headers: std.StringHashMap(std.ArrayList([]const u8)),
+        arena: std.mem.Allocator,
+        name: []const u8,
+        source: CorrelationSource,
+    ) ?CorrelationContext {
+        _ = self;
+        const values = headers.get(name) orelse return null;
+        if (values.items.len == 0) return null;
+        const raw = std.mem.trim(u8, values.items[0], " \t");
+        if (raw.len == 0) return null;
+
+        const owned = arena.dupe(u8, raw) catch return null;
+        const value_slice: []const u8 = owned;
+
+        return CorrelationContext{
+            .id = value_slice,
+            .header_name = name,
+            .header_value = value_slice,
+            .source = source,
+        };
+    }
+
+    fn generateCorrelation(self: *Server, arena: std.mem.Allocator) !CorrelationContext {
+        _ = self;
+        var entropy: [16]u8 = undefined;
+        std.crypto.random.bytes(&entropy);
+
+        const entropy_value = std.mem.bytesToValue(u128, &entropy);
+        var buf: [32]u8 = undefined;
+        const id_slice = std.fmt.bufPrint(&buf, "{x:0>32}", .{entropy_value}) catch unreachable;
+        const owned = try arena.dupe(u8, id_slice);
+        const id_value: []const u8 = owned;
+
+        return CorrelationContext{
+            .id = id_value,
+            .header_name = "x-request-id",
+            .header_value = id_value,
+            .source = .generated,
+        };
+    }
+
+    const TraceparentParts = struct {
+        trace_id: []const u8,
+        header_value: []const u8,
+    };
+
+    fn parseTraceparent(arena: std.mem.Allocator, value: []const u8) ?TraceparentParts {
+        var parts = std.mem.splitScalar(u8, value, '-');
+        const version = parts.next() orelse return null;
+        const trace_id = parts.next() orelse return null;
+        const span_id = parts.next() orelse return null;
+        const flags = parts.next() orelse return null;
+        if (parts.next() != null) return null;
+
+        if (version.len != 2 or trace_id.len != 32 or span_id.len != 16 or flags.len != 2) return null;
+        if (!isHexSlice(version) or !isHexSlice(trace_id) or !isHexSlice(span_id) or !isHexSlice(flags)) return null;
+        if (std.mem.allEqual(u8, trace_id, '0') or std.mem.allEqual(u8, span_id, '0')) return null;
+
+        const header_value_owned = arena.dupe(u8, value) catch return null;
+        const trace_id_owned = arena.dupe(u8, trace_id) catch return null;
+
+        return TraceparentParts{
+            .trace_id = @as([]const u8, trace_id_owned),
+            .header_value = @as([]const u8, header_value_owned),
+        };
+    }
+
+    fn isHexSlice(value: []const u8) bool {
+        for (value) |c| {
+            const is_digit = c >= '0' and c <= '9';
+            const is_lower = c >= 'a' and c <= 'f';
+            const is_upper = c >= 'A' and c <= 'F';
+            if (!(is_digit or is_lower or is_upper)) return false;
+        }
+        return true;
     }
 
     /// Get allowed methods for a given path (RFC 9110 Section 9.3.7)
