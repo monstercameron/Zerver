@@ -53,11 +53,16 @@ const hello_world_step = root.types.Step{
 pub const Initialization = struct {
     server: root.Server,
     resources: *runtime_resources.RuntimeResources,
+    otel_exporter: ?*root.otel.OtelExporter = null,
 
     pub fn deinit(self: *Initialization, allocator: std.mem.Allocator) void {
         self.server.deinit();
         self.resources.deinit();
         allocator.destroy(self.resources);
+        if (self.otel_exporter) |exporter| {
+            exporter.deinit();
+            allocator.destroy(exporter);
+        }
         runtime_global.clear();
     }
 };
@@ -85,7 +90,7 @@ pub fn initializeServer(allocator: std.mem.Allocator) !Initialization {
     try blog_effects.initialize(resources);
 
     // Create server config
-    const config = root.Config{
+    const mut_config = root.Config{
         .addr = .{
             .ip = .{ 127, 0, 0, 1 },
             .port = 8080,
@@ -94,6 +99,43 @@ pub fn initializeServer(allocator: std.mem.Allocator) !Initialization {
     };
 
     // Create server with a composite effect handler that routes to the appropriate feature handler
+    var config = mut_config;
+    var otel_exporter: ?*root.otel.OtelExporter = null;
+    const observability = resources.configPtr().observability;
+    if (observability.otlp_endpoint.len != 0) {
+        var header_storage: ?[]root.otel.Header = null;
+        var header_slice: []const root.otel.Header = &.{};
+        if (observability.otlp_headers.len != 0) {
+            const parsed = try root.otel.parseHeaderList(allocator, observability.otlp_headers);
+            header_storage = parsed;
+            header_slice = parsed;
+        }
+        defer if (header_storage) |storage| root.otel.freeHeaderList(allocator, storage);
+
+        const otel_config = root.otel.OtelConfig{
+            .endpoint = observability.otlp_endpoint,
+            .service_name = "zerver", // TODO: surface via config when available
+            .service_version = "0.1.0",
+            .environment = "development",
+            .headers = header_slice,
+        };
+
+        otel_exporter = blk: {
+            const exporter = root.otel.OtelExporter.create(allocator, otel_config) catch |err| {
+                slog.warn("otel_exporter_init_failed", &.{
+                    slog.Attr.string("error", @errorName(err)),
+                    slog.Attr.string("endpoint", observability.otlp_endpoint),
+                });
+                break :blk null;
+            };
+            break :blk exporter;
+        };
+
+        if (otel_exporter) |exporter| {
+            config.telemetry.subscriber = exporter.subscriber();
+        }
+    }
+
     var srv = try root.Server.init(allocator, config, compositeEffectHandler);
 
     // Register features
@@ -110,6 +152,7 @@ pub fn initializeServer(allocator: std.mem.Allocator) !Initialization {
     return Initialization{
         .server = srv,
         .resources = resources,
+        .otel_exporter = otel_exporter,
     };
 }
 

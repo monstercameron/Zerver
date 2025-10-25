@@ -14,16 +14,18 @@ pub const RuntimeResources = struct {
     thread_pool: std.Thread.Pool,
     shutting_down: bool = false,
 
-    pub fn init(allocator: std.mem.Allocator, config: config_mod.AppConfig) !RuntimeResources {
-        var registry = sql.db.Registry.init(allocator);
-        errdefer registry.deinit();
+    pub fn init(self: *RuntimeResources, allocator: std.mem.Allocator, config: config_mod.AppConfig) !void {
+        self.allocator = allocator;
+        self.config = config;
+        self.registry = sql.db.Registry.init(allocator);
+        errdefer self.registry.deinit();
 
-        try registry.register(sqlite_driver);
+        try self.registry.register(sqlite_driver);
 
-        const driver = registry.get(config.database.driver) orelse return error.UnknownDriver;
+        const driver = self.registry.get(config.database.driver) orelse return error.UnknownDriver;
 
-        var connections = try std.ArrayList(*sql.db.Connection).initCapacity(allocator, config.database.pool_size);
-        errdefer connections.deinit(allocator);
+        self.connections = try std.ArrayList(*sql.db.Connection).initCapacity(allocator, config.database.pool_size);
+        errdefer self.connections.deinit(allocator);
 
         var created: usize = 0;
         while (created < config.database.pool_size) : (created += 1) {
@@ -36,25 +38,20 @@ pub const RuntimeResources = struct {
             });
             errdefer conn_ptr.deinit();
 
-            try connections.append(allocator, conn_ptr);
+            try self.connections.append(allocator, conn_ptr);
         }
 
-        var pool: std.Thread.Pool = undefined;
-        try std.Thread.Pool.init(&pool, .{
+        try std.Thread.Pool.init(&self.thread_pool, .{
             .allocator = allocator,
             .n_jobs = config.thread_pool.worker_count,
             .track_ids = false,
             .stack_size = 0,
         });
-        errdefer pool.deinit();
+        errdefer self.thread_pool.deinit();
 
-        return RuntimeResources{
-            .allocator = allocator,
-            .config = config,
-            .registry = registry,
-            .connections = connections,
-            .thread_pool = pool,
-        };
+        self.pool_mutex = .{};
+        self.pool_cond = .{};
+        self.shutting_down = false;
     }
 
     pub fn deinit(self: *RuntimeResources) void {
@@ -131,6 +128,6 @@ pub fn create(allocator: std.mem.Allocator, config: config_mod.AppConfig) !*Runt
     const resources_ptr = try allocator.create(RuntimeResources);
     errdefer allocator.destroy(resources_ptr);
 
-    resources_ptr.* = try RuntimeResources.init(allocator, config);
+    try resources_ptr.init(allocator, config);
     return resources_ptr;
 }

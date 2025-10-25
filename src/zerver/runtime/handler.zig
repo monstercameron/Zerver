@@ -336,6 +336,7 @@ pub fn sendResponse(
         slog.err("Response write error", &.{
             slog.Attr.string("error", @errorName(err)),
         });
+        // TODO: Bug - We swallow the write failure and still report success to callers, leaving them unaware that the response never went out.
     };
 }
 

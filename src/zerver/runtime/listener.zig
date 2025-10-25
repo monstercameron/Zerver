@@ -33,6 +33,7 @@ pub fn listenAndServe(
         slog.info("Accepted new connection", &.{});
 
         // Handle persistent connection - RFC 9112 Section 9
+        // TODO: Bug - Propagating a single connection error through this `try` will tear down the entire listener loop instead of just dropping the bad client; swallow and continue instead.
         try handleConnection(srv, allocator, connection);
     }
 }

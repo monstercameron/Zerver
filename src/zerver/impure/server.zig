@@ -281,6 +281,7 @@ pub const Server = struct {
         ctx.method_str = try self.methodToString(parsed.method, arena);
         ctx.path_str = parsed.path;
         ctx.body = parsed.body;
+        ctx.request_bytes = request_text.len;
 
         slog.debug("HTTP request parsed", &.{
             slog.Attr.string("method", ctx.method_str),
@@ -345,19 +346,21 @@ pub const Server = struct {
             telemetry_ctx.stepEnd(.system, "options_handler", "Continue");
 
             const response_body = try std.fmt.allocPrint(arena, "Allow: {s}", .{allowed_methods});
-            const trace_json = telemetry_ctx.finish(.{
-                .status_code = http_status.ok,
-                .outcome = "options",
-                .error_ctx = null,
-            }, arena) catch "";
-
-            return ResponseResult{ .complete = try self.httpResponse(.{
+            const response = types.Response{
                 .status = http_status.ok,
                 .body = .{ .complete = response_body },
                 .headers = &[_]types.Header{
                     .{ .name = "Allow", .value = allowed_methods },
                 },
-            }, arena, false, keep_alive, trace_json, correlation) };
+            };
+            telemetry_ctx.recordResponseMetrics(telemetry.Telemetry.responseMetricsFromResponse(response));
+            const trace_header = telemetry_ctx.finish(.{
+                .status_code = http_status.ok,
+                .outcome = "options",
+                .error_ctx = null,
+            }, arena) catch "";
+
+            return ResponseResult{ .complete = try self.httpResponse(response, arena, false, keep_alive, trace_header, correlation) };
         }
 
         if (try self.router.match(parsed.method, parsed.path, arena)) |route_match| {
@@ -384,8 +387,7 @@ pub const Server = struct {
                 else => {},
             }
 
-            const trace_json = telemetry_ctx.finish(outcome, arena) catch "";
-            return try self.renderResponse(&ctx, decision, arena, keep_alive, correlation, trace_json);
+            return try self.renderResponse(&ctx, &telemetry_ctx, decision, outcome, arena, keep_alive, correlation);
         }
 
         if (parsed.method == .POST and std.mem.startsWith(u8, parsed.path, "/flow/v1/")) {
@@ -411,8 +413,7 @@ pub const Server = struct {
                         else => {},
                     }
 
-                    const trace_json = telemetry_ctx.finish(outcome, arena) catch "";
-                    return try self.renderResponse(&ctx, decision, arena, keep_alive, correlation, trace_json);
+                    return try self.renderResponse(&ctx, &telemetry_ctx, decision, outcome, arena, keep_alive, correlation);
                 }
             }
         }
@@ -422,14 +423,13 @@ pub const Server = struct {
             .ctx = .{ .what = "routing", .key = parsed.path },
         };
         ctx.status_code = not_found_error.kind;
-
-        const trace_json = telemetry_ctx.finish(.{
+        const outcome = telemetry.RequestOutcome{
             .status_code = not_found_error.kind,
             .outcome = "NotFound",
             .error_ctx = not_found_error.ctx,
-        }, arena) catch "";
+        };
 
-        return self.renderError(&ctx, not_found_error, arena, keep_alive, correlation, trace_json);
+        return self.renderError(&ctx, &telemetry_ctx, not_found_error, outcome, arena, keep_alive, correlation);
     }
 
     /// Parse an HTTP request (MVP: very simplified).
@@ -721,11 +721,12 @@ pub const Server = struct {
     fn renderResponse(
         self: *Server,
         ctx: *ctx_module.CtxBase,
+        telemetry_ctx: *telemetry.Telemetry,
         decision: types.Decision,
+        outcome: telemetry.RequestOutcome,
         arena: std.mem.Allocator,
         keep_alive: bool,
         correlation: CorrelationContext,
-        trace_header: []const u8,
     ) !ResponseResult {
         const response = switch (decision) {
             .Continue => types.Response{ .status = http_status.ok, .body = .{ .complete = "OK" } },
@@ -736,10 +737,17 @@ pub const Server = struct {
                     slog.Attr.string("what", err.ctx.what),
                     slog.Attr.string("key", err.ctx.key),
                 });
-                return self.renderError(ctx, err, arena, keep_alive, correlation, trace_header);
+                return self.renderError(ctx, telemetry_ctx, err, outcome, arena, keep_alive, correlation);
             },
             .need => types.Response{ .status = http_status.internal_server_error, .body = .{ .complete = "Pipeline incomplete" } },
         };
+
+        const response_metrics = telemetry.Telemetry.responseMetricsFromResponse(response);
+        telemetry_ctx.recordResponseMetrics(response_metrics);
+
+        var final_outcome = outcome;
+        final_outcome.status_code = response.status;
+        const trace_header = telemetry_ctx.finish(final_outcome, arena) catch "";
 
         switch (response.body) {
             .complete => |body| {
@@ -755,14 +763,12 @@ pub const Server = struct {
             },
         }
 
-        // Check if this is a streaming response
         switch (response.body) {
             .streaming => |streaming| {
-                // For streaming responses, return headers separately
                 const headers_only = try self.httpResponse(.{
                     .status = response.status,
                     .headers = response.headers,
-                    .body = .{ .complete = "" }, // Empty body for headers-only
+                    .body = .{ .complete = "" },
                 }, arena, false, keep_alive, trace_header, correlation);
 
                 return ResponseResult{
@@ -774,7 +780,6 @@ pub const Server = struct {
                 };
             },
             .complete => {
-                // For complete responses, format normally
                 const formatted = try self.httpResponse(response, arena, false, keep_alive, trace_header, correlation);
                 return ResponseResult{ .complete = formatted };
             },
@@ -784,26 +789,33 @@ pub const Server = struct {
     fn renderError(
         self: *Server,
         ctx: *ctx_module.CtxBase,
+        telemetry_ctx: *telemetry.Telemetry,
         _err: types.Error,
+        outcome: telemetry.RequestOutcome,
         arena: std.mem.Allocator,
         keep_alive: bool,
         correlation: CorrelationContext,
-        trace_header: []const u8,
     ) !ResponseResult {
-        // Store the error in the context for the error handler
         ctx.last_error = _err;
-
-        // Call on_error handler
         const response = try self.config.on_error(ctx);
-
-        // RFC 9110 Section 9.3.2 - HEAD responses are identical to GET but without message body
         const is_head = std.mem.eql(u8, ctx.method_str, "HEAD");
 
-        return switch (response) {
-            .Continue => ResponseResult{ .complete = try self.httpResponse(.{ .status = http_status.internal_server_error, .body = .{ .complete = "Error" } }, arena, is_head, keep_alive, trace_header, correlation) },
-            .Done => |resp| ResponseResult{ .complete = try self.httpResponse(resp, arena, is_head, keep_alive, trace_header, correlation) },
-            else => ResponseResult{ .complete = try self.httpResponse(.{ .status = http_status.internal_server_error, .body = .{ .complete = "Error" } }, arena, is_head, keep_alive, trace_header, correlation) },
-        };
+        var final_response = types.Response{ .status = http_status.internal_server_error, .body = .{ .complete = "Error" } };
+
+        switch (response) {
+            .Continue => {},
+            .Done => |resp| final_response = resp,
+            else => {},
+        }
+
+        const response_metrics = telemetry.Telemetry.responseMetricsFromResponse(final_response);
+        telemetry_ctx.recordResponseMetrics(response_metrics);
+
+        var final_outcome = outcome;
+        final_outcome.status_code = final_response.status;
+        const trace_header = telemetry_ctx.finish(final_outcome, arena) catch "";
+
+        return ResponseResult{ .complete = try self.httpResponse(final_response, arena, is_head, keep_alive, trace_header, correlation) };
     }
 
     /// Parse chunked transfer encoding per RFC 9112 Section 6

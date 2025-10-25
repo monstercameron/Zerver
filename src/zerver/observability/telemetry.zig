@@ -34,6 +34,14 @@ pub const RequestStartEvent = struct {
     method: []const u8,
     path: []const u8,
     timestamp_ms: u64,
+    host: []const u8,
+    user_agent: []const u8,
+    referer: []const u8,
+    accept: []const u8,
+    content_type: []const u8,
+    content_length: usize,
+    request_bytes: usize,
+    client_ip: []const u8,
 };
 
 /// Summary of a request completion event.
@@ -43,6 +51,11 @@ pub const RequestEndEvent = struct {
     outcome: []const u8,
     duration_ms: u64,
     error_ctx: ?types.ErrorCtx,
+    response_content_type: []const u8,
+    response_body_bytes: usize,
+    response_streaming: bool,
+    request_content_length: usize,
+    request_bytes: usize,
 };
 
 /// Step start metadata emitted prior to executing a step function.
@@ -185,6 +198,17 @@ pub const Telemetry = struct {
     method: []const u8 = "",
     path: []const u8 = "",
     request_id: []const u8 = "",
+    request_host: []const u8 = "",
+    request_user_agent: []const u8 = "",
+    request_referer: []const u8 = "",
+    request_accept: []const u8 = "",
+    request_content_type: []const u8 = "",
+    request_content_length: usize = 0,
+    request_bytes: usize = 0,
+    client_ip: []const u8 = "",
+    response_content_type: []const u8 = "",
+    response_body_bytes: usize = 0,
+    response_streaming: bool = false,
 
     request_start_ms: i64 = 0,
     completed: bool = false,
@@ -218,6 +242,19 @@ pub const Telemetry = struct {
         self.request_id = ctx.requestId();
         self.method = ctx.method();
         self.path = ctx.path();
+        self.request_host = ctx.header("host") orelse "";
+        self.request_user_agent = ctx.header("user-agent") orelse "";
+        self.request_referer = ctx.header("referer") orelse "";
+        self.request_accept = ctx.header("accept") orelse "";
+        self.request_content_type = ctx.header("content-type") orelse "";
+        const header_content_length = ctx.header("content-length");
+        if (header_content_length) |raw_cl| {
+            self.request_content_length = std.fmt.parseInt(usize, raw_cl, 10) catch ctx.body.len;
+        } else {
+            self.request_content_length = ctx.body.len;
+        }
+        self.request_bytes = ctx.request_bytes;
+        self.client_ip = ctx.clientIpText();
         self.request_start_ms = std.time.milliTimestamp();
 
         self.tracer.recordRequestStart();
@@ -225,6 +262,11 @@ pub const Telemetry = struct {
             slog.Attr.string("request_id", self.request_id),
             slog.Attr.string("method", self.method),
             slog.Attr.string("path", self.path),
+            slog.Attr.string("host", self.request_host),
+            slog.Attr.string("user_agent", self.request_user_agent),
+            slog.Attr.string("client_ip", self.client_ip),
+            slog.Attr.uint("request_bytes", @as(u64, self.request_bytes)),
+            slog.Attr.uint("content_length", @as(u64, self.request_content_length)),
         });
 
         self.emit(.{ .request_start = .{
@@ -232,6 +274,14 @@ pub const Telemetry = struct {
             .method = self.method,
             .path = self.path,
             .timestamp_ms = @as(u64, @intCast(self.request_start_ms)),
+            .host = self.request_host,
+            .user_agent = self.request_user_agent,
+            .referer = self.request_referer,
+            .accept = self.request_accept,
+            .content_type = self.request_content_type,
+            .content_length = self.request_content_length,
+            .request_bytes = self.request_bytes,
+            .client_ip = self.client_ip,
         } });
     }
 
@@ -250,6 +300,11 @@ pub const Telemetry = struct {
             slog.Attr.uint("status", outcome.status_code),
             slog.Attr.string("outcome", outcome.outcome),
             slog.Attr.uint("duration_ms", duration),
+            slog.Attr.uint("response_body_bytes", @as(u64, self.response_body_bytes)),
+            slog.Attr.string("response_content_type", self.response_content_type),
+            slog.Attr.bool("response_streaming", self.response_streaming),
+            slog.Attr.uint("request_bytes", @as(u64, self.request_bytes)),
+            slog.Attr.uint("request_content_length", @as(u64, self.request_content_length)),
         });
 
         self.emit(.{ .request_end = .{
@@ -258,6 +313,11 @@ pub const Telemetry = struct {
             .outcome = outcome.outcome,
             .duration_ms = duration,
             .error_ctx = outcome.error_ctx,
+            .response_content_type = self.response_content_type,
+            .response_body_bytes = self.response_body_bytes,
+            .response_streaming = self.response_streaming,
+            .request_content_length = self.request_content_length,
+            .request_bytes = self.request_bytes,
         } });
 
         const trace_json = self.tracer.toJson(arena) catch {
@@ -321,6 +381,42 @@ pub const Telemetry = struct {
         join: types.Join,
     };
 
+    pub const ResponseMetrics = struct {
+        content_type: []const u8,
+        body_bytes: usize,
+        streaming: bool = false,
+    };
+
+    pub fn responseMetricsFromResponse(response: types.Response) ResponseMetrics {
+        var metrics = ResponseMetrics{
+            .content_type = "",
+            .body_bytes = 0,
+            .streaming = false,
+        };
+
+        switch (response.body) {
+            .complete => |body| {
+                metrics.body_bytes = body.len;
+            },
+            .streaming => |streaming_body| {
+                metrics.streaming = true;
+                metrics.content_type = streaming_body.content_type;
+            },
+        }
+
+        if (metrics.content_type.len == 0) {
+            metrics.content_type = findHeaderValue(response.headers, "content-type");
+        }
+
+        return metrics;
+    }
+
+    pub fn recordResponseMetrics(self: *Telemetry, metrics: ResponseMetrics) void {
+        self.response_content_type = metrics.content_type;
+        self.response_body_bytes = metrics.body_bytes;
+        self.response_streaming = metrics.streaming;
+    }
+
     pub fn needScheduled(self: *Telemetry, summary: NeedSummary) usize {
         self.need_sequence += 1;
         const sequence = self.need_sequence;
@@ -338,6 +434,12 @@ pub const Telemetry = struct {
             .mode = summary.mode,
             .join = summary.join,
         } });
+        self.tracer.recordNeedScheduled(
+            sequence,
+            summary.effect_count,
+            @tagName(summary.mode),
+            @tagName(summary.join),
+        );
         return sequence;
     }
 
@@ -444,6 +546,12 @@ pub const Telemetry = struct {
             slog.Attr.string("mode", @tagName(mode)),
             slog.Attr.string("join", @tagName(join)),
         });
+        self.tracer.recordContinuationResume(
+            need_sequence,
+            resume_ptr,
+            @tagName(mode),
+            @tagName(join),
+        );
         self.emit(.{ .continuation_resume = .{
             .request_id = self.request_id,
             .need_sequence = need_sequence,
@@ -520,4 +628,13 @@ pub fn stepLayerName(layer: StepLayer) []const u8 {
         .continuation => "continuation",
         .system => "system",
     };
+}
+
+fn findHeaderValue(headers: []const types.Header, name: []const u8) []const u8 {
+    for (headers) |header| {
+        if (std.ascii.eqlIgnoreCase(header.name, name)) {
+            return header.value;
+        }
+    }
+    return "";
 }

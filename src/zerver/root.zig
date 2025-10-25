@@ -11,6 +11,7 @@ pub const router = @import("routes/router.zig");
 pub const executor = @import("impure/executor.zig");
 pub const tracer_module = @import("observability/tracer.zig");
 pub const telemetry = @import("observability/telemetry.zig");
+pub const otel = @import("observability/otel.zig");
 pub const reqtest_module = @import("core/reqtest.zig");
 pub const sql = @import("sql/mod.zig");
 

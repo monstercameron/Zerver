@@ -4,10 +4,12 @@ const std = @import("std");
 pub const AppConfig = struct {
     database: DatabaseConfig,
     thread_pool: ThreadPoolConfig = .{},
+    observability: ObservabilityConfig = .{},
 
     pub fn deinit(self: *AppConfig, allocator: std.mem.Allocator) void {
         allocator.free(self.database.driver);
         allocator.free(self.database.path);
+        self.observability.deinit(allocator);
         self.* = undefined;
     }
 };
@@ -23,6 +25,16 @@ pub const ThreadPoolConfig = struct {
     worker_count: usize = 1,
 };
 
+pub const ObservabilityConfig = struct {
+    otlp_endpoint: []const u8 = "",
+    otlp_headers: []const u8 = "",
+
+    pub fn deinit(self: *ObservabilityConfig, allocator: std.mem.Allocator) void {
+        if (self.otlp_endpoint.len != 0) allocator.free(self.otlp_endpoint);
+        if (self.otlp_headers.len != 0) allocator.free(self.otlp_headers);
+    }
+};
+
 const RawDatabaseConfig = struct {
     driver: []const u8,
     path: []const u8,
@@ -34,9 +46,15 @@ const RawThreadPoolConfig = struct {
     worker_count: ?usize = null,
 };
 
+const RawObservabilityConfig = struct {
+    otlp_endpoint: ?[]const u8 = null,
+    otlp_headers: ?[]const u8 = null,
+};
+
 const RawAppConfig = struct {
     database: RawDatabaseConfig,
     thread_pool: ?RawThreadPoolConfig = null,
+    observability: ?RawObservabilityConfig = null,
 };
 
 /// Load configuration from disk, returning an AppConfig with owned slices.
@@ -66,6 +84,22 @@ pub fn load(allocator: std.mem.Allocator, path: []const u8) !AppConfig {
         break :blk if (cpu_count == 0) 1 else cpu_count;
     };
 
+    var observability = ObservabilityConfig{};
+    if (raw.observability) |obs| {
+        if (obs.otlp_endpoint) |endpoint| {
+            if (endpoint.len != 0) {
+                observability.otlp_endpoint = try allocator.dupe(u8, endpoint);
+                errdefer allocator.free(observability.otlp_endpoint);
+            }
+        }
+        if (obs.otlp_headers) |headers| {
+            if (headers.len != 0) {
+                observability.otlp_headers = try allocator.dupe(u8, headers);
+                errdefer allocator.free(observability.otlp_headers);
+            }
+        }
+    }
+
     return AppConfig{
         .database = .{
             .driver = driver,
@@ -79,5 +113,6 @@ pub fn load(allocator: std.mem.Allocator, path: []const u8) !AppConfig {
             else
                 default_workers,
         },
+        .observability = observability,
     };
 }

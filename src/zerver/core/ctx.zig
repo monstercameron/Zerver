@@ -6,6 +6,14 @@ const slog = @import("../observability/slog.zig");
 /// Callback type for on-exit hooks.
 pub const ExitCallback = *const fn (*CtxBase) void;
 
+/// Event types for tracing.
+pub const TraceEvent = union(enum) {
+    step_start: struct { name: []const u8, timestamp: i64 },
+    step_end: struct { name: []const u8, outcome: []const u8, duration: u64 },
+    effect_start: struct { kind: []const u8, key: []const u8, timestamp: i64 },
+    effect_end: struct { kind: []const u8, key: []const u8, success: bool, duration: u64, err: ?[]const u8 },
+};
+
 /// CtxBase contains all per-request state and helpers.
 pub const CtxBase = struct {
     allocator: std.mem.Allocator,
@@ -24,6 +32,7 @@ pub const CtxBase = struct {
     request_id: []const u8 = "",
     start_time: i64, // milliseconds
     status_code: u16 = 200,
+    request_bytes: usize = 0,
 
     // Slot storage: map from slot id (u32) to void pointer
     slots: std.AutoHashMap(u32, *anyopaque) = undefined,
@@ -31,7 +40,7 @@ pub const CtxBase = struct {
     // Exit callbacks
     exit_cbs: std.ArrayList(ExitCallback) = undefined,
 
-    // Trace events
+    // Trace events captured during request execution
     trace_events: std.ArrayList(TraceEvent) = undefined,
 
     // Last error
@@ -267,14 +276,6 @@ pub const CtxBase = struct {
         const parsed = try std.json.parseFromSlice(T, self.allocator, self.body, .{});
         return parsed.value;
     }
-};
-
-/// Event types for tracing.
-pub const TraceEvent = union(enum) {
-    step_start: struct { name: []const u8, timestamp: i64 },
-    step_end: struct { name: []const u8, outcome: []const u8, duration: u64 },
-    effect_start: struct { kind: []const u8, key: []const u8, timestamp: i64 },
-    effect_end: struct { kind: []const u8, key: []const u8, success: bool, duration: u64, err: ?[]const u8 },
 };
 
 /// CtxView(spec) creates a typed view that enforces read/write permissions at compile time.

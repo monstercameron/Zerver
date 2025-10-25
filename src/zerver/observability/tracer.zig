@@ -18,6 +18,8 @@ pub const EventKind = enum {
     step_end,
     effect_start,
     effect_end,
+    need_scheduled,
+    continuation_resume,
     request_end,
 };
 
@@ -29,6 +31,11 @@ pub const TraceEvent = struct {
     effect_kind: ?[]const u8 = null,
     status: ?[]const u8 = null, // "Continue", "Done", "Fail", "Need"
     error_msg: ?[]const u8 = null,
+    need_sequence: ?usize = null,
+    effect_count: ?usize = null,
+    resume_ptr: ?usize = null,
+    mode: ?[]const u8 = null,
+    join: ?[]const u8 = null,
     // TODO: Memory/Safety - Ensure that string slices stored in TraceEvent (step_name, effect_kind, status, error_msg) have a lifetime at least as long as the Tracer itself, or are duplicated into the Tracer's allocator to prevent use-after-free issues.
 };
 
@@ -107,6 +114,42 @@ pub const Tracer = struct {
         });
     }
 
+    /// Record need scheduling event.
+    pub fn recordNeedScheduled(
+        self: *Tracer,
+        need_sequence: usize,
+        effect_count: usize,
+        mode: []const u8,
+        join: []const u8,
+    ) void {
+        self.recordEvent(.{
+            .kind = .need_scheduled,
+            .need_sequence = need_sequence,
+            .effect_count = effect_count,
+            .mode = mode,
+            .join = join,
+            .timestamp_ms = 0,
+        });
+    }
+
+    /// Record continuation resume event.
+    pub fn recordContinuationResume(
+        self: *Tracer,
+        need_sequence: usize,
+        resume_ptr: usize,
+        mode: []const u8,
+        join: []const u8,
+    ) void {
+        self.recordEvent(.{
+            .kind = .continuation_resume,
+            .need_sequence = need_sequence,
+            .resume_ptr = resume_ptr,
+            .mode = mode,
+            .join = join,
+            .timestamp_ms = 0,
+        });
+    }
+
     /// Record request end.
     pub fn recordRequestEnd(self: *Tracer) void {
         const now = std.time.milliTimestamp();
@@ -178,6 +221,36 @@ pub const Tracer = struct {
                 try writer.writeByte(',');
                 try writer.writeAll("\"error\":");
                 try writeJsonString(&writer, msg);
+            }
+
+            if (event.need_sequence) |need_sequence| {
+                try writer.writeByte(',');
+                try writer.writeAll("\"need_sequence\":");
+                try writer.print("{}", .{need_sequence});
+            }
+
+            if (event.effect_count) |effect_count| {
+                try writer.writeByte(',');
+                try writer.writeAll("\"effect_count\":");
+                try writer.print("{}", .{effect_count});
+            }
+
+            if (event.resume_ptr) |resume_ptr| {
+                try writer.writeByte(',');
+                try writer.writeAll("\"resume_ptr\":");
+                try writer.print("{}", .{resume_ptr});
+            }
+
+            if (event.mode) |mode| {
+                try writer.writeByte(',');
+                try writer.writeAll("\"mode\":");
+                try writeJsonString(&writer, mode);
+            }
+
+            if (event.join) |join| {
+                try writer.writeByte(',');
+                try writer.writeAll("\"join\":");
+                try writeJsonString(&writer, join);
             }
 
             try writer.writeByte('}');

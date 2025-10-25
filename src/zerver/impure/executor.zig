@@ -227,7 +227,7 @@ pub const Executor = struct {
             .all_required => true, // MVP: same as all (Phase-2: can resume early)
             .any => true, // MVP: same as all (Phase-2: would resume on first)
             .first_success => !had_required_failure, // resume if any success or no required fails
-            // TODO: Logical Error - The 'first_success' join strategy currently resumes if no *required* effect failed. This might not align with the typical 'first success' semantic (resume on any success). Revisit this logic for clarity and correctness.
+            // TODO: Bug - `.first_success` ignores whether any effect actually succeeded and never resumes early; it only checks the absence of required failures.
         };
 
         if (!should_resume) {

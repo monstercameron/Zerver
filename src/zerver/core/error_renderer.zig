@@ -91,6 +91,7 @@ pub fn testErrorRenderer() !void {
     const response = try ErrorRenderer.render(allocator, error_val);
     slog.info("Error renderer test completed", &.{
         slog.Attr.uint("status", response.status),
+        // TODO: Bug - `response.body` is a tagged union; logging it as a string without inspecting the tag is undefined behaviour and will crash once the union layout changes.
         slog.Attr.string("body", response.body),
     });
 }
