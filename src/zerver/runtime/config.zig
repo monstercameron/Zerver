@@ -76,7 +76,7 @@ pub fn load(allocator: std.mem.Allocator, path: []const u8) !AppConfig {
     const raw = parsed.value;
     const driver = try allocator.dupe(u8, raw.database.driver);
     errdefer allocator.free(driver);
-    const db_path = try allocator.dupe(u8, raw.database.path);
+    const db_path = try resolveDatabasePath(allocator, raw.database.path);
     errdefer allocator.free(db_path);
 
     const default_workers = blk: {
@@ -115,4 +115,37 @@ pub fn load(allocator: std.mem.Allocator, path: []const u8) !AppConfig {
         },
         .observability = observability,
     };
+}
+
+fn resolveDatabasePath(allocator: std.mem.Allocator, raw_path: []const u8) ![]u8 {
+    if (raw_path.len == 0) return error.MissingDatabasePath;
+
+    const cwd = std.fs.cwd();
+    const has_separator = std.mem.indexOfAny(u8, raw_path, "/\\") != null;
+    const is_absolute = std.fs.path.isAbsolute(raw_path);
+
+    const owned_path = try blk: {
+        if (is_absolute or has_separator) {
+            break :blk allocator.dupe(u8, raw_path);
+        }
+        break :blk std.fs.path.join(allocator, &.{ "resources", raw_path });
+    };
+    errdefer allocator.free(owned_path);
+
+    if (std.fs.path.dirname(owned_path)) |dir_name| {
+        try cwd.makePath(dir_name);
+    }
+
+    if (!fileExists(cwd, owned_path) and !is_absolute and !has_separator) {
+        if (fileExists(cwd, raw_path)) {
+            try cwd.rename(raw_path, owned_path);
+        }
+    }
+
+    return owned_path;
+}
+
+fn fileExists(dir: std.fs.Dir, path: []const u8) bool {
+    dir.access(path, .{}) catch return false;
+    return true;
 }

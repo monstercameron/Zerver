@@ -75,6 +75,18 @@ pub fn initializeServer(allocator: std.mem.Allocator) !Initialization {
     });
 
     var app_config = try runtime_config.load(allocator, "config.json");
+
+    if (app_config.observability.otlp_endpoint.len == 0) {
+        if (try detectTempoEndpoint(allocator)) |detected_endpoint| {
+            slog.info("tempo_auto_configured", &.{
+                slog.Attr.string("endpoint", detected_endpoint),
+            });
+            app_config.observability.otlp_endpoint = detected_endpoint;
+        } else {
+            slog.debug("tempo_autodetect_skipped", &.{});
+        }
+    }
+
     var resources = runtime_resources.create(allocator, app_config) catch |err| {
         app_config.deinit(allocator);
         return err;
@@ -174,4 +186,38 @@ pub fn printDemoInfo() void {
     slog.info("Features demonstrated", &[_]slog.Attr{
         slog.Attr.string("features", "slot system, middleware, routing, steps, effects, continuations, error handling, CRUD"),
     });
+}
+
+fn detectTempoEndpoint(allocator: std.mem.Allocator) !?[]const u8 {
+    const otlp_default = "http://127.0.0.1:4318/v1/traces";
+    const max_attempts: u32 = 5;
+    const address = std.net.Address.initIp4(.{ 127, 0, 0, 1 }, 4318);
+
+    var attempt: u32 = 0;
+    while (attempt < max_attempts) : (attempt += 1) {
+        var stream = std.net.tcpConnectToAddress(address) catch |err| {
+            slog.debug("tempo_detect_connection_error", &.{
+                slog.Attr.string("error", @errorName(err)),
+                slog.Attr.uint("attempt", attempt + 1),
+            });
+            std.Thread.sleep(tempoDetectBackoff(attempt));
+            continue;
+        };
+        stream.close();
+        return try allocator.dupe(u8, otlp_default);
+    }
+
+    return null;
+}
+
+fn tempoDetectBackoff(attempt: u32) u64 {
+    const capped = if (attempt < 4) attempt else 4;
+    const factor: u64 = switch (capped) {
+        0 => 1,
+        1 => 2,
+        2 => 4,
+        3 => 8,
+        else => 16,
+    };
+    return 100 * factor * std.time.ns_per_ms;
 }

@@ -1,7 +1,7 @@
 {
   "database": {
     "driver": "sqlite",
-    "path": "blog.db",
+    "path": "resources/blog.db",
     "pool_size": 2,
     "busy_timeout_ms": 5000
   },

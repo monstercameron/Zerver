@@ -6,6 +6,15 @@ const slog = @import("slog.zig");
 const http = std.http;
 const hex_digits = "0123456789abcdef";
 
+fn formatBytesHex(bytes: []const u8, out: []u8) []const u8 {
+    std.debug.assert(out.len >= bytes.len * 2);
+    for (bytes, 0..) |byte, idx| {
+        out[idx * 2] = hex_digits[byte >> 4];
+        out[idx * 2 + 1] = hex_digits[byte & 0x0F];
+    }
+    return out[0 .. bytes.len * 2];
+}
+
 /// Additional HTTP header used when sending OTLP payloads.
 pub const Header = struct {
     name: []const u8,
@@ -384,6 +393,7 @@ pub const OtelExporter = struct {
         self.resource_attributes = try std.ArrayList(Attribute).initCapacity(allocator, 0);
         self.headers = try std.ArrayList(http.Header).initCapacity(allocator, 0);
         self.requests = std.StringHashMap(*RequestRecord).init(allocator);
+        self.mutex = .{};
 
         try self.addResourceAttribute(Attribute.initString(allocator, "service.name", config.service_name));
         try self.addResourceAttribute(Attribute.initString(allocator, "service.version", config.service_version));
@@ -415,9 +425,18 @@ pub const OtelExporter = struct {
         }
         self.headers.deinit(self.allocator);
 
+        self.mutex.lock();
+        defer self.mutex.unlock();
+
         var it = self.requests.iterator();
         while (it.next()) |entry| {
             const record = entry.value_ptr.*;
+            if (record.status_code == null) {
+                slog.warn("otel_shutdown_pending_request", &.{
+                    slog.Attr.string("request_id", record.request_id),
+                    slog.Attr.string("span_name", record.span_name),
+                });
+            }
             record.deinit();
             self.allocator.destroy(record);
         }
@@ -455,90 +474,111 @@ pub const OtelExporter = struct {
     }
 
     fn handleEvent(self: *OtelExporter, event: telemetry.Event) !void {
-        var to_export: ?*RequestRecord = null;
-        var end_event: telemetry.RequestEndEvent = undefined;
+        const ExportContext = struct {
+            record: *RequestRecord,
+            end_event: telemetry.RequestEndEvent,
+        };
 
-        var lock_guard = true;
-        self.mutex.lock();
-        defer if (lock_guard) self.mutex.unlock();
+        const export_ctx: ?ExportContext = blk: {
+            self.mutex.lock();
+            defer self.mutex.unlock();
 
-        switch (event) {
-            .request_start => |start| {
-                if (self.requests.get(start.request_id) != null) {
-                    slog.warn("otel_duplicate_request_start", &.{
-                        slog.Attr.string("request_id", start.request_id),
-                    });
-                    return;
-                }
-                var record = try RequestRecord.create(self.allocator, start);
-                errdefer {
-                    record.deinit();
-                    self.allocator.destroy(record);
-                }
-                try self.requests.put(record.request_id, record);
-                return;
-            },
-            .request_end => |finish| {
-                if (self.requests.fetchRemove(finish.request_id)) |kv| {
-                    to_export = kv.value;
-                    end_event = finish;
-                } else {
-                    slog.warn("otel_missing_request_on_finish", &.{
-                        slog.Attr.string("request_id", finish.request_id),
-                    });
-                }
-            },
-            .step_start => |payload| {
-                if (self.requests.get(payload.request_id)) |record| {
-                    try record.recordStepStart(payload);
-                }
-            },
-            .step_end => |payload| {
-                if (self.requests.get(payload.request_id)) |record| {
-                    try record.recordStepEnd(payload);
-                }
-            },
-            .need_scheduled => |payload| {
-                if (self.requests.get(payload.request_id)) |record| {
-                    try record.recordNeedScheduled(payload);
-                }
-            },
-            .effect_start => |payload| {
-                if (self.requests.get(payload.request_id)) |record| {
-                    try record.recordEffectStart(payload);
-                }
-            },
-            .effect_end => |payload| {
-                if (self.requests.get(payload.request_id)) |record| {
-                    try record.recordEffectEnd(payload);
-                }
-            },
-            .continuation_resume => |payload| {
-                if (self.requests.get(payload.request_id)) |record| {
-                    try record.recordContinuation(payload);
-                }
-            },
-            .executor_crash => |payload| {
-                if (self.requests.get(payload.request_id)) |record| {
-                    try record.recordExecutorCrash(payload);
-                }
-            },
-        }
+            var to_export: ?*RequestRecord = null;
+            var end_event: telemetry.RequestEndEvent = undefined;
 
-        if (to_export) |record| {
-            self.mutex.unlock();
-            lock_guard = false;
-
-            defer {
-                record.deinit();
-                self.allocator.destroy(record);
+            switch (event) {
+                .request_start => |start| {
+                    if (self.requests.get(start.request_id) != null) {
+                        slog.warn("otel_duplicate_request_start", &.{
+                            slog.Attr.string("request_id", start.request_id),
+                        });
+                        break :blk null;
+                    }
+                    var record = try RequestRecord.create(self.allocator, start);
+                    errdefer {
+                        record.deinit();
+                        self.allocator.destroy(record);
+                    }
+                    try self.requests.put(record.request_id, record);
+                    break :blk null;
+                },
+                .request_end => |finish| {
+                    if (self.requests.fetchRemove(finish.request_id)) |kv| {
+                        to_export = kv.value;
+                        end_event = finish;
+                    } else {
+                        slog.warn("otel_missing_request_on_finish", &.{
+                            slog.Attr.string("request_id", finish.request_id),
+                        });
+                    }
+                },
+                .step_start => |payload| {
+                    if (self.requests.get(payload.request_id)) |record| {
+                        try record.recordStepStart(payload);
+                    }
+                },
+                .step_end => |payload| {
+                    if (self.requests.get(payload.request_id)) |record| {
+                        try record.recordStepEnd(payload);
+                    }
+                },
+                .need_scheduled => |payload| {
+                    if (self.requests.get(payload.request_id)) |record| {
+                        try record.recordNeedScheduled(payload);
+                    }
+                },
+                .effect_start => |payload| {
+                    if (self.requests.get(payload.request_id)) |record| {
+                        try record.recordEffectStart(payload);
+                    }
+                },
+                .effect_end => |payload| {
+                    if (self.requests.get(payload.request_id)) |record| {
+                        try record.recordEffectEnd(payload);
+                    }
+                },
+                .continuation_resume => |payload| {
+                    if (self.requests.get(payload.request_id)) |record| {
+                        try record.recordContinuation(payload);
+                    }
+                },
+                .executor_crash => |payload| {
+                    if (self.requests.get(payload.request_id)) |record| {
+                        try record.recordExecutorCrash(payload);
+                    }
+                },
             }
 
-            try record.applyRequestEnd(end_event);
-            self.sendRecord(record) catch |err| {
+            if (to_export) |record| {
+                break :blk ExportContext{ .record = record, .end_event = end_event };
+            }
+
+            break :blk null;
+        };
+
+        if (export_ctx) |ctx| {
+            defer {
+                ctx.record.deinit();
+                self.allocator.destroy(ctx.record);
+            }
+
+            try ctx.record.applyRequestEnd(ctx.end_event);
+            var trace_buf: [32]u8 = undefined;
+            var span_buf: [16]u8 = undefined;
+            const trace_hex = formatBytesHex(ctx.record.trace_id[0..], trace_buf[0..]);
+            const span_hex = formatBytesHex(ctx.record.span_id[0..], span_buf[0..]);
+            slog.info("otel_export_attempt", &.{
+                slog.Attr.string("request_id", ctx.record.request_id),
+                slog.Attr.string("trace_id", trace_hex),
+                slog.Attr.string("span_id", span_hex),
+            });
+
+            self.sendRecord(ctx.record) catch |err| {
                 slog.warn("otel_export_failed", &.{
                     slog.Attr.string("error", @errorName(err)),
-                    slog.Attr.string("request_id", record.request_id),
+                    slog.Attr.string("request_id", ctx.record.request_id),
+                    slog.Attr.string("trace_id", trace_hex),
+                    slog.Attr.string("span_id", span_hex),
                 });
             };
         }
@@ -553,21 +593,94 @@ pub const OtelExporter = struct {
         defer alloc.free(payload);
 
         const uri = try std.Uri.parse(self.endpoint);
-        const result = try self.client.fetch(.{
-            .location = .{ .uri = uri },
-            .method = .POST,
-            .payload = payload,
-            .extra_headers = self.headers.items,
-            .keep_alive = true,
-        });
+        var response_body = try std.ArrayList(u8).initCapacity(alloc, 0);
+        defer response_body.deinit(alloc);
 
-        const status = result.status;
-        if (status.class() != .success and status != .accepted) {
+        const max_attempts: u8 = 3;
+        var attempt: u8 = 0;
+        while (attempt < max_attempts) : (attempt += 1) {
+            response_body.clearRetainingCapacity();
+            var list_writer = response_body.writer(alloc);
+            var bridge_buffer: [128]u8 = undefined;
+            var writer_adapter = list_writer.adaptToNewApi(bridge_buffer[0..]);
+
+            const fetch_result = self.client.fetch(.{
+                .location = .{ .uri = uri },
+                .method = .POST,
+                .payload = payload,
+                .extra_headers = self.headers.items,
+                .keep_alive = true,
+                .response_writer = &writer_adapter.new_interface,
+            }) catch |err| {
+                slog.warn("otel_export_transport_error", &.{
+                    slog.Attr.string("error", @errorName(err)),
+                    slog.Attr.string("request_id", record.request_id),
+                    slog.Attr.uint("attempt", attempt + 1),
+                });
+
+                if (attempt + 1 == max_attempts) return;
+                std.Thread.sleep(backoffForAttempt(attempt));
+                continue;
+            };
+
+            writer_adapter.new_interface.flush() catch |flush_err| {
+                slog.warn("otel_export_response_flush_failed", &.{
+                    slog.Attr.string("error", @errorName(flush_err)),
+                    slog.Attr.string("request_id", record.request_id),
+                    slog.Attr.uint("attempt", attempt + 1),
+                });
+            };
+
+            if (writer_adapter.err) |write_err| {
+                slog.warn("otel_export_response_write_failed", &.{
+                    slog.Attr.string("error", @errorName(write_err)),
+                    slog.Attr.string("request_id", record.request_id),
+                    slog.Attr.uint("attempt", attempt + 1),
+                });
+            }
+
+            const status = fetch_result.status;
+            if (status.class() == .success or status == .accepted) {
+                return;
+            }
+
+            const max_preview: usize = 256;
+            const preview = if (response_body.items.len > max_preview)
+                response_body.items[0..max_preview]
+            else
+                response_body.items;
+
             slog.warn("otel_export_non_success", &.{
                 slog.Attr.string("request_id", record.request_id),
                 slog.Attr.int("status", @as(i64, @intCast(@intFromEnum(status)))),
+                slog.Attr.uint("attempt", attempt + 1),
+                slog.Attr.string("body_preview", preview),
             });
+
+            if (!isRetryableStatus(status) or attempt + 1 == max_attempts) {
+                return;
+            }
+
+            std.Thread.sleep(backoffForAttempt(attempt));
         }
+    }
+
+    fn isRetryableStatus(status: http.Status) bool {
+        const code = @intFromEnum(status);
+        return status.class() == .server_error or code == 429;
+    }
+
+    fn backoffForAttempt(attempt: u8) u64 {
+        const base_ms: u64 = 100;
+        const capped: u8 = if (attempt < 4) attempt else 4;
+        const factor: u64 = switch (capped) {
+            0 => 1,
+            1 => 2,
+            2 => 4,
+            3 => 8,
+            else => 16,
+        };
+        return base_ms * factor * std.time.ns_per_ms;
     }
 };
 
@@ -618,7 +731,13 @@ fn buildPayload(allocator: std.mem.Allocator, exporter: *const OtelExporter, rec
     }
     try writer.writeByte('}');
 
-    try writer.writeAll("}]}]}");
+    try writer.writeByte('}'); // close span object
+    try writer.writeByte(']'); // close spans array
+    try writer.writeByte('}'); // close scopeSpan object
+    try writer.writeByte(']'); // close scopeSpans array
+    try writer.writeByte('}'); // close resourceSpan object
+    try writer.writeByte(']'); // close resourceSpans array
+    try writer.writeByte('}'); // close top-level object
     return buffer.toOwnedSlice(allocator);
 }
 
