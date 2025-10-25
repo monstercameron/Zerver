@@ -6,6 +6,12 @@ const slog = @import("slog.zig");
 const http = std.http;
 const hex_digits = "0123456789abcdef";
 
+const SpanKind = enum {
+    server,
+    internal,
+    client,
+};
+
 fn formatBytesHex(bytes: []const u8, out: []u8) []const u8 {
     std.debug.assert(out.len >= bytes.len * 2);
     for (bytes, 0..) |byte, idx| {
@@ -142,6 +148,89 @@ const ErrorCtxCopy = struct {
 };
 
 /// In-flight request bookkeeping until the span is exported.
+const ChildSpan = struct {
+    allocator: std.mem.Allocator,
+    span_id: [8]u8,
+    parent_span_id: [8]u8,
+    name: []const u8,
+    kind: SpanKind,
+    start_time_unix_ns: u64,
+    end_time_unix_ns: u64,
+    attributes: std.ArrayList(Attribute),
+    events: std.ArrayList(RequestEvent),
+    status: SpanStatusCode,
+    status_message: ?[]const u8,
+
+    fn create(
+        allocator: std.mem.Allocator,
+        name: []const u8,
+        kind: SpanKind,
+        parent_span_id: [8]u8,
+        start_time_unix_ns: u64,
+    ) !*ChildSpan {
+        var span = try allocator.create(ChildSpan);
+        errdefer allocator.destroy(span);
+
+        span.* = .{
+            .allocator = allocator,
+            .span_id = randomSpanId(),
+            .parent_span_id = parent_span_id,
+            .name = try allocator.dupe(u8, name),
+            .kind = kind,
+            .start_time_unix_ns = start_time_unix_ns,
+            .end_time_unix_ns = start_time_unix_ns,
+            .attributes = try std.ArrayList(Attribute).initCapacity(allocator, 0),
+            .events = try std.ArrayList(RequestEvent).initCapacity(allocator, 0),
+            .status = .unset,
+            .status_message = null,
+        };
+
+        errdefer {
+            span.deinit();
+            allocator.destroy(span);
+        }
+
+        return span;
+    }
+
+    fn pushAttribute(self: *ChildSpan, attr: Attribute) !void {
+        var owned = attr;
+        errdefer owned.deinit(self.allocator);
+        try self.attributes.append(self.allocator, owned);
+    }
+
+    fn pushEvent(self: *ChildSpan, event: RequestEvent) !void {
+        var owned = event;
+        errdefer owned.deinit();
+        try self.events.append(self.allocator, owned);
+    }
+
+    fn setStatus(self: *ChildSpan, code: SpanStatusCode, message: []const u8) !void {
+        if (self.status == .@"error" and code != .@"error") return;
+        self.status = code;
+        if (self.status_message) |existing| {
+            self.allocator.free(existing);
+        }
+        self.status_message = try self.allocator.dupe(u8, message);
+    }
+
+    fn deinit(self: *ChildSpan) void {
+        self.allocator.free(self.name);
+        if (self.status_message) |msg| {
+            self.allocator.free(msg);
+        }
+        for (self.attributes.items) |*attr| {
+            attr.deinit(self.allocator);
+        }
+        self.attributes.deinit(self.allocator);
+        for (self.events.items) |*evt| {
+            evt.deinit();
+        }
+        self.events.deinit(self.allocator);
+        self.* = undefined;
+    }
+};
+
 const RequestRecord = struct {
     allocator: std.mem.Allocator,
     request_id: []const u8,
@@ -160,6 +249,10 @@ const RequestRecord = struct {
     status: SpanStatusCode,
     status_message: ?[]const u8,
     error_ctx: ?ErrorCtxCopy,
+    child_spans: std.ArrayList(*ChildSpan),
+    step_spans: std.AutoHashMap(usize, *ChildSpan),
+    effect_spans: std.AutoHashMap(usize, *ChildSpan),
+    step_stack: std.ArrayList(*ChildSpan),
 
     fn create(allocator: std.mem.Allocator, event: telemetry.RequestStartEvent) !*RequestRecord {
         var record = try allocator.create(RequestRecord);
@@ -182,6 +275,10 @@ const RequestRecord = struct {
             .status = .unset,
             .status_message = null,
             .error_ctx = null,
+            .child_spans = try std.ArrayList(*ChildSpan).initCapacity(allocator, 4),
+            .step_spans = std.AutoHashMap(usize, *ChildSpan).init(allocator),
+            .effect_spans = std.AutoHashMap(usize, *ChildSpan).init(allocator),
+            .step_stack = try std.ArrayList(*ChildSpan).initCapacity(allocator, 4),
         };
         errdefer {
             record.deinit();
@@ -241,24 +338,14 @@ const RequestRecord = struct {
     }
 
     fn recordStepStart(self: *RequestRecord, event: telemetry.StepStartEvent) !void {
-        var req_event = try RequestEvent.init(self.allocator, "zerver.step_start", event.timestamp_ms * std.time.ns_per_ms);
-        try req_event.addAttribute(try Attribute.initString(self.allocator, "step.name", event.name));
-        try req_event.addAttribute(try Attribute.initString(self.allocator, "step.layer", telemetry.stepLayerName(event.layer)));
-        try req_event.addAttribute(try Attribute.initInt(self.allocator, "step.sequence", @as(i64, @intCast(event.sequence))));
-        try self.pushEvent(req_event);
+        try self.createStepSpan(event);
     }
 
     fn recordStepEnd(self: *RequestRecord, event: telemetry.StepEndEvent) !void {
-        var req_event = try RequestEvent.init(self.allocator, "zerver.step_end", nowUnixNano());
-        try req_event.addAttribute(try Attribute.initString(self.allocator, "step.name", event.name));
-        try req_event.addAttribute(try Attribute.initString(self.allocator, "step.layer", telemetry.stepLayerName(event.layer)));
-        try req_event.addAttribute(try Attribute.initInt(self.allocator, "step.sequence", @as(i64, @intCast(event.sequence))));
-        try req_event.addAttribute(try Attribute.initString(self.allocator, "step.outcome", event.outcome));
-        try req_event.addAttribute(try Attribute.initInt(self.allocator, "step.duration_ms", @as(i64, @intCast(event.duration_ms))));
-        try self.pushEvent(req_event);
         if (std.mem.eql(u8, event.outcome, "Fail")) {
             self.setStatus(.@"error", "step failed") catch {};
         }
+        try self.finishStepSpan(event);
     }
 
     fn recordNeedScheduled(self: *RequestRecord, event: telemetry.NeedScheduledEvent) !void {
@@ -271,38 +358,17 @@ const RequestRecord = struct {
     }
 
     fn recordEffectStart(self: *RequestRecord, event: telemetry.EffectStartEvent) !void {
-        var req_event = try RequestEvent.init(self.allocator, "zerver.effect_start", event.timestamp_ms * std.time.ns_per_ms);
-        try req_event.addAttribute(try Attribute.initInt(self.allocator, "effect.sequence", @as(i64, @intCast(event.sequence))));
-        try req_event.addAttribute(try Attribute.initInt(self.allocator, "effect.need_sequence", @as(i64, @intCast(event.need_sequence))));
-        try req_event.addAttribute(try Attribute.initString(self.allocator, "effect.kind", event.kind));
-        try req_event.addAttribute(try Attribute.initInt(self.allocator, "effect.token", @as(i64, @intCast(event.token))));
-        try req_event.addAttribute(try Attribute.initBool(self.allocator, "effect.required", event.required));
-        try req_event.addAttribute(try Attribute.initString(self.allocator, "effect.target", event.target));
-        try req_event.addAttribute(try Attribute.initString(self.allocator, "effect.mode", @tagName(event.mode)));
-        try req_event.addAttribute(try Attribute.initString(self.allocator, "effect.join", @tagName(event.join)));
-        try req_event.addAttribute(try Attribute.initInt(self.allocator, "effect.timeout_ms", @as(i64, @intCast(event.timeout_ms))));
-        try self.pushEvent(req_event);
+        try self.createEffectSpan(event);
     }
 
     fn recordEffectEnd(self: *RequestRecord, event: telemetry.EffectEndEvent) !void {
-        var req_event = try RequestEvent.init(self.allocator, "zerver.effect_end", nowUnixNano());
-        try req_event.addAttribute(try Attribute.initInt(self.allocator, "effect.sequence", @as(i64, @intCast(event.sequence))));
-        try req_event.addAttribute(try Attribute.initInt(self.allocator, "effect.need_sequence", @as(i64, @intCast(event.need_sequence))));
-        try req_event.addAttribute(try Attribute.initString(self.allocator, "effect.kind", event.kind));
-        try req_event.addAttribute(try Attribute.initBool(self.allocator, "effect.required", event.required));
-        try req_event.addAttribute(try Attribute.initBool(self.allocator, "effect.success", event.success));
-        if (event.bytes_len) |len| {
-            try req_event.addAttribute(try Attribute.initInt(self.allocator, "effect.bytes", @as(i64, @intCast(len))));
-        }
-        if (event.error_ctx) |ctx| {
-            try req_event.addAttribute(try Attribute.initString(self.allocator, "effect.error.what", ctx.what));
-            try req_event.addAttribute(try Attribute.initString(self.allocator, "effect.error.key", ctx.key));
+        if (event.error_ctx != null) {
             self.setStatus(.@"error", "effect error") catch {};
         }
-        try self.pushEvent(req_event);
         if (!event.success) {
             self.setStatus(.@"error", "effect failed") catch {};
         }
+        try self.finishEffectSpan(event);
     }
 
     fn recordContinuation(self: *RequestRecord, event: telemetry.ContinuationEvent) !void {
@@ -320,6 +386,160 @@ const RequestRecord = struct {
         try req_event.addAttribute(try Attribute.initString(self.allocator, "executor.error", event.error_name));
         try self.pushEvent(req_event);
         self.setStatus(.@"error", event.error_name) catch {};
+    }
+
+    fn createStepSpan(self: *RequestRecord, event: telemetry.StepStartEvent) !void {
+        if (self.step_spans.get(event.sequence) != null) return;
+        const parent_span_id = if (self.step_stack.items.len != 0)
+            self.step_stack.items[self.step_stack.items.len - 1].span_id
+        else
+            self.span_id;
+        const start_ns = event.timestamp_ms * std.time.ns_per_ms;
+        var span = try ChildSpan.create(self.allocator, event.name, .internal, parent_span_id, start_ns);
+        errdefer {
+            span.deinit();
+            self.allocator.destroy(span);
+        }
+
+        try span.pushAttribute(try Attribute.initString(self.allocator, "step.name", event.name));
+        try span.pushAttribute(try Attribute.initString(self.allocator, "step.layer", telemetry.stepLayerName(event.layer)));
+        try span.pushAttribute(try Attribute.initInt(self.allocator, "step.sequence", @as(i64, @intCast(event.sequence))));
+
+        self.child_spans.append(self.allocator, span) catch |err| {
+            span.deinit();
+            self.allocator.destroy(span);
+            return err;
+        };
+
+        self.step_spans.put(event.sequence, span) catch |err| {
+            _ = self.child_spans.pop();
+            span.deinit();
+            self.allocator.destroy(span);
+            return err;
+        };
+
+        self.step_stack.append(self.allocator, span) catch |err| {
+            _ = self.step_spans.remove(event.sequence);
+            _ = self.child_spans.pop();
+            span.deinit();
+            self.allocator.destroy(span);
+            return err;
+        };
+    }
+
+    fn finishStepSpan(self: *RequestRecord, event: telemetry.StepEndEvent) !void {
+        if (self.step_spans.fetchRemove(event.sequence)) |kv| {
+            const span = kv.value;
+            span.end_time_unix_ns = span.start_time_unix_ns + event.duration_ms * std.time.ns_per_ms;
+            try span.pushAttribute(try Attribute.initString(self.allocator, "step.outcome", event.outcome));
+            try span.pushAttribute(try Attribute.initInt(self.allocator, "step.duration_ms", @as(i64, @intCast(event.duration_ms))));
+
+            if (std.mem.eql(u8, event.outcome, "Fail")) {
+                try span.setStatus(.@"error", "step failed");
+            } else if (span.status != .@"error") {
+                span.status = .ok;
+            }
+
+            self.removeActiveStep(span);
+        }
+    }
+
+    fn createEffectSpan(self: *RequestRecord, event: telemetry.EffectStartEvent) !void {
+        if (self.effect_spans.get(event.sequence) != null) return;
+        const parent_span_id = if (self.step_stack.items.len != 0)
+            self.step_stack.items[self.step_stack.items.len - 1].span_id
+        else
+            self.span_id;
+        const start_ns = event.timestamp_ms * std.time.ns_per_ms;
+        var span = try ChildSpan.create(self.allocator, event.kind, .client, parent_span_id, start_ns);
+        errdefer {
+            span.deinit();
+            self.allocator.destroy(span);
+        }
+
+        try span.pushAttribute(try Attribute.initInt(self.allocator, "effect.sequence", @as(i64, @intCast(event.sequence))));
+        try span.pushAttribute(try Attribute.initInt(self.allocator, "effect.need_sequence", @as(i64, @intCast(event.need_sequence))));
+        try span.pushAttribute(try Attribute.initString(self.allocator, "effect.kind", event.kind));
+        try span.pushAttribute(try Attribute.initInt(self.allocator, "effect.token", @as(i64, @intCast(event.token))));
+        try span.pushAttribute(try Attribute.initBool(self.allocator, "effect.required", event.required));
+        try span.pushAttribute(try Attribute.initString(self.allocator, "effect.target", event.target));
+        try span.pushAttribute(try Attribute.initString(self.allocator, "effect.mode", @tagName(event.mode)));
+        try span.pushAttribute(try Attribute.initString(self.allocator, "effect.join", @tagName(event.join)));
+        try span.pushAttribute(try Attribute.initInt(self.allocator, "effect.timeout_ms", @as(i64, @intCast(event.timeout_ms))));
+
+        self.child_spans.append(self.allocator, span) catch |err| {
+            span.deinit();
+            self.allocator.destroy(span);
+            return err;
+        };
+
+        self.effect_spans.put(event.sequence, span) catch |err| {
+            _ = self.child_spans.pop();
+            span.deinit();
+            self.allocator.destroy(span);
+            return err;
+        };
+    }
+
+    fn finishEffectSpan(self: *RequestRecord, event: telemetry.EffectEndEvent) !void {
+        if (self.effect_spans.fetchRemove(event.sequence)) |kv| {
+            const span = kv.value;
+            span.end_time_unix_ns = span.start_time_unix_ns + event.duration_ms * std.time.ns_per_ms;
+            try span.pushAttribute(try Attribute.initBool(self.allocator, "effect.success", event.success));
+            try span.pushAttribute(try Attribute.initInt(self.allocator, "effect.duration_ms", @as(i64, @intCast(event.duration_ms))));
+            if (event.bytes_len) |len| {
+                try span.pushAttribute(try Attribute.initInt(self.allocator, "effect.bytes", @as(i64, @intCast(len))));
+            }
+
+            if (event.error_ctx) |ctx| {
+                try span.pushAttribute(try Attribute.initString(self.allocator, "effect.error.what", ctx.what));
+                try span.pushAttribute(try Attribute.initString(self.allocator, "effect.error.key", ctx.key));
+                try span.setStatus(.@"error", ctx.what);
+            } else if (!event.success) {
+                try span.setStatus(.@"error", "effect failed");
+            } else if (span.status != .@"error") {
+                span.status = .ok;
+            }
+        }
+    }
+
+    fn removeActiveStep(self: *RequestRecord, span: *ChildSpan) void {
+        var i: usize = self.step_stack.items.len;
+        while (i > 0) {
+            i -= 1;
+            if (self.step_stack.items[i] == span) {
+                _ = self.step_stack.swapRemove(i);
+                return;
+            }
+        }
+    }
+
+    fn finalizeOpenSpans(self: *RequestRecord, end_time_unix_ns: u64) void {
+        var step_iter = self.step_spans.iterator();
+        while (step_iter.next()) |entry| {
+            const span = entry.value_ptr.*;
+            if (span.end_time_unix_ns <= span.start_time_unix_ns) {
+                span.end_time_unix_ns = end_time_unix_ns;
+            }
+            if (span.status != .@"error") {
+                span.setStatus(.@"error", "step span incomplete") catch {};
+            }
+        }
+
+        var effect_iter = self.effect_spans.iterator();
+        while (effect_iter.next()) |entry| {
+            const span = entry.value_ptr.*;
+            if (span.end_time_unix_ns <= span.start_time_unix_ns) {
+                span.end_time_unix_ns = end_time_unix_ns;
+            }
+            if (span.status != .@"error") {
+                span.setStatus(.@"error", "effect span incomplete") catch {};
+            }
+        }
+
+        self.step_stack.clearRetainingCapacity();
+        self.step_spans.clearRetainingCapacity();
+        self.effect_spans.clearRetainingCapacity();
     }
 
     fn applyRequestEnd(self: *RequestRecord, event: telemetry.RequestEndEvent) !void {
@@ -352,6 +572,8 @@ const RequestRecord = struct {
                 self.status = .ok;
             }
         }
+
+        self.finalizeOpenSpans(self.end_time_unix_ns);
     }
 
     fn setStatus(self: *RequestRecord, code: SpanStatusCode, message: []const u8) !void {
@@ -703,35 +925,43 @@ fn buildPayload(allocator: std.mem.Allocator, exporter: *const OtelExporter, rec
     try writeJsonString(&writer, exporter.scope_version);
     try writer.writeByte('}');
 
-    try writer.writeAll(",\"spans\":[{");
-    try writer.writeAll("\"traceId\":");
-    try writeHexQuoted(&writer, record.trace_id[0..]);
-    try writer.writeAll(",\"spanId\":");
-    try writeHexQuoted(&writer, record.span_id[0..]);
-    try writer.writeAll(",\"parentSpanId\":\"\"");
-    try writer.writeAll(",\"name\":");
-    try writeJsonString(&writer, record.span_name);
-    try writer.writeAll(",\"kind\":\"SPAN_KIND_SERVER\"");
-    try writer.writeAll(",\"startTimeUnixNano\":");
-    try writer.print("\"{d}\"", .{record.start_time_unix_ns});
-    try writer.writeAll(",\"endTimeUnixNano\":");
-    try writer.print("\"{d}\"", .{record.end_time_unix_ns});
+    try writer.writeAll(",\"spans\":[");
+    var first_span = true;
+    try writeSpanEntry(
+        &writer,
+        record.trace_id,
+        record.span_id,
+        null,
+        .server,
+        record.span_name,
+        record.start_time_unix_ns,
+        record.end_time_unix_ns,
+        record.attributes.items,
+        record.events.items,
+        record.status,
+        record.status_message,
+    );
+    first_span = false;
 
-    try writer.writeAll(",\"attributes\":");
-    try writeAttributes(&writer, record.attributes.items);
-
-    try writer.writeAll(",\"events\":");
-    try writeEvents(&writer, record.events.items);
-
-    try writer.writeAll(",\"status\":{\"code\":");
-    try writer.print("\"{s}\"", .{spanStatusCodeString(record.status)});
-    if (record.status_message) |msg| {
-        try writer.writeAll(",\"message\":");
-        try writeJsonString(&writer, msg);
+    for (record.child_spans.items) |span| {
+        if (!first_span) try writer.writeByte(',');
+        try writeSpanEntry(
+            &writer,
+            record.trace_id,
+            span.span_id,
+            span.parent_span_id,
+            span.kind,
+            span.name,
+            span.start_time_unix_ns,
+            span.end_time_unix_ns,
+            span.attributes.items,
+            span.events.items,
+            span.status,
+            span.status_message,
+        );
+        first_span = false;
     }
-    try writer.writeByte('}');
 
-    try writer.writeByte('}'); // close span object
     try writer.writeByte(']'); // close spans array
     try writer.writeByte('}'); // close scopeSpan object
     try writer.writeByte(']'); // close scopeSpans array
@@ -739,6 +969,57 @@ fn buildPayload(allocator: std.mem.Allocator, exporter: *const OtelExporter, rec
     try writer.writeByte(']'); // close resourceSpans array
     try writer.writeByte('}'); // close top-level object
     return buffer.toOwnedSlice(allocator);
+}
+
+fn writeSpanEntry(
+    writer: anytype,
+    trace_id: [16]u8,
+    span_id: [8]u8,
+    parent_span_id: ?[8]u8,
+    kind: SpanKind,
+    name: []const u8,
+    start_time_unix_ns: u64,
+    end_time_unix_ns: u64,
+    attributes: []const Attribute,
+    events: []const RequestEvent,
+    status: SpanStatusCode,
+    status_message: ?[]const u8,
+) !void {
+    try writer.writeByte('{');
+    try writer.writeAll("\"traceId\":");
+    try writeHexQuoted(writer, trace_id[0..]);
+    try writer.writeAll(",\"spanId\":");
+    try writeHexQuoted(writer, span_id[0..]);
+    try writer.writeAll(",\"parentSpanId\":");
+    if (parent_span_id) |pid| {
+        try writeHexQuoted(writer, pid[0..]);
+    } else {
+        try writer.writeAll("\"\"");
+    }
+    try writer.writeAll(",\"name\":");
+    try writeJsonString(writer, name);
+    try writer.writeAll(",\"kind\":");
+    try writer.print("\"{s}\"", .{spanKindString(kind)});
+    try writer.writeAll(",\"startTimeUnixNano\":");
+    try writer.print("\"{d}\"", .{start_time_unix_ns});
+    try writer.writeAll(",\"endTimeUnixNano\":");
+    try writer.print("\"{d}\"", .{end_time_unix_ns});
+
+    try writer.writeAll(",\"attributes\":");
+    try writeAttributes(writer, attributes);
+
+    try writer.writeAll(",\"events\":");
+    try writeEvents(writer, events);
+
+    try writer.writeAll(",\"status\":{\"code\":");
+    try writer.print("\"{s}\"", .{spanStatusCodeString(status)});
+    if (status_message) |msg| {
+        try writer.writeAll(",\"message\":");
+        try writeJsonString(writer, msg);
+    }
+    try writer.writeByte('}');
+
+    try writer.writeByte('}');
 }
 
 fn writeAttributes(writer: anytype, attrs: []const Attribute) !void {
@@ -811,6 +1092,14 @@ fn spanStatusCodeString(code: SpanStatusCode) []const u8 {
         .unset => "STATUS_CODE_UNSET",
         .ok => "STATUS_CODE_OK",
         .@"error" => "STATUS_CODE_ERROR",
+    };
+}
+
+fn spanKindString(kind: SpanKind) []const u8 {
+    return switch (kind) {
+        .server => "SPAN_KIND_SERVER",
+        .internal => "SPAN_KIND_INTERNAL",
+        .client => "SPAN_KIND_CLIENT",
     };
 }
 
