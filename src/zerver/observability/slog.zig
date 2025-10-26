@@ -84,12 +84,14 @@ pub const Attr = struct {
     }
 
     pub fn enumeration(key: []const u8, value: anytype) Attr {
-        const T = @TypeOf(value);
-        return switch (@typeInfo(T)) {
-            .Enum => .{ .key = key, .value = .{ .enum_tag = @tagName(value) } },
-            .Union => |union_info| switch (union_info.tag_type) {
-                null => @compileError("Attr.enumeration expects a tagged union"),
-                else => .{ .key = key, .value = .{ .enum_tag = @tagName(value) } },
+        const type_info = @typeInfo(@TypeOf(value));
+        return switch (type_info) {
+            .@"enum" => .{ .key = key, .value = .{ .enum_tag = @tagName(value) } },
+            .@"union" => |union_info| blk: {
+                if (union_info.tag_type == null) {
+                    @compileError("Attr.enumeration expects a tagged union");
+                }
+                break :blk .{ .key = key, .value = .{ .enum_tag = @tagName(value) } };
             },
             else => @compileError("Attr.enumeration expects an enum or tagged union"),
         };

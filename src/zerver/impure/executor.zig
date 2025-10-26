@@ -28,7 +28,7 @@ pub const ExecutionMode = enum {
 
 const ReactorNeedRunner = struct {
     const Completion = struct {
-    result: types.EffectResult,
+        result: types.EffectResult,
         required: bool,
         effect: *const types.Effect,
         sequence: usize,
@@ -573,7 +573,7 @@ pub const Executor = struct {
 
     pub fn init(
         allocator: std.mem.Allocator,
-    effect_handler: *const fn (*const types.Effect, u32) anyerror!types.EffectResult,
+        effect_handler: *const fn (*const types.Effect, u32) anyerror!types.EffectResult,
     ) Executor {
         return .{
             .allocator = allocator,
@@ -663,7 +663,7 @@ pub const Executor = struct {
         }
 
         // Track effect results by token (slot identifier)
-    var results = std.AutoHashMap(u32, types.EffectResult).init(ctx_base.allocator);
+        var results = std.AutoHashMap(u32, types.EffectResult).init(ctx_base.allocator);
         defer results.deinit();
 
         const total_effects = need.effects.len;
@@ -985,15 +985,23 @@ fn requiresComputePool(effect: types.Effect) bool {
 }
 
 fn effectQueueFailure(effect: types.Effect, err: anyerror) types.Error {
+    const kind: u16 = switch (err) {
+        reactor_jobs.SubmitError.QueueFull => types.ErrorCode.TooManyRequests,
+        else => types.ErrorCode.UpstreamUnavailable,
+    };
     return .{
-        .kind = types.ErrorCode.UpstreamUnavailable,
+        .kind = kind,
         .ctx = .{ .what = @tagName(effect), .key = @errorName(err) },
     };
 }
 
 fn continuationQueueFailure(err: anyerror) types.Error {
+    const kind: u16 = switch (err) {
+        reactor_jobs.SubmitError.QueueFull => types.ErrorCode.TooManyRequests,
+        else => types.ErrorCode.UpstreamUnavailable,
+    };
     return .{
-        .kind = types.ErrorCode.UpstreamUnavailable,
+        .kind = kind,
         .ctx = .{ .what = "continuation", .key = @errorName(err) },
     };
 }
