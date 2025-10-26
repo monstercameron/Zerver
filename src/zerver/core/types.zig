@@ -140,6 +140,15 @@ pub const Error = struct {
     ctx: ErrorCtx,
 };
 
+/// Effect result: either success payload bytes or failure metadata.
+pub const EffectResult = union(enum) {
+    success: struct {
+        bytes: []u8,
+        allocator: ?std.mem.Allocator,
+    },
+    failure: Error,
+};
+
 /// Retry policy with configurable parameters for fault tolerance.
 pub const Retry = struct {
     max: u8 = 0, // Maximum number of retries
@@ -231,6 +240,79 @@ pub const HttpPost = struct {
     required: bool = true,
 };
 
+/// HTTP HEAD effect.
+pub const HttpHead = struct {
+    url: []const u8,
+    headers: []const Header = &.{},
+    token: u32,
+    timeout_ms: u32 = 1000,
+    retry: Retry = .{},
+    required: bool = true,
+};
+
+/// HTTP PUT effect.
+pub const HttpPut = struct {
+    url: []const u8,
+    body: []const u8,
+    headers: []const Header = &.{},
+    token: u32,
+    timeout_ms: u32 = 1000,
+    retry: Retry = .{},
+    required: bool = true,
+};
+
+/// HTTP DELETE effect.
+pub const HttpDelete = struct {
+    url: []const u8,
+    body: []const u8 = "",
+    headers: []const Header = &.{},
+    token: u32,
+    timeout_ms: u32 = 1000,
+    retry: Retry = .{},
+    required: bool = true,
+};
+
+/// HTTP OPTIONS effect.
+pub const HttpOptions = struct {
+    url: []const u8,
+    headers: []const Header = &.{},
+    token: u32,
+    timeout_ms: u32 = 1000,
+    retry: Retry = .{},
+    required: bool = true,
+};
+
+/// HTTP TRACE effect.
+pub const HttpTrace = struct {
+    url: []const u8,
+    headers: []const Header = &.{},
+    token: u32,
+    timeout_ms: u32 = 1000,
+    retry: Retry = .{},
+    required: bool = true,
+};
+
+/// HTTP CONNECT effect.
+pub const HttpConnect = struct {
+    url: []const u8,
+    headers: []const Header = &.{},
+    token: u32,
+    timeout_ms: u32 = 1000,
+    retry: Retry = .{},
+    required: bool = true,
+};
+
+/// HTTP PATCH effect.
+pub const HttpPatch = struct {
+    url: []const u8,
+    body: []const u8,
+    headers: []const Header = &.{},
+    token: u32,
+    timeout_ms: u32 = 1000,
+    retry: Retry = .{},
+    required: bool = true,
+};
+
 /// Database GET effect.
 pub const DbGet = struct {
     key: []const u8,
@@ -285,16 +367,85 @@ pub const FileJsonWrite = struct {
     required: bool = true,
 };
 
+/// Compute-bound task scheduled on dedicated worker pool.
+pub const ComputeTask = struct {
+    operation: []const u8,
+    token: u32,
+    timeout_ms: u32 = 0,
+    required: bool = true,
+    metadata: ?*const anyopaque = null,
+};
+
+/// Accelerator task (GPU/TPU/etc.) routed to specialized queue.
+pub const AcceleratorTask = struct {
+    kernel: []const u8,
+    token: u32,
+    timeout_ms: u32 = 2000,
+    required: bool = true,
+    metadata: ?*const anyopaque = null,
+};
+
+/// Key-value cache read.
+pub const KvCacheGet = struct {
+    key: []const u8,
+    token: u32,
+    timeout_ms: u32 = 50,
+    required: bool = true,
+};
+
+/// Key-value cache write.
+pub const KvCacheSet = struct {
+    key: []const u8,
+    value: []const u8,
+    token: u32,
+    timeout_ms: u32 = 50,
+    required: bool = true,
+    ttl_ms: u32 = 0,
+};
+
+/// Key-value cache delete/invalidate.
+pub const KvCacheDelete = struct {
+    key: []const u8,
+    token: u32,
+    timeout_ms: u32 = 50,
+    required: bool = false,
+};
+
 /// An Effect represents a request to perform I/O (HTTP, DB, etc.).
 pub const Effect = union(enum) {
     http_get: HttpGet,
+    http_head: HttpHead,
     http_post: HttpPost,
+    http_put: HttpPut,
+    http_delete: HttpDelete,
+    http_options: HttpOptions,
+    http_trace: HttpTrace,
+    http_connect: HttpConnect,
+    http_patch: HttpPatch,
     db_get: DbGet,
     db_put: DbPut,
     db_del: DbDel,
     db_scan: DbScan,
     file_json_read: FileJsonRead,
     file_json_write: FileJsonWrite,
+    compute_task: ComputeTask,
+    accelerator_task: AcceleratorTask,
+    kv_cache_get: KvCacheGet,
+    kv_cache_set: KvCacheSet,
+    kv_cache_delete: KvCacheDelete,
+};
+
+/// Trigger condition for running compensating actions.
+pub const CompensationTrigger = enum {
+    on_failure,
+    on_cancel,
+};
+
+/// Description of a compensating action for saga-style orchestration.
+pub const Compensation = struct {
+    label: []const u8 = "",
+    trigger: CompensationTrigger = .on_failure,
+    effect: Effect,
 };
 
 /// Mode for executing multiple effects.
@@ -320,6 +471,7 @@ pub const Need = struct {
     mode: Mode,
     join: Join,
     continuation: ResumeFn,
+    compensations: []const Compensation = &.{},
 };
 
 pub const Decision = union(enum) {

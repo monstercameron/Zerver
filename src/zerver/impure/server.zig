@@ -142,7 +142,7 @@ pub const Server = struct {
     pub fn init(
         allocator: std.mem.Allocator,
         cfg: Config,
-        effect_handler: *const fn (*const types.Effect, u32) anyerror!executor_module.EffectResult,
+    effect_handler: *const fn (*const types.Effect, u32) anyerror!types.EffectResult,
     ) !Server {
         return Server{
             .allocator = allocator,

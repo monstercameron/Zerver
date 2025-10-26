@@ -4,7 +4,7 @@ const zerver = @import("../../zerver/root.zig");
 const slog = @import("../../zerver/observability/slog.zig");
 
 // Effect handler (mock database)
-pub fn effectHandler(effect: *const zerver.Effect, _timeout_ms: u32) anyerror!zerver.executor.EffectResult {
+pub fn effectHandler(effect: *const zerver.Effect, _timeout_ms: u32) anyerror!zerver.types.EffectResult {
     slog.debug("Processing database effect", &.{
         slog.Attr.string("effect_type", @tagName(effect.*)),
     });

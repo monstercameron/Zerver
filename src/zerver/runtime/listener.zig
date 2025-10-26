@@ -107,7 +107,7 @@ fn handleConnection(
         };
 
         slog.info("handleRequest completed", &.{
-            slog.Attr.string("result", @tagName(response_result)),
+            slog.Attr.enumeration("result", response_result),
         });
 
         // Send response based on type
