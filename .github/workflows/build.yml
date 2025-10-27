@@ -13,10 +13,10 @@ concurrency:
 jobs:
   build:
     runs-on: windows-latest
+
     env:
-      # Pin the Zig toolchain you want:
+      # Toolchain and cache location
       ZIG_VERSION: 0.15.2
-      # Put Zig caches in the workspace so caching works predictably
       ZIG_GLOBAL_CACHE_DIR: ${{ github.workspace }}\.zig-cache\global
 
     strategy:
@@ -26,11 +26,11 @@ jobs:
             artifact_path: zig-out\bin\zerver_example.exe
 
     steps:
-      - name: Checkout (no submodules)
+      - name: Checkout (with submodules)
         uses: actions/checkout@v4
         with:
-          submodules: false
-          fetch-depth: 1
+          submodules: recursive
+          fetch-depth: 0
 
       - name: Prepare Zig cache dir
         shell: pwsh
@@ -45,7 +45,6 @@ jobs:
           restore-keys: |
             zig-global-${{ runner.os }}-
 
-      # Primary installer (most reliable)
       - name: Install Zig (primary)
         id: setup_zig_primary
         uses: goto-bus-stop/setup-zig@v2
@@ -60,15 +59,14 @@ jobs:
           zig version
           zig env
 
-      # Fallback: manual download if the action fails (rare)
       - name: Manual install (Windows fallback)
         if: steps.setup_zig_primary.outcome != 'success'
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $zip = "zig-windows-x86_64-${env:ZIG_VERSION}.zip"
+          $zip = "zig-windows-x86_64-$env:ZIG_VERSION.zip"
           $urls = @(
-            "https://github.com/ziglang/zig/releases/download/${env:ZIG_VERSION}/$zip",
+            "https://github.com/ziglang/zig/releases/download/$env:ZIG_VERSION/$zip",
             "https://ziglang.org/builds/$zip"
           )
           $ok = $false
@@ -77,14 +75,11 @@ jobs:
               Write-Host "Downloading $u"
               Invoke-WebRequest -Uri $u -OutFile zig.zip -UseBasicParsing
               $ok = $true; break
-            } catch {
-              Start-Sleep -Seconds 2
-            }
+            } catch { Start-Sleep -Seconds 2 }
           }
-          if (-not $ok) { throw "Failed to download Zig $($env:ZIG_VERSION) from official mirrors." }
+          if (-not $ok) { throw "Failed to download Zig $env:ZIG_VERSION from official mirrors." }
           Expand-Archive -Path zig.zip -DestinationPath zigdl -Force
           $dir = Get-ChildItem zigdl | Select-Object -First 1
-          # put zig on PATH
           "$($dir.FullName)" | Out-File -FilePath $env:GITHUB_PATH -Append
           & "$($dir.FullName)\zig.exe" version
           & "$($dir.FullName)\zig.exe" env
@@ -122,7 +117,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ${{ env.ZIG_GLOBAL_CACHE_DIR }}
-          key: zig-global-${{ runner.os }}-${{ env:ZIG_VERSION }}
+          key: zig-global-${{ runner.os }}-${{ env.ZIG_VERSION }}
 
   release:
     needs: build
@@ -134,9 +129,10 @@ jobs:
 
       - name: Get version from config.json
         id: get_version
+        shell: bash
         run: |
           VERSION=$(jq -r '.project.version' config.json)
-          echo "VERSION=$VERSION" >> $GITHUB_ENV
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
 
       - name: Download executable artifact
         uses: actions/download-artifact@v4
@@ -147,8 +143,8 @@ jobs:
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
-          tag_name: v${{ env.VERSION }}
-          name: Release v${{ env.VERSION }}
+          tag_name: v{{ env.VERSION }}
+          name: Release v{{ env.VERSION }}
           body: |
             Automated release for version ${{ env.VERSION }}.
             See the CHANGELOG for details.
