@@ -49,7 +49,7 @@ jobs:
         id: setup_zig_primary
         uses: goto-bus-stop/setup-zig @v2
         with:
-          zig-version: ${{ env.ZIG_VERSION }}
+          version: ${{ env.ZIG_VERSION }}
         continue-on-error: true
 
       - name: Verify Zig (primary)
