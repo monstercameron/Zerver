@@ -33,7 +33,7 @@ pub const TaskSystem = struct {
             .allocator = config.allocator,
             .worker_count = config.continuation_workers,
             .queue_capacity = config.continuation_queue_capacity,
-            .label = "continuation_jobs",
+            .label = "step_jobs",
         });
         errdefer self.continuation.deinit();
 
@@ -57,7 +57,7 @@ pub const TaskSystem = struct {
         }
 
         slog.debug("task_system_init", &.{
-            slog.Attr.string("continuation_queue", self.continuation.label()),
+            slog.Attr.string("step_queue", self.continuation.label()),
             slog.Attr.string("compute_kind", @tagName(self.compute_kind)),
             slog.Attr.bool("has_compute", self.has_compute),
         });
@@ -77,14 +77,14 @@ pub const TaskSystem = struct {
         self.continuation.shutdown();
     }
 
-    pub fn submitContinuation(self: *TaskSystem, task: job.Job) TaskSystemError!void {
-        slog.debug("task_submit_continuation", &.{
+    pub fn submitStep(self: *TaskSystem, task: job.Job) TaskSystemError!void {
+        slog.debug("task_submit_step", &.{
             slog.Attr.string("queue", self.continuation.label()),
             slog.Attr.uint("job_ctx", @as(u64, @intCast(@intFromPtr(task.ctx)))),
             slog.Attr.uint("job_cb", @as(u64, @intCast(@intFromPtr(task.callback)))),
         });
         self.continuation.submit(task) catch |err| {
-            slog.err("task_submit_continuation_failed", &.{
+            slog.err("task_submit_step_failed", &.{
                 slog.Attr.string("queue", self.continuation.label()),
                 slog.Attr.string("error", @errorName(err)),
                 slog.Attr.uint("job_ctx", @as(u64, @intCast(@intFromPtr(task.ctx)))),
@@ -127,7 +127,7 @@ pub const TaskSystem = struct {
         };
     }
 
-    pub fn continuationJobs(self: *TaskSystem) *job.JobSystem {
+    pub fn stepJobs(self: *TaskSystem) *job.JobSystem {
         return &self.continuation;
     }
 

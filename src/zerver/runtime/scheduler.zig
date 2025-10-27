@@ -54,16 +54,16 @@ pub const Scheduler = struct {
         self.initialized = false;
     }
 
-    pub fn submitContinuation(self: *Scheduler, job: job_system.Job) task_system.TaskSystemError!void {
-        return self.inner.submitContinuation(job);
+    pub fn submitStep(self: *Scheduler, job: job_system.Job) task_system.TaskSystemError!void {
+        return self.inner.submitStep(job);
     }
 
     pub fn submitCompute(self: *Scheduler, job: job_system.Job) task_system.TaskSystemError!void {
         return self.inner.submitCompute(job);
     }
 
-    pub fn continuationJobs(self: *Scheduler) *job_system.JobSystem {
-        return self.inner.continuationJobs();
+    pub fn stepJobs(self: *Scheduler) *job_system.JobSystem {
+        return self.inner.stepJobs();
     }
 
     pub fn computeJobs(self: *Scheduler) ?*job_system.JobSystem {

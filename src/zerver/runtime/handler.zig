@@ -5,7 +5,6 @@
 const std = @import("std");
 const builtin = @import("builtin");
 const windows_sockets = @import("platform/windows_sockets.zig");
-const root = @import("../root.zig");
 const slog = @import("../observability/slog.zig");
 
 fn hexPreview(data: []const u8, out: []u8) []const u8 {

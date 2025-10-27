@@ -19,8 +19,15 @@ pub const EventKind = enum {
     effect_start,
     effect_end,
     need_scheduled,
-    continuation_resume,
+    step_resume,
     request_end,
+    effect_job_enqueued,
+    effect_job_started,
+    effect_job_completed,
+    step_job_enqueued,
+    step_job_started,
+    step_job_completed,
+    step_wait,
 };
 
 /// A single trace event.
@@ -36,6 +43,12 @@ pub const TraceEvent = struct {
     resume_ptr: ?usize = null,
     mode: ?[]const u8 = null,
     join: ?[]const u8 = null,
+    effect_sequence: ?usize = null,
+    job_queue: ?[]const u8 = null,
+    job_success: ?bool = null,
+    job_ctx: ?usize = null,
+    job_worker_index: ?usize = null,
+    job_decision: ?[]const u8 = null,
     // TODO: Memory/Safety - Ensure that string slices stored in TraceEvent (step_name, effect_kind, status, error_msg) have a lifetime at least as long as the Tracer itself, or are duplicated into the Tracer's allocator to prevent use-after-free issues.
 };
 
@@ -133,7 +146,7 @@ pub const Tracer = struct {
     }
 
     /// Record continuation resume event.
-    pub fn recordContinuationResume(
+    pub fn recordStepResume(
         self: *Tracer,
         need_sequence: usize,
         resume_ptr: usize,
@@ -141,7 +154,7 @@ pub const Tracer = struct {
         join: []const u8,
     ) void {
         self.recordEvent(.{
-            .kind = .continuation_resume,
+            .kind = .step_resume,
             .need_sequence = need_sequence,
             .resume_ptr = resume_ptr,
             .mode = mode,
@@ -157,6 +170,111 @@ pub const Tracer = struct {
         self.recordEvent(.{
             .kind = .request_end,
             .timestamp_ms = elapsed,
+        });
+    }
+
+    pub fn recordEffectJobQueued(self: *Tracer, need_sequence: usize, effect_sequence: usize, queue: []const u8) void {
+        self.recordEvent(.{
+            .kind = .effect_job_enqueued,
+            .timestamp_ms = 0,
+            .need_sequence = need_sequence,
+            .effect_sequence = effect_sequence,
+            .job_queue = queue,
+        });
+    }
+
+    pub fn recordEffectJobStarted(
+        self: *Tracer,
+        need_sequence: usize,
+        effect_sequence: usize,
+        queue: []const u8,
+        job_ctx: ?usize,
+        worker_index: ?usize,
+    ) void {
+        self.recordEvent(.{
+            .kind = .effect_job_started,
+            .timestamp_ms = 0,
+            .need_sequence = need_sequence,
+            .effect_sequence = effect_sequence,
+            .job_queue = queue,
+            .job_ctx = job_ctx,
+            .job_worker_index = worker_index,
+        });
+    }
+
+    pub fn recordEffectJobCompleted(
+        self: *Tracer,
+        need_sequence: usize,
+        effect_sequence: usize,
+        queue: []const u8,
+        success: bool,
+        job_ctx: ?usize,
+        worker_index: ?usize,
+    ) void {
+        self.recordEvent(.{
+            .kind = .effect_job_completed,
+            .timestamp_ms = 0,
+            .need_sequence = need_sequence,
+            .effect_sequence = effect_sequence,
+            .job_queue = queue,
+            .job_success = success,
+            .job_ctx = job_ctx,
+            .job_worker_index = worker_index,
+            .status = if (success) "success" else "failure",
+        });
+    }
+
+    pub fn recordStepJobEnqueued(self: *Tracer, need_sequence: usize, job_ctx: usize, queue: []const u8) void {
+        self.recordEvent(.{
+            .kind = .step_job_enqueued,
+            .timestamp_ms = 0,
+            .need_sequence = need_sequence,
+            .job_ctx = job_ctx,
+            .job_queue = queue,
+        });
+    }
+
+    pub fn recordStepJobStarted(
+        self: *Tracer,
+        need_sequence: usize,
+        job_ctx: usize,
+        queue: []const u8,
+        worker_index: ?usize,
+    ) void {
+        self.recordEvent(.{
+            .kind = .step_job_started,
+            .timestamp_ms = 0,
+            .need_sequence = need_sequence,
+            .job_ctx = job_ctx,
+            .job_queue = queue,
+            .job_worker_index = worker_index,
+        });
+    }
+
+    pub fn recordStepJobCompleted(
+        self: *Tracer,
+        need_sequence: usize,
+        job_ctx: usize,
+        queue: []const u8,
+        worker_index: ?usize,
+        decision: []const u8,
+    ) void {
+        self.recordEvent(.{
+            .kind = .step_job_completed,
+            .timestamp_ms = 0,
+            .need_sequence = need_sequence,
+            .job_ctx = job_ctx,
+            .job_queue = queue,
+            .job_worker_index = worker_index,
+            .job_decision = decision,
+        });
+    }
+
+    pub fn recordStepWait(self: *Tracer, need_sequence: usize) void {
+        self.recordEvent(.{
+            .kind = .step_wait,
+            .timestamp_ms = 0,
+            .need_sequence = need_sequence,
         });
     }
 
@@ -251,6 +369,42 @@ pub const Tracer = struct {
                 try writer.writeByte(',');
                 try writer.writeAll("\"join\":");
                 try writeJsonString(&writer, join);
+            }
+
+            if (event.effect_sequence) |effect_sequence| {
+                try writer.writeByte(',');
+                try writer.writeAll("\"effect_sequence\":");
+                try writer.print("{}", .{effect_sequence});
+            }
+
+            if (event.job_queue) |queue| {
+                try writer.writeByte(',');
+                try writer.writeAll("\"job_queue\":");
+                try writeJsonString(&writer, queue);
+            }
+
+            if (event.job_success) |success| {
+                try writer.writeByte(',');
+                try writer.writeAll("\"job_success\":");
+                try writer.writeAll(if (success) "true" else "false");
+            }
+
+            if (event.job_ctx) |job_context| {
+                try writer.writeByte(',');
+                try writer.writeAll("\"job_ctx\":");
+                try writer.print("{}", .{job_context});
+            }
+
+            if (event.job_worker_index) |worker_idx| {
+                try writer.writeByte(',');
+                try writer.writeAll("\"job_worker_index\":");
+                try writer.print("{}", .{worker_idx});
+            }
+
+            if (event.job_decision) |job_decision| {
+                try writer.writeByte(',');
+                try writer.writeAll("\"job_decision\":");
+                try writeJsonString(&writer, job_decision);
             }
 
             try writer.writeByte('}');

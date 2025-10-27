@@ -82,7 +82,7 @@ pub fn initializeServer(allocator: std.mem.Allocator) !Initialization {
 
     const reactor_cfg = app_config.reactor;
     slog.info("reactor_config", &[_]slog.Attr{
-        slog.Attr.@"bool"("enabled", reactor_cfg.enabled),
+        slog.Attr.bool("enabled", reactor_cfg.enabled),
         slog.Attr.uint("continuation_workers", reactor_cfg.continuation_pool.size),
         slog.Attr.uint("continuation_queue", reactor_cfg.continuation_pool.queue_capacity),
         slog.Attr.uint("effector_workers", reactor_cfg.effector_pool.size),

@@ -30,6 +30,7 @@ pub const CtxBase = struct {
 
     // Observability
     request_id: []const u8 = "",
+    user_sub: []const u8 = "",
     start_time: i64, // milliseconds
     status_code: u16 = 200,
     request_bytes: usize = 0,
@@ -112,6 +113,10 @@ pub const CtxBase = struct {
         self.request_id = id;
     }
 
+    pub fn user(self: *CtxBase) []const u8 {
+        return self.user_sub;
+    }
+
     pub fn status(self: *CtxBase) u16 {
         return self.status_code;
     }
@@ -156,8 +161,18 @@ pub const CtxBase = struct {
     }
 
     pub fn setUser(self: *CtxBase, sub: []const u8) void {
-        _ = self.allocator.dupe(u8, sub) catch return;
-        // TODO: store user sub somewhere
+        const duped = self.allocator.dupe(u8, sub) catch return;
+        self.user_sub = duped;
+    }
+
+    pub fn runExitCallbacks(self: *CtxBase) void {
+        var i = self.exit_cbs.items.len;
+        while (i > 0) {
+            i -= 1;
+            const cb = self.exit_cbs.items[i];
+            cb(self);
+        }
+        self.exit_cbs.clearRetainingCapacity();
     }
 
     pub fn idempotencyKey(self: *CtxBase) []const u8 {
@@ -304,6 +319,8 @@ pub fn CtxView(comptime spec: anytype) type {
 
     return struct {
         base: *CtxBase,
+        pub const __reads = reads;
+        pub const __writes = writes;
 
         /// Require a slot to be populated (must be in .reads or .writes)
         /// Returns error.SlotMissing if the slot was not previously written

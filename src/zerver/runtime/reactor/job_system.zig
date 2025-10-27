@@ -16,6 +16,11 @@ pub const Job = struct {
     ctx: *anyopaque,
 };
 
+pub const WorkerInfo = struct {
+    queue: []const u8,
+    worker_index: usize,
+};
+
 pub const InitOptions = struct {
     allocator: std.mem.Allocator,
     worker_count: usize,
@@ -136,6 +141,10 @@ pub const JobSystem = struct {
     }
 
     fn workerMain(self: *JobSystem, worker_index: usize) !void {
+        const prev_state = tls_worker_state;
+        tls_worker_state = .{ .system = self, .worker_index = worker_index };
+        defer tls_worker_state = prev_state;
+
         slog.debug("job_worker_start", &.{
             slog.Attr.string("queue", self.queue_label),
             slog.Attr.uint("worker", @as(u64, @intCast(worker_index))),
@@ -215,6 +224,23 @@ pub const JobSystem = struct {
         return self.queue_label;
     }
 };
+
+const WorkerState = struct {
+    system: *JobSystem,
+    worker_index: usize,
+};
+
+threadlocal var tls_worker_state: ?WorkerState = null;
+
+pub fn currentWorkerInfo() ?WorkerInfo {
+    if (tls_worker_state) |state| {
+        return WorkerInfo{
+            .queue = state.system.label(),
+            .worker_index = state.worker_index,
+        };
+    }
+    return null;
+}
 
 const JobQueue = struct {
     allocator: std.mem.Allocator,
