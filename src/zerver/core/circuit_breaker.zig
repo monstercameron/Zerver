@@ -348,4 +348,3 @@ pub fn testCircuitBreakerPool() !void {
     slog.info("Circuit breaker pool test: manages multiple independent breakers", &.{});
     slog.info("Circuit breaker pool tests completed successfully", &.{});
 }
-
