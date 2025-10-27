@@ -6,6 +6,10 @@ on:
   pull_request:
     branches: [ main ]
 
+concurrency:
+  group: zig-ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
     strategy:
@@ -16,25 +20,99 @@ jobs:
             artifact_path: zig-out/bin/zerver_example.exe
     runs-on: ${{ matrix.os }}
 
+    env:
+      ZIG_VERSION: 0.15.2 # Fixed Zig version for now, can be matrixed later
+      ZIG_GLOBAL_CACHE_DIR: ${{ github.workspace }}/.zig-cache/global
+      ZIG_LOCAL_CACHE_DIR: ${{ github.workspace }}/.zig-cache/local
+
     steps:
       - uses: actions/checkout@v4
 
-      - name: Cache Zig build cache
-        id: cache-zig
+      - name: Restore Zig global cache
         uses: actions/cache@v4
         with:
           path: |
-            zig-cache
-            ~/.cache/zig
-            ~/AppData/Local/zig
-          key: ${{ runner.os }}-zig-${{ hashFiles('build.zig', 'main.zig', 'src/**', 'tests/**', 'examples/**', 'third_party/libuv/**') }}
-          restore-keys: |
-            ${{ runner.os }}-zig-
+            ${{ env.ZIG_GLOBAL_CACHE_DIR }}
+          key: zig-global-${{ runner.os }}-${{ env.ZIG_VERSION }}
+          restore-keys: zig-global-${{ runner.os }}-
 
-      - name: Install Zig
-        uses: mlugg/setup-zig@v1
+      - name: Restore Zig global cache
+        uses: actions/cache@v4
         with:
-          version: 0.15.2
+          path: |
+            ${{ env.ZIG_GLOBAL_CACHE_DIR }}
+          key: zig-global-${{ runner.os }}-${{ env.ZIG_VERSION }}
+          restore-keys: zig-global-${{ runner.os }}-
+
+      # ---------- Primary installer with retry ----------
+      - name: Install Zig (primary, with retry)
+        id: setup_zig_primary
+        uses: goto-bus-stop/setup-zig @v2
+        with:
+          zig-version: ${{ env.ZIG_VERSION }}
+        continue-on-error: true
+
+      - name: Verify Zig (primary)
+        id: verify_primary
+        if: steps.setup_zig_primary.outcome == 'success'
+        run: |
+          zig version
+          zig env
+
+      # ---------- Fallback installer (mlugg) ----------
+      - name: Install Zig (fallback action)
+        id: setup_zig_fallback
+        if: steps.setup_zig_primary.outcome != 'success'
+        uses: mlugg/setup-zig @v1
+        with:
+          version: ${{ env.ZIG_VERSION }}
+        continue-on-error: true
+
+      - name: Verify Zig (fallback action)
+        id: verify_fallback
+        if: steps.setup_zig_primary.outcome != 'success' && steps.setup_zig_fallback.outcome == 'success'
+        run: |
+          zig version
+          zig env
+
+      # ---------- Final fallback: manual download from official sources ----------
+      # Windows manual install
+      - name: Manual install (Windows)
+        if: runner.os == 'Windows' && steps.setup_zig_primary.outcome != 'success' && steps.setup_zig_fallback.outcome != 'success'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $zip = "zig-windows-x86_64-${env:ZIG_VERSION}.zip"
+          $urls = @(
+            "https://github.com/ziglang/zig/releases/download/${env:ZIG_VERSION}/$zip",
+            "https://ziglang.org/builds/$zip"
+          )
+          $ok = $false
+          foreach ($u in $urls) {
+            try {
+              Write-Host "Downloading $u"
+              Invoke-WebRequest -Uri $u -OutFile zig.zip -UseBasicParsing
+              $ok = $true; break
+            } catch { Start-Sleep -Seconds 2 }
+          }
+          if (-not $ok) { throw "Failed to download Zig $($env:ZIG_VERSION) from official mirrors." }
+
+          # Expand to zigdl and add to PATH
+          Expand-Archive -Path zig.zip -DestinationPath zigdl -Force
+          $dir = Get-ChildItem zigdl | Select-Object -First 1
+          echo "$($dir.FullName)" | Out-File -FilePath $env:GITHUB_PATH -Append
+
+          & "$($dir.FullName)\zig.exe" version
+          & "$($dir.FullName)\zig.exe" env
+
+      # ---------- Final verification (must pass) ----------
+      - name: Confirm Zig is available
+        shell: bash
+        run: |
+          set -e
+          command -v zig || (echo "zig not on PATH" && exit 1)
+          zig version
+          zig env
 
       # - name: Check Semantic Version Bump
       #   id: check_semver
@@ -85,6 +163,15 @@ jobs:
           name: ${{ matrix.artifact_name }}
           path: ${{ matrix.artifact_path }}
           if-no-files-found: error
+
+      # ---------- Save updated global cache ----------
+      - name: Save Zig global cache
+        if: always()
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ env.ZIG_GLOBAL_CACHE_DIR }}
+          key: zig-global-${{ runner.os }}-${{ env.ZIG_VERSION }}
 
   release:
     needs: build # This job depends on the 'build' job
