@@ -20,13 +20,10 @@ jobs:
             artifact_path: zig-out/bin/zerver_example.exe
     runs-on: ${{ matrix.os }}
 
-    env:
-      ZIG_VERSION: 0.15.2 # Fixed Zig version for now, can be matrixed later
-      ZIG_GLOBAL_CACHE_DIR: ${{ github.workspace }}/.zig-cache/global
-      ZIG_LOCAL_CACHE_DIR: ${{ github.workspace }}/.zig-cache/local
-
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: true
 
       - name: Restore Zig global cache
         uses: actions/cache@v4
