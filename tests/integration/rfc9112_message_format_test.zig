@@ -9,30 +9,30 @@ const TestServer = struct {
     server: zerver.Server,
 
     pub fn init(allocator: std.mem.Allocator) !TestServer {
-        const default_effect_handler = struct {
-            fn handle(_: *const zerver.Effect, _: u32) anyerror!zerver.types.EffectResult {
+        const effect_handler = struct {
+            fn handle(_: *const zerver.Effect, _: u32) anyerror!zerver.executor.EffectResult {
                 const empty = [_]u8{};
-                return .{ .success = .{ .bytes = @constCast(empty[0..]), .allocator = null } };
+                return .{ .success = .{ .bytes = empty[0..], .allocator = null } };
             }
         }.handle;
 
-        const default_error_renderer = struct {
-            fn render(ctx: *zerver.CtxBase) anyerror!zerver.Decision {
-                _ = ctx;
-                return zerver.done(.{ .status = 500, .body = .{ .complete = "Internal Server Error" } });
+        const error_handler = struct {
+            fn handle(_: *zerver.CtxBase) anyerror!zerver.Decision {
+                return zerver.done(.{
+                    .status = 500,
+                    .body = .{ .complete = "Internal Server Error" },
+                });
             }
-        }.render;
+        }.handle;
 
         const config = zerver.Config{
-            .addr = .{ .ip = .{ 127, 0, 0, 1 }, .port = 8080 },
-            .on_error = default_error_renderer,
+            .addr = .{ .ip = .{ 127, 0, 0, 1 }, .port = 0 },
+            .on_error = error_handler,
         };
 
-        var server = try zerver.Server.init(allocator, config, default_effect_handler);
-
-        return TestServer{
+        return .{
             .allocator = allocator,
-            .server = server,
+            .server = try zerver.Server.init(allocator, config, effect_handler),
         };
     }
 
@@ -50,21 +50,21 @@ const TestServer = struct {
 
         const result = try self.server.handleRequest(request_text, arena.allocator());
         return switch (result) {
-            .complete => |bytes| try allocator.dupe(u8, bytes),
+            .complete => |body| try allocator.dupe(u8, body),
             .streaming => HarnessError.UnexpectedStreamingResponse,
         };
     }
 };
 
-fn expectStartsWith(response: []const u8, prefix: []const u8) !void {
-    try std.testing.expect(std.mem.startsWith(u8, response, prefix));
+fn expectStartsWith(haystack: []const u8, needle: []const u8) !void {
+    try std.testing.expect(std.mem.startsWith(u8, haystack, needle));
 }
 
-fn expectEndsWith(response: []const u8, suffix: []const u8) !void {
-    try std.testing.expect(std.mem.endsWith(u8, response, suffix));
+fn expectEndsWith(haystack: []const u8, needle: []const u8) !void {
+    try std.testing.expect(std.mem.endsWith(u8, haystack, needle));
 }
 
-test "Request Line - Valid" {
+fn withServer(test_fn: anytype) !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
@@ -72,501 +72,433 @@ test "Request Line - Valid" {
     var server = try TestServer.init(allocator);
     defer server.deinit();
 
-    try server.addRoute(.GET, "/test", .{
-        .steps = &.{
-            zerver.step("test", struct {
-                fn handler(ctx: *zerver.CtxBase) !zerver.Decision {
-                    _ = ctx;
-                    return zerver.done(.{ .body = .{ .complete = "ok" } });
-                }
-            }.handler),
-        },
+    try test_fn(&server, allocator);
+}
+
+fn addRouteStep(
+    server: *TestServer,
+    method: zerver.Method,
+    path: []const u8,
+    comptime name: []const u8,
+    handler: anytype,
+) !void {
+    try server.addRoute(method, path, .{
+        .steps = &.{ zerver.step(name, handler) },
     });
+}
+
+fn freeResponse(allocator: std.mem.Allocator, response: []u8) void {
+    allocator.free(response);
+}
+
+fn requestLineValid(server: *TestServer, allocator: std.mem.Allocator) !void {
+    try addRouteStep(server, .GET, "/test", "request_line_valid", struct {
+        fn handler(ctx: *zerver.CtxBase) !zerver.Decision {
+            _ = ctx;
+            return zerver.done(.{ .body = .{ .complete = "ok" } });
+        }
+    }.handler);
 
     const request_text =
         "GET /test HTTP/1.1\r\n"
         ++ "Host: localhost\r\n"
         ++ "\r\n";
 
-    const response_text = try server.handle(allocator, request_text);
-    defer allocator.free(response_text);
-    try expectStartsWith(response_text, "HTTP/1.1 200 OK");
+    const response = try server.handle(allocator, request_text);
+    defer freeResponse(allocator, response);
+    try expectStartsWith(response, "HTTP/1.1 200 OK");
 }
 
-test "Request Line - Invalid Method" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
-    const allocator = gpa.allocator();
-
-    var server = try TestServer.init(allocator);
-    defer server.deinit();
-
+fn requestLineInvalidMethod(server: *TestServer, allocator: std.mem.Allocator) !void {
     const request_text =
         "INVALID /test HTTP/1.1\r\n"
         ++ "Host: localhost\r\n"
         ++ "\r\n";
 
-    const response_text = try server.handle(allocator, request_text);
-    defer allocator.free(response_text);
-    try std.testing.expect(std.mem.startsWith(u8, response_text, "HTTP/1.1 400 Bad Request"));
+    const response = try server.handle(allocator, request_text);
+    defer freeResponse(allocator, response);
+    try expectStartsWith(response, "HTTP/1.1 400 Bad Request");
 }
 
-test "Request Line - Missing Path" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
-    const allocator = gpa.allocator();
-
-    var server = try TestServer.init(allocator);
-    defer server.deinit();
-
+fn requestLineMissingPath(server: *TestServer, allocator: std.mem.Allocator) !void {
     const request_text =
         "GET HTTP/1.1\r\n"
         ++ "Host: localhost\r\n"
         ++ "\r\n";
 
-    const response_text = try server.handle(allocator, request_text);
-    defer allocator.free(response_text);
-    try std.testing.expect(std.mem.startsWith(u8, response_text, "HTTP/1.1 400 Bad Request"));
+    const response = try server.handle(allocator, request_text);
+    defer freeResponse(allocator, response);
+    try expectStartsWith(response, "HTTP/1.1 400 Bad Request");
 }
 
-test "Request Line - Missing Version" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
-    const allocator = gpa.allocator();
-
-    var server = try TestServer.init(allocator);
-    defer server.deinit();
-
+fn requestLineMissingVersion(server: *TestServer, allocator: std.mem.Allocator) !void {
     const request_text =
         "GET /test\r\n"
         ++ "Host: localhost\r\n"
         ++ "\r\n";
 
-    const response_text = try server.handle(allocator, request_text);
-    defer allocator.free(response_text);
-    try std.testing.expect(std.mem.startsWith(u8, response_text, "HTTP/1.1 400 Bad Request"));
+    const response = try server.handle(allocator, request_text);
+    defer freeResponse(allocator, response);
+    try expectStartsWith(response, "HTTP/1.1 400 Bad Request");
 }
 
-test "Request Line - Extra Whitespace" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    defer _ = gpa.deinit();
-    const allocator = gpa.allocator();
-
-    var server = try TestServer.init(allocator);
-    defer server.deinit();
-
-    try server.addRoute(.GET, "/test", .{
-        .steps = &.{
-            zerver.step("test", struct {
-                fn handler(ctx: *zerver.CtxBase) !zerver.Decision {
-                    _ = ctx;
-                    return zerver.done(.{ .body = .{ .complete = "ok" } });
-                }
-            }.handler),
-        },
-    });
+fn requestLineExtraWhitespace(server: *TestServer, allocator: std.mem.Allocator) !void {
+    try addRouteStep(server, .GET, "/test", "request_line_extra_ws", struct {
+        fn handler(ctx: *zerver.CtxBase) !zerver.Decision {
+            _ = ctx;
+            return zerver.done(.{ .body = .{ .complete = "ok" } });
+        }
+    }.handler);
 
     const request_text =
         "GET    /test   HTTP/1.1\r\n"
         ++ "Host: localhost\r\n"
         ++ "\r\n";
 
-    const response_text = try server.handle(allocator, request_text);
-    defer allocator.free(response_text);
-    try std.testing.expect(std.mem.startsWith(u8, response_text, "HTTP/1.1 200 OK"));
+    const response = try server.handle(allocator, request_text);
+    defer freeResponse(allocator, response);
+    try expectStartsWith(response, "HTTP/1.1 200 OK");
+}
+
+fn headerSingle(server: *TestServer, allocator: std.mem.Allocator) !void {
+    try addRouteStep(server, .GET, "/test", "header_single", struct {
+        fn handler(ctx: *zerver.CtxBase) !zerver.Decision {
+            const value = ctx.header("X-Test-Header");
+            return zerver.done(.{ .body = .{ .complete = value orelse "" } });
+        }
+    }.handler);
+
+    const request_text =
+        "GET /test HTTP/1.1\r\n"
+        ++ "Host: localhost\r\n"
+        ++ "X-Test-Header: hello\r\n"
+        ++ "\r\n";
+
+    const response = try server.handle(allocator, request_text);
+    defer freeResponse(allocator, response);
+    try expectEndsWith(response, "hello");
+}
+
+fn headerMultiple(server: *TestServer, allocator: std.mem.Allocator) !void {
+    try addRouteStep(server, .GET, "/test", "header_multiple", struct {
+        fn handler(ctx: *zerver.CtxBase) !zerver.Decision {
+            const v1 = ctx.header("X-Test-Header-1");
+            const v2 = ctx.header("X-Test-Header-2");
+            const body = try std.fmt.allocPrint(ctx.allocator, "{s}{s}", .{ v1 orelse "", v2 orelse "" });
+            return zerver.done(.{ .body = .{ .complete = body } });
+        }
+    }.handler);
+
+    const request_text =
+        "GET /test HTTP/1.1\r\n"
+        ++ "Host: localhost\r\n"
+        ++ "X-Test-Header-1: hello\r\n"
+        ++ "X-Test-Header-2: world\r\n"
+        ++ "\r\n";
+
+    const response = try server.handle(allocator, request_text);
+    defer freeResponse(allocator, response);
+    try expectEndsWith(response, "helloworld");
+}
+
+fn headerCaseInsensitive(server: *TestServer, allocator: std.mem.Allocator) !void {
+    try addRouteStep(server, .GET, "/test", "header_case", struct {
+        fn handler(ctx: *zerver.CtxBase) !zerver.Decision {
+            const value = ctx.header("x-test-header");
+            return zerver.done(.{ .body = .{ .complete = value orelse "" } });
+        }
+    }.handler);
+
+    const request_text =
+        "GET /test HTTP/1.1\r\n"
+        ++ "Host: localhost\r\n"
+        ++ "X-TEST-HEADER: hello\r\n"
+        ++ "\r\n";
+
+    const response = try server.handle(allocator, request_text);
+    defer freeResponse(allocator, response);
+    try expectEndsWith(response, "hello");
+}
+
+fn headerInvalidCharacters(server: *TestServer, allocator: std.mem.Allocator) !void {
+    const request_text =
+        "GET /test HTTP/1.1\r\n"
+        ++ "Host: localhost\r\n"
+        ++ "X-Test-Header@: hello\r\n"
+        ++ "\r\n";
+
+    const response = try server.handle(allocator, request_text);
+    defer freeResponse(allocator, response);
+    try expectStartsWith(response, "HTTP/1.1 400 Bad Request");
+}
+
+fn contentLengthValid(server: *TestServer, allocator: std.mem.Allocator) !void {
+    try addRouteStep(server, .POST, "/test", "content_length_valid", struct {
+        fn handler(ctx: *zerver.CtxBase) !zerver.Decision {
+            return zerver.done(.{ .body = .{ .complete = ctx.body } });
+        }
+    }.handler);
+
+    const request_text =
+        "POST /test HTTP/1.1\r\n"
+        ++ "Host: localhost\r\n"
+        ++ "Content-Length: 5\r\n"
+        ++ "\r\n"
+        ++ "hello";
+
+    const response = try server.handle(allocator, request_text);
+    defer freeResponse(allocator, response);
+    try expectEndsWith(response, "hello");
+}
+
+fn contentLengthZero(server: *TestServer, allocator: std.mem.Allocator) !void {
+    try addRouteStep(server, .POST, "/test", "content_length_zero", struct {
+        fn handler(ctx: *zerver.CtxBase) !zerver.Decision {
+            return zerver.done(.{ .body = .{ .complete = ctx.body } });
+        }
+    }.handler);
+
+    const request_text =
+        "POST /test HTTP/1.1\r\n"
+        ++ "Host: localhost\r\n"
+        ++ "Content-Length: 0\r\n"
+        ++ "\r\n";
+
+    const response = try server.handle(allocator, request_text);
+    defer freeResponse(allocator, response);
+    try expectEndsWith(response, "");
+}
+
+fn contentLengthInvalid(server: *TestServer, allocator: std.mem.Allocator) !void {
+    const request_text =
+        "POST /test HTTP/1.1\r\n"
+        ++ "Host: localhost\r\n"
+        ++ "Content-Length: abc\r\n"
+        ++ "\r\n"
+        ++ "hello";
+
+    const response = try server.handle(allocator, request_text);
+    defer freeResponse(allocator, response);
+    try expectStartsWith(response, "HTTP/1.1 400 Bad Request");
+}
+
+fn transferEncodingContentLengthConflict(server: *TestServer, allocator: std.mem.Allocator) !void {
+    const request_text =
+        "POST /test HTTP/1.1\r\n"
+        ++ "Host: localhost\r\n"
+        ++ "Transfer-Encoding: chunked\r\n"
+        ++ "Content-Length: 5\r\n"
+        ++ "\r\n"
+        ++ "5\r\nhello\r\n0\r\n\r\n";
+
+    const response = try server.handle(allocator, request_text);
+    defer freeResponse(allocator, response);
+    try expectStartsWith(response, "HTTP/1.1 400 Bad Request");
+}
+
+fn chunkedSingle(server: *TestServer, allocator: std.mem.Allocator) !void {
+    try addRouteStep(server, .POST, "/test", "chunked_single", struct {
+        fn handler(ctx: *zerver.CtxBase) !zerver.Decision {
+            return zerver.done(.{ .body = .{ .complete = ctx.body } });
+        }
+    }.handler);
+
+    const request_text =
+        "POST /test HTTP/1.1\r\n"
+        ++ "Host: localhost\r\n"
+        ++ "Transfer-Encoding: chunked\r\n"
+        ++ "\r\n"
+        ++ "5\r\nhello\r\n"
+        ++ "0\r\n"
+        ++ "\r\n";
+
+    const response = try server.handle(allocator, request_text);
+    defer freeResponse(allocator, response);
+    try expectEndsWith(response, "hello");
+}
+
+fn chunkedMultiple(server: *TestServer, allocator: std.mem.Allocator) !void {
+    try addRouteStep(server, .POST, "/test", "chunked_multiple", struct {
+        fn handler(ctx: *zerver.CtxBase) !zerver.Decision {
+            return zerver.done(.{ .body = .{ .complete = ctx.body } });
+        }
+    }.handler);
+
+    const request_text =
+        "POST /test HTTP/1.1\r\n"
+        ++ "Host: localhost\r\n"
+        ++ "Transfer-Encoding: chunked\r\n"
+        ++ "\r\n"
+        ++ "5\r\nhello\r\n"
+        ++ "5\r\nworld\r\n"
+        ++ "0\r\n"
+        ++ "\r\n";
+
+    const response = try server.handle(allocator, request_text);
+    defer freeResponse(allocator, response);
+    try expectEndsWith(response, "helloworld");
+}
+
+fn chunkedWithExtensions(server: *TestServer, allocator: std.mem.Allocator) !void {
+    try addRouteStep(server, .POST, "/test", "chunked_extensions", struct {
+        fn handler(ctx: *zerver.CtxBase) !zerver.Decision {
+            return zerver.done(.{ .body = .{ .complete = ctx.body } });
+        }
+    }.handler);
+
+    const request_text =
+        "POST /test HTTP/1.1\r\n"
+        ++ "Host: localhost\r\n"
+        ++ "Transfer-Encoding: chunked\r\n"
+        ++ "\r\n"
+        ++ "5;ext1=foo\r\nhello\r\n"
+        ++ "0\r\n"
+        ++ "\r\n";
+
+    const response = try server.handle(allocator, request_text);
+    defer freeResponse(allocator, response);
+    try expectEndsWith(response, "hello");
+}
+
+fn chunkedWithTrailer(server: *TestServer, allocator: std.mem.Allocator) !void {
+    try addRouteStep(server, .POST, "/test", "chunked_trailer", struct {
+        fn handler(ctx: *zerver.CtxBase) !zerver.Decision {
+            const trailer_val = ctx.header("X-Trailer");
+            const body = try std.fmt.allocPrint(ctx.allocator, "{s}{s}", .{ ctx.body, trailer_val orelse "" });
+            return zerver.done(.{ .body = .{ .complete = body } });
+        }
+    }.handler);
+
+    const request_text =
+        "POST /test HTTP/1.1\r\n"
+        ++ "Host: localhost\r\n"
+        ++ "Transfer-Encoding: chunked\r\n"
+        ++ "Trailer: X-Trailer\r\n"
+        ++ "\r\n"
+        ++ "5\r\nhello\r\n"
+        ++ "0\r\n"
+        ++ "X-Trailer: world\r\n"
+        ++ "\r\n";
+
+    const response = try server.handle(allocator, request_text);
+    defer freeResponse(allocator, response);
+    try expectEndsWith(response, "helloworld");
+}
+
+fn chunkedUndeclaredTrailer(server: *TestServer, allocator: std.mem.Allocator) !void {
+    try addRouteStep(server, .POST, "/test", "chunked_trailer_invalid", struct {
+        fn handler(ctx: *zerver.CtxBase) !zerver.Decision {
+            return zerver.done(.{ .body = .{ .complete = ctx.body } });
+        }
+    }.handler);
+
+    const request_text =
+        "POST /test HTTP/1.1\r\n"
+        ++ "Host: localhost\r\n"
+        ++ "Transfer-Encoding: chunked\r\n"
+        ++ "Trailer: X-Allowed\r\n"
+        ++ "\r\n"
+        ++ "5\r\nhello\r\n"
+        ++ "0\r\n"
+        ++ "X-Other: nope\r\n"
+        ++ "\r\n";
+
+    const response = try server.handle(allocator, request_text);
+    defer freeResponse(allocator, response);
+    try expectStartsWith(response, "HTTP/1.1 400 Bad Request");
+}
+
+fn chunkedInvalidHex(server: *TestServer, allocator: std.mem.Allocator) !void {
+    const request_text =
+        "POST /test HTTP/1.1\r\n"
+        ++ "Host: localhost\r\n"
+        ++ "Transfer-Encoding: chunked\r\n"
+        ++ "\r\n"
+        ++ "Z\r\nhello\r\n"
+        ++ "0\r\n"
+        ++ "\r\n";
+
+    const response = try server.handle(allocator, request_text);
+    defer freeResponse(allocator, response);
+    try expectStartsWith(response, "HTTP/1.1 400 Bad Request");
+}
+
+test "Request Line - Valid" {
+    try withServer(requestLineValid);
+}
+
+test "Request Line - Invalid Method" {
+    try withServer(requestLineInvalidMethod);
+}
+
+test "Request Line - Missing Path" {
+    try withServer(requestLineMissingPath);
+}
+
+test "Request Line - Missing Version" {
+    try withServer(requestLineMissingVersion);
+}
+
+test "Request Line - Extra Whitespace" {
+    try withServer(requestLineExtraWhitespace);
 }
 
 test "Header Fields - Single Header" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    const allocator = gpa.allocator();
-    defer _ = gpa.deinit();
-
-    var server = try test_harness.createTestServer(allocator);
-    defer server.deinit();
-
-    try server.addRoute(.GET, "/test", .{
-        .steps = &.{ 
-            zerver.step("test", struct {
-                fn handler(ctx: *zerver.Ctx) !zerver.Decision {
-                    const value = ctx.header("X-Test-Header");
-                    return zerver.done(.{ .body = .{ .complete = value orelse "" } });
-                }
-            }.handler),
-        },
-    });
-
-    const request_text = 
-        GET /test HTTP/1.1
-
-        Host: localhost
-
-        X-Test-Header: hello
-
-        
-    ;
-
-    const response_text = try server.handleRequest(request_text, allocator);
-    try std.testing.expect(std.mem.endsWith(u8, response_text, "hello"));
+    try withServer(headerSingle);
 }
 
 test "Header Fields - Multiple Headers" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    const allocator = gpa.allocator();
-    defer _ = gpa.deinit();
-
-    var server = try test_harness.createTestServer(allocator);
-    defer server.deinit();
-
-    try server.addRoute(.GET, "/test", .{
-        .steps = &.{ 
-            zerver.step("test", struct {
-                fn handler(ctx: *zerver.Ctx) !zerver.Decision {
-                    const value1 = ctx.header("X-Test-Header-1");
-                    const value2 = ctx.header("X-Test-Header-2");
-                    const body = try std.fmt.allocPrint(ctx.allocator, "{s}{s}", .{ value1 orelse "", value2 orelse "" });
-                    return zerver.done(.{ .body = .{ .complete = body } });
-                }
-            }.handler),
-        },
-    });
-
-    const request_text = 
-        GET /test HTTP/1.1
-
-        Host: localhost
-
-        X-Test-Header-1: hello
-
-        X-Test-Header-2: world
-
-        
-    ;
-
-    const response_text = try server.handleRequest(request_text, allocator);
-    try std.testing.expect(std.mem.endsWith(u8, response_text, "helloworld"));
+    try withServer(headerMultiple);
 }
 
 test "Header Fields - Case Insensitive" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    const allocator = gpa.allocator();
-    defer _ = gpa.deinit();
-
-    var server = try test_harness.createTestServer(allocator);
-    defer server.deinit();
-
-    try server.addRoute(.GET, "/test", .{
-        .steps = &.{ 
-            zerver.step("test", struct {
-                fn handler(ctx: *zerver.Ctx) !zerver.Decision {
-                    const value = ctx.header("x-test-header");
-                    return zerver.done(.{ .body = .{ .complete = value orelse "" } });
-                }
-            }.handler),
-        },
-    });
-
-    const request_text = 
-        GET /test HTTP/1.1
-
-        Host: localhost
-
-        X-TEST-HEADER: hello
-
-        
-    ;
-
-    const response_text = try server.handleRequest(request_text, allocator);
-    try std.testing.expect(std.mem.endsWith(u8, response_text, "hello"));
+    try withServer(headerCaseInsensitive);
 }
 
 test "Header Fields - Invalid Characters" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    const allocator = gpa.allocator();
-    defer _ = gpa.deinit();
-
-    var server = try test_harness.createTestServer(allocator);
-    defer server.deinit();
-
-    const request_text = 
-        GET /test HTTP/1.1
-
-        Host: localhost
-
-        X-Test-Header@: hello
-
-        
-    ;
-
-    const response_text = try server.handleRequest(request_text, allocator);
-    try std.testing.expect(std.mem.startsWith(u8, response_text, "HTTP/1.1 400 Bad Request"));
+    try withServer(headerInvalidCharacters);
 }
 
 test "Content-Length - Valid" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    const allocator = gpa.allocator();
-    defer _ = gpa.deinit();
-
-    var server = try test_harness.createTestServer(allocator);
-    defer server.deinit();
-
-    try server.addRoute(.POST, "/test", .{
-        .steps = &.{ 
-            zerver.step("test", struct {
-                fn handler(ctx: *zerver.Ctx) !zerver.Decision {
-                    return zerver.done(.{ .body = .{ .complete = ctx.body } });
-                }
-            }.handler),
-        },
-    });
-
-    const request_text = 
-        POST /test HTTP/1.1
-
-        Host: localhost
-
-        Content-Length: 5
-
-        
-
-        hello
-
-    ;
-
-    const response_text = try server.handleRequest(request_text, allocator);
-    try std.testing.expect(std.mem.endsWith(u8, response_text, "hello"));
+    try withServer(contentLengthValid);
 }
 
 test "Content-Length - Zero" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    const allocator = gpa.allocator();
-    defer _ = gpa.deinit();
-
-    var server = try test_harness.createTestServer(allocator);
-    defer server.deinit();
-
-    try server.addRoute(.POST, "/test", .{
-        .steps = &.{ 
-            zerver.step("test", struct {
-                fn handler(ctx: *zerver.Ctx) !zerver.Decision {
-                    return zerver.done(.{ .body = .{ .complete = ctx.body } });
-                }
-            }.handler),
-        },
-    });
-
-    const request_text = 
-        POST /test HTTP/1.1
-
-        Host: localhost
-
-        Content-Length: 0
-
-        
-
-        
-
-    ;
-
-    const response_text = try server.handleRequest(request_text, allocator);
-    try std.testing.expect(std.mem.endsWith(u8, response_text, ""));
+    try withServer(contentLengthZero);
 }
 
 test "Content-Length - Invalid" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    const allocator = gpa.allocator();
-    defer _ = gpa.deinit();
+    try withServer(contentLengthInvalid);
+}
 
-    var server = try test_harness.createTestServer(allocator);
-    defer server.deinit();
-
-    const request_text = 
-        POST /test HTTP/1.1
-
-        Host: localhost
-
-        Content-Length: abc
-
-        
-
-        hello
-
-    ;
-
-    const response_text = try server.handleRequest(request_text, allocator);
-    try std.testing.expect(std.mem.startsWith(u8, response_text, "HTTP/1.1 400 Bad Request"));
+test "Transfer-Encoding - Content-Length Conflict" {
+    try withServer(transferEncodingContentLengthConflict);
 }
 
 test "Chunked - Single Chunk" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    const allocator = gpa.allocator();
-    defer _ = gpa.deinit();
-
-    var server = try test_harness.createTestServer(allocator);
-    defer server.deinit();
-
-    try server.addRoute(.POST, "/test", .{
-        .steps = &.{ 
-            zerver.step("test", struct {
-                fn handler(ctx: *zerver.Ctx) !zerver.Decision {
-                    return zerver.done(.{ .body = .{ .complete = ctx.body } });
-                }
-            }.handler),
-        },
-    });
-
-    const request_text = 
-        POST /test HTTP/1.1
-
-        Host: localhost
-
-        Transfer-Encoding: chunked
-
-        
-
-        5
-
-        hello
-
-        0
-
-        
-
-    ;
-
-    const response_text = try server.handleRequest(request_text, allocator);
-    try std.testing.expect(std.mem.endsWith(u8, response_text, "hello"));
+    try withServer(chunkedSingle);
 }
 
 test "Chunked - Multiple Chunks" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    const allocator = gpa.allocator();
-    defer _ = gpa.deinit();
-
-    var server = try test_harness.createTestServer(allocator);
-    defer server.deinit();
-
-    try server.addRoute(.POST, "/test", .{
-        .steps = &.{ 
-            zerver.step("test", struct {
-                fn handler(ctx: *zerver.Ctx) !zerver.Decision {
-                    return zerver.done(.{ .body = .{ .complete = ctx.body } });
-                }
-            }.handler),
-        },
-    });
-
-    const request_text = 
-        POST /test HTTP/1.1
-
-        Host: localhost
-
-        Transfer-Encoding: chunked
-
-        
-
-        5
-
-        hello
-
-        5
-
-        world
-
-        0
-
-        
-
-    ;
-
-    const response_text = try server.handleRequest(request_text, allocator);
-    try std.testing.expect(std.mem.endsWith(u8, response_text, "helloworld"));
+    try withServer(chunkedMultiple);
 }
 
 test "Chunked - With Extensions" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    const allocator = gpa.allocator();
-    defer _ = gpa.deinit();
-
-    var server = try test_harness.createTestServer(allocator);
-    defer server.deinit();
-
-    try server.addRoute(.POST, "/test", .{
-        .steps = &.{ 
-            zerver.step("test", struct {
-                fn handler(ctx: *zerver.Ctx) !zerver.Decision {
-                    return zerver.done(.{ .body = .{ .complete = ctx.body } });
-                }
-            }.handler),
-        },
-    });
-
-    const request_text = 
-        POST /test HTTP/1.1
-
-        Host: localhost
-
-        Transfer-Encoding: chunked
-
-        
-
-        5;ext1=foo
-
-        hello
-
-        0
-
-        
-
-    ;
-
-    const response_text = try server.handleRequest(request_text, allocator);
-    try std.testing.expect(std.mem.endsWith(u8, response_text, "hello"));
+    try withServer(chunkedWithExtensions);
 }
 
 test "Chunked - With Trailer" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    const allocator = gpa.allocator();
-    defer _ = gpa.deinit();
-
-    var server = try test_harness.createTestServer(allocator);
-    defer server.deinit();
-
-    try server.addRoute(.POST, "/test", .{
-        .steps = &.{ 
-            zerver.step("test", struct {
-                fn handler(ctx: *zerver.Ctx) !zerver.Decision {
-                    const trailer_val = ctx.header("X-Trailer");
-                    const body = try std.fmt.allocPrint(ctx.allocator, "{s}{s}", .{ ctx.body, trailer_val orelse "" });
-                    return zerver.done(.{ .body = .{ .complete = body } });
-                }
-            }.handler),
-        },
-    });
-
-    const request_text = 
-        POST /test HTTP/1.1
-
-        Host: localhost
-
-        Transfer-Encoding: chunked
-
-        Trailer: X-Trailer
-
-        
-
-        5
-
-        hello
-
-        0
-
-        X-Trailer: world
-
-        
-
-    ;
-
-    const response_text = try server.handleRequest(request_text, allocator);
-    try std.testing.expect(std.mem.endsWith(u8, response_text, "helloworld"));
+    try withServer(chunkedWithTrailer);
 }
+
+test "Chunked - Undeclared Trailer" {
+    try withServer(chunkedUndeclaredTrailer);
+}
+
+test "Chunked - Invalid Hex Size" {
+    try withServer(chunkedInvalidHex);
+}
+
+
+
 

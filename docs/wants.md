@@ -15,7 +15,6 @@
 - House-style repository template pre-wired with OTLP, budgets, error map, and debug endpoints.
 - Performance harness in `bench/` that tracks p95/p99 and allocations with CI regression gates.
 - Learning sample catalog demonstrating hello world, auth chains, fanouts, deadlines, and hedging patterns.
-// docs/wants.md: PLAN.md additions
 - Pure/Impure split where pure steps plan effects and an interpreter handles I/O, timers, and randomness.
 - Treat each request as a small DAG with fan-in/out, join counters, deadlines, and explicit hard vs soft errors.
 - Schedule steps as short cooperative jobs on priority queues with work-stealing and aging for fairness.
@@ -37,7 +36,6 @@ eed`.
 - Target mixed CPU+I/O endpoints needing strict tail latency control.
 - Support complex flows that demand explicit ordering, retries, and auditability.
 - Provide readable URLs while keeping canonical control on the server.
-// docs/wants.md: OTEL_improvement.md additions
 - Distinguish logical execution, queueing, and parking latency in telemetry.
 - Keep default traces compact while auto-promoting spans when thresholds are exceeded.
 - Align span kinds and attributes with current OpenTelemetry semantic conventions.
@@ -57,7 +55,6 @@ eed`.
 - Follow the phased migration plan: event-first, runtime wiring, validation, then adaptive thresholds.
 - Capture lessons learned around thresholds, backfilled events, and semantic namespace choices.
 - Plan future enhancements including adaptive thresholds, tail sampling, exemplars, queue depth, worker metrics, and concurrency limit signals.
-// docs/wants.md: PHASE2_REACTOR_PLAN additions
 - Implement the phase-2 proactor + scheduler upgrade without changing CtxView/Decision/Effect APIs.
 - Keep Server.listen synchronous while delegating work to libuv-backed workers for transparency.
 - Enforce Decision.Need join contracts with accurate required/optional bookkeeping under concurrency.
@@ -114,8 +111,6 @@ eed`.
 - Produce performance benchmarks to substantiate high-performance claims.
 - Plan the Phase 2 migration path and communicate expectations.
 - Double down on observability: trace UI, OTLP export, comparison tooling for slow/fast requests.
-
-// docs/wants.md: TODO_PRIORITIZED.md additions
 - add build.zig checks for Zig 0.15 compatibility [@core-team]
 - ensure README links to todods instead of SPEC [@docs-team]
 - update README to reference new todods [@docs-team]
@@ -159,20 +154,17 @@ eed`.
 - expose OTLP exporter toggle via config/env [@observability-team]
 - write setup guide for connecting to OTLP collector [@observability-team]
 - add troubleshooting notes and sample collector config [@observability-team]
-
-// docs/wants.md: SPEC.md review additions
 - Update src/zerver/core/types.zig so effect `token` fields take the application `Slot` enum instead of raw `u32` identifiers, keeping slot typing consistent with SPEC section 3.2.
-- Require an explicit non-null `resume` pointer on 
-eed` in src/zerver/core/types.zig (rename the optional `continuation` field) so continuations remain explicit as specified in section 3.2.
-- Provide SPEC-default values for 
-eed.mode` and 
-eed.join` (Parallel/all) in src/zerver/core/types.zig to remove boilerplate and match the published contract.
+- Require an explicit non-null `resume` pointer on `Need` in src/zerver/core/types.zig (rename the optional `continuation` field) so continuations remain explicit as specified in section 3.2.
+- Provide SPEC-default values for `Need.mode` and `Need.join` (Parallel/all) in src/zerver/core/types.zig to remove boilerplate and match the published contract.
 - Add an arena-backed `jsonValue()` helper in src/zerver/core/ctx.zig that returns `std.json.Value`, matching the SPEC `CtxBase.json()` contract in section 3.3.
 - Teach src/zerver/core/reqtest.zig helpers (e.g., `seedSlotString`) to accept slot tags rather than bare tokens so ReqTest usage stays in lock-step with typed slots.
 - Introduce the FakeInterpreter harness promised in SPEC section 8 to let tests drive continuations without live I/O.
 - Build the request replay capture/restore tooling from SPEC section 8.3 so traces can be reproduced from serialized slot snapshots.
 
-
-
-
+// docs/wants.md: architecture.md review additions
+- Replace the `std.AutoHashMap(u32, *anyopaque)` slot store in `src/zerver/core/ctx.zig` with typed storage that honours the `CtxView` read/write spec at runtime, closing the TODO called out in the architecture doc.
+- Route `Server.listen` in `src/zerver/impure/server.zig` through the shared plumbing in `src/zerver/runtime/listener.zig`/`handler.zig` so we maintain one canonical HTTP loop.
+- Make `src/zerver/impure/executor.zig:defaultEffectHandler` fail loudly or require injection so no request silently succeeds without a real effect implementation, as warned in the architecture doc.
+- Enrich `Tracer.toJson` in `src/zerver/observability/tracer.zig` with job/need metadata (mode, join, effect counts, worker info) to deliver the timeline detail promised by the architecture overview.
 
