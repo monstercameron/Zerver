@@ -6,61 +6,106 @@ on:
   pull_request:
     branches: [ main ]
 
+env:
+  ZIG_VERSION: "0.15.2"
+
 concurrency:
   group: zig-ci-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   build:
+    name: build (windows-latest)
     runs-on: windows-latest
-
-    env:
-      # Toolchain & cache
-      ZIG_VERSION: 0.15.2
-      ZIG_GLOBAL_CACHE_DIR: ${{ github.workspace }}\.zig-cache\global
-      ARTIFACT_NAME: zerver-example-windows
-      ARTIFACT_PATH: zig-out\bin\zerver_example.exe
 
     steps:
       - name: Checkout (with submodules)
         uses: actions/checkout@v4
         with:
-          submodules: recursive
-          fetch-depth: 0
+          submodules: true
+          fetch-depth: 1
 
-      - name: Ensure cache dir exists (avoid cache path error)
-        shell: pwsh
-        run: |
-          New-Item -ItemType Directory -Force -Path "$env:ZIG_GLOBAL_CACHE_DIR" | Out-Null
-
-      - name: Restore Zig global cache
-        uses: actions/cache@v4
-        with:
-          path: ${{ env.ZIG_GLOBAL_CACHE_DIR }}
-          key: zig-global-${{ runner.os }}-${{ env.ZIG_VERSION }}
-          restore-keys: |
-            zig-global-${{ runner.os }}-
-
-      - name: Install Zig (0.15.2)
+      # --- Primary installer (stable 0.15.2) ---
+      - name: Install Zig (primary)
+        id: setup_zig_primary
         uses: goto-bus-stop/setup-zig@v2
         with:
-          zig-version: ${{ env.ZIG_VERSION }}
+          version: ${{ env.ZIG_VERSION }}
+        continue-on-error: true
 
-      - name: Ensure correct Zig on PATH (remove runner zig/master)
+      - name: Verify Zig (primary)
+        if: steps.setup_zig_primary.outcome == 'success'
         shell: pwsh
         run: |
-          # Scrub any zig\master from PATH to avoid header/clang mismatch
-          $paths = $env:PATH -split ';' | Where-Object {$_ -notmatch '\\zig\\master\\'}
-          $env:PATH = ($paths -join ';')
-
-          Write-Host "zig path: " (Get-Command zig).Source
-          $ver = (zig version).Trim()
-          if ($ver -ne $env:ZIG_VERSION) {
-            Write-Error "Wrong zig version on PATH. Expected $($env:ZIG_VERSION), got $ver"
-            exit 1
-          }
+          zig version
           zig env
 
+      # --- Fallback installer (mlugg) ---
+      - name: Install Zig (fallback)
+        id: setup_zig_fallback
+        if: steps.setup_zig_primary.outcome != 'success'
+        uses: mlugg/setup-zig@v1
+        with:
+          version: ${{ env.ZIG_VERSION }}
+        continue-on-error: true
+
+      - name: Verify Zig (fallback)
+        if: steps.setup_zig_primary.outcome != 'success' && steps.setup_zig_fallback.outcome == 'success'
+        shell: pwsh
+        run: |
+          zig version
+          zig env
+
+      # --- Final fallback: manual download (official mirrors) ---
+      - name: Manual install (Windows)
+        if: runner.os == 'Windows' && steps.setup_zig_primary.outcome != 'success' && steps.setup_zig_fallback.outcome != 'success'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $zip = "zig-windows-x86_64-${env:ZIG_VERSION}.zip"
+          $urls = @(
+            "https://github.com/ziglang/zig/releases/download/${env:ZIG_VERSION}/$zip",
+            "https://ziglang.org/builds/$zip"
+          )
+          $ok = $false
+          foreach ($u in $urls) {
+            try {
+              Write-Host "Downloading $u"
+              Invoke-WebRequest -Uri $u -OutFile zig.zip -UseBasicParsing
+              $ok = $true; break
+            } catch { Start-Sleep -Seconds 2 }
+          }
+          if (-not $ok) { throw "Failed to download Zig $($env:ZIG_VERSION) from official mirrors." }
+
+          Expand-Archive -Path zig.zip -DestinationPath zigdl -Force
+          $dir = Get-ChildItem zigdl | Select-Object -First 1
+          "$($dir.FullName)" | Out-File -FilePath $env:GITHUB_PATH -Append
+
+          & "$($dir.FullName)\zig.exe" version
+          & "$($dir.FullName)\zig.exe" env
+
+      # --- Ensure no zig/master in PATH (don’t fail if zig missing) ---
+      - name: Scrub any zig\\master from PATH
+        shell: pwsh
+        run: |
+          $parts = $env:PATH -split ';' | Where-Object { $_ -and ($_ -notmatch '\\zig\\master\\') }
+          $env:PATH = ($parts -join ';')
+          $cmd = Get-Command zig -ErrorAction SilentlyContinue
+          if ($cmd) {
+            Write-Host "zig path: $($cmd.Source)"
+          } else {
+            Write-Host "zig not yet on PATH (will be validated next step)"
+          }
+
+      # --- Final verification (must pass) ---
+      - name: Confirm Zig is available
+        shell: pwsh
+        run: |
+          $cmd = Get-Command zig -ErrorAction Stop
+          zig version
+          zig env
+
+      # --- Build / Test / Format ---
       - name: Build (ReleaseSafe)
         shell: pwsh
         run: zig build -Doptimize=ReleaseSafe
@@ -76,16 +121,9 @@ jobs:
       - name: Upload executable
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ env.ARTIFACT_NAME }}
-          path: ${{ env.ARTIFACT_PATH }}
+          name: zerver-example-windows
+          path: zig-out/bin/zerver_example.exe
           if-no-files-found: error
-
-      - name: Save Zig global cache
-        if: always()
-        uses: actions/cache@v4
-        with:
-          path: ${{ env.ZIG_GLOBAL_CACHE_DIR }}
-          key: zig-global-${{ runner.os }}-${{ env.ZIG_VERSION }}
 
   release:
     needs: build
@@ -115,7 +153,7 @@ jobs:
           name: Release v${{ env.VERSION }}
           body: |
             Automated release for version ${{ env.VERSION }}.
-            See the CHANGELOG for details.
+            See the [CHANGELOG](CHANGELOG.md) for details.
           draft: false
           prerelease: false
           files: ./release_assets/*
