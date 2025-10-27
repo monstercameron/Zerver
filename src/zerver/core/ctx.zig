@@ -1,3 +1,4 @@
+// src/zerver/core/ctx.zig
 /// Request context and CtxView for compile-time access control.
 const std = @import("std");
 const types = @import("types.zig");
@@ -21,12 +22,14 @@ pub const CtxBase = struct {
     // Request data
     method_str: []const u8,
     path_str: []const u8,
-    headers: std.StringHashMap([]const u8), // TODO: RFC 9110 Section 5.2 - The 'headers' field should support multiple values for the same field name. The current implementation uses a StringHashMap which only allows one value per field. // TODO: RFC 9110 - Ensure robust parsing of headers (Section 5) in server.zig, including handling of multiple header fields and quoted strings.
-    // TODO: RFC 9110 Section 5.5 - Field values can contain characters other than ASCII. The current implementation assumes ASCII. This should be updated to handle other character sets, for example by using UTF-8.
-    // TODO: Logical Error - The 'headers' field in CtxBase is 'std.StringHashMap([]const u8)', but ParsedRequest.headers (and server.zig's parsing) uses 'std.StringHashMap(std.ArrayList([]const u8))'. This type mismatch needs to be resolved for consistency.
+    // TODO(bug): Allow multiple header values per RFC 9110 §5.2 instead of storing only the last occurrence in a StringHashMap.
+    // TODO(code-smell): Align this header map type with ParsedRequest.headers to remove the mismatch between []const u8 and ArrayList([]const u8).
+    // TODO(memory-safety): Accept and normalize non-ASCII header bytes per RFC 9110 §5.5; current ASCII-only assumption can garble UTF-8.
+    headers: std.StringHashMap([]const u8),
     params: std.StringHashMap([]const u8), // path parameters like /todos/:id
     query: std.StringHashMap([]const u8),
-    body: []const u8, // TODO: RFC 9110 - Ensure robust parsing and framing of request body (Section 6.4) in handler.zig and server.zig.
+    // TODO(bug): Enforce RFC 9110 §6.4 framing rules to keep chunked bodies from poisoning the next request on the connection.
+    body: []const u8,
     client_ip: []const u8,
 
     // Observability
@@ -35,6 +38,10 @@ pub const CtxBase = struct {
     start_time: i64, // milliseconds
     status_code: u16 = 200,
     request_bytes: usize = 0,
+
+    // Track whether request_id/user_sub need to be freed
+    _owns_request_id: bool = false,
+    _owns_user_sub: bool = false,
 
     // Slot storage: map from slot id (u32) to void pointer
     slots: std.AutoHashMap(u32, *anyopaque) = undefined,
@@ -66,7 +73,13 @@ pub const CtxBase = struct {
     }
 
     pub fn deinit(self: *CtxBase) void {
-        // TODO: Leak - request_id/user_sub may point to duped allocations (ensureRequestId) and never get freed; clean them up here.
+        // Free duped request_id and user_sub if we own them
+        if (self._owns_request_id) {
+            self.allocator.free(self.request_id);
+        }
+        if (self._owns_user_sub) {
+            self.allocator.free(self.user_sub);
+        }
         self.slots.deinit();
         self.exit_cbs.deinit(self.allocator);
         self.trace_events.deinit(self.allocator);
@@ -86,7 +99,7 @@ pub const CtxBase = struct {
     pub fn header(self: *CtxBase, name: []const u8) ?[]const u8 {
         return self.headers.get(name);
     }
-    // TODO: Perf - Normalize header names once during parse so lookups avoid hashing multiple casings per request.
+    // TODO(perf): Normalize header names during parse so lookups avoid hashing multiple casings per request.
 
     pub fn param(self: *CtxBase, name: []const u8) ?[]const u8 {
         return self.params.get(name);
@@ -105,8 +118,9 @@ pub const CtxBase = struct {
 
         var buf: [32]u8 = undefined;
         const generated = std.fmt.bufPrint(&buf, "{d}", .{std.time.nanoTimestamp()}) catch return;
-        // TODO: Perf - Switch to a cheaper ID source (e.g. incrementing counter + base36) to avoid formatting overhead on hot paths.
+        // TODO(perf): Switch to a cheaper ID source (e.g. monotonic counter + base36) to avoid formatting overhead on hot paths.
         self.request_id = self.allocator.dupe(u8, generated) catch return;
+        self._owns_request_id = true;
     }
 
     pub fn requestId(self: *CtxBase) []const u8 {
@@ -171,6 +185,7 @@ pub const CtxBase = struct {
     pub fn setUser(self: *CtxBase, sub: []const u8) void {
         const duped = self.allocator.dupe(u8, sub) catch return;
         self.user_sub = duped;
+        self._owns_user_sub = true;
     }
 
     pub fn runExitCallbacks(self: *CtxBase) void {
@@ -198,12 +213,8 @@ pub const CtxBase = struct {
 
     /// Generate a new unique ID (simple timestamp-based for now)
     pub fn newId(self: *CtxBase) []const u8 {
-        var buf: [32]u8 = undefined;
-        // TODO: Safety/Memory - The fixed-size buffer in newId is not guaranteed to be large enough for the timestamp. This could lead to buffer overflows if the timestamp string is larger than 32 bytes.
-        // TODO: Safety/Memory - The fixed-size buffer in newId is not guaranteed to be large enough for the timestamp. This could lead to buffer overflows if the timestamp string is larger than 32 bytes.
-        // TODO: Logical Error - The 'newId' function's fixed-size buffer and 'catch "0"' fallback can lead to non-unique IDs if the timestamp string overflows the buffer. This needs to be handled more robustly to ensure ID uniqueness.
-        // TODO: Logical Error - The 'newId' function's fixed-size buffer and 'catch "0"' fallback can lead to non-unique IDs if the timestamp string overflows the buffer. This needs to be handled more robustly to ensure ID uniqueness.
-        const id = std.fmt.bufPrint(&buf, "{d}", .{std.time.nanoTimestamp()}) catch "0";
+        var buf: [64]u8 = undefined;
+        const id = std.fmt.bufPrint(&buf, "{d}", .{std.time.nanoTimestamp()}) catch return "0";
         return self.allocator.dupe(u8, id) catch "0";
     }
 
@@ -300,9 +311,12 @@ pub const CtxBase = struct {
     }
 
     /// Parse request body as JSON into the given type
+    /// NOTE: Caller must manage the lifetime of returned parsed value and call deinit if needed
     pub fn json(self: *CtxBase, comptime T: type) !T {
-        // TODO: Safety - std.json.parseFromSlice returns a value that owns allocations and needs parsed.deinit(); right now we leak the tree on every call.
+        // Parse JSON and return the value; note that complex types may need explicit deinit
+        // TODO: Perf - Consider reusing a single streaming parser per request to avoid allocating a full DOM for large bodies.
         const parsed = try std.json.parseFromSlice(T, self.allocator, self.body, .{});
+        defer parsed.deinit();
         return parsed.value;
     }
 };
@@ -417,3 +431,4 @@ pub fn CtxView(comptime spec: anytype) type {
         }
     };
 }
+

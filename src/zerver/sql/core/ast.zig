@@ -1,3 +1,4 @@
+// src/zerver/sql/core/ast.zig
 const db = @import("../db.zig");
 
 /// Identifiers represent table or column names prior to dialect quoting.
@@ -41,3 +42,4 @@ pub const Query = union(enum) {
     raw: []const u8,
     select: SelectQuery,
 };
+

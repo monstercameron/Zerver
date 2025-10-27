@@ -1,3 +1,4 @@
+// examples/state/01_slot_definitions.zig
 /// Example: Slot definitions for a Todo application
 ///
 /// This demonstrates how applications define their own Slot enum and SlotType mapping.
@@ -48,3 +49,4 @@ pub const HttpResponseData = struct {
     body: []const u8,
     headers: std.StringHashMap([]const u8),
 };
+

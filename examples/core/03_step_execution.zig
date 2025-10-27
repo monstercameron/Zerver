@@ -1,3 +1,4 @@
+// examples/core/03_step_execution.zig
 /// Example: MVP blocking executor for executing steps and effects
 ///
 /// Demonstrates:
@@ -173,3 +174,4 @@ pub fn main() !void {
     slog.infof("✓ Recursively processes decisions (until Done/Fail)", .{});
     slog.infof("✓ MVP executes effects sequentially (Phase-2: parallelizes)", .{});
 }
+

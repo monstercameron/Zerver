@@ -1,3 +1,4 @@
+// src/shared/components.zig
 /// Reusable HTML components for web pages
 const std = @import("std");
 const html = @import("html.zig");
@@ -1238,3 +1239,4 @@ pub const HomepageDocumentDynamic = struct {
         try document.render(writer);
     }
 };
+

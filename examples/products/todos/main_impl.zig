@@ -1,3 +1,4 @@
+// examples/products/todos/main_impl.zig
 /// Todos Product: Advanced Example with Professional Structure
 ///
 /// This example demonstrates a production-ready structure using:
@@ -289,3 +290,4 @@ pub fn main() !void {
     slog.infof("║    • main.zig    - Server initialization            ║", .{});
     slog.infof("╚══════════════════════════════════════════════════════╝", .{});
 }
+

@@ -1,3 +1,4 @@
+// src/zerver/core/core.zig
 /// Core helpers: step trampoline, effect constructors, decision utilities.
 const std = @import("std");
 const types = @import("types.zig");
@@ -13,8 +14,8 @@ pub fn step(comptime name: []const u8, comptime F: anytype) types.Step {
         .@"fn" => |info| info,
         else => @compileError("step expects a function value"),
     };
-    // TODO: Safety - Step metadata stores raw slices; callers must pass string literals for `name` or we risk dangling pointers if the slice comes from a temporary allocation.
-    // TODO: Perf - Cache generated trampolines per function pointer; recompiling the wrapper for every call site bloats codegen and increases compile times.
+    // TODO(memory-safety): Step metadata stores raw slices; require comptime literals or copy the name to avoid dangling pointers from temporary buffers.
+    // TODO(perf): Cache generated trampolines per function pointer; recompiling the wrapper for every call site bloats codegen and increases compile times.
 
     if (fn_type.params.len == 0 or fn_type.params[0].type == null) {
         @compileError("step function must accept a context parameter");
@@ -117,7 +118,7 @@ fn buildIdArray(comptime slots_array: anytype) [slots_array.len]u32 {
     }
     return ids;
 }
-// TODO: Perf - Precompute and memoize slot id arrays for common views; recomputing them at compile time for every route contributes to longer incremental builds.
+// TODO(perf): Precompute and memoize slot id arrays for common views; recomputing them at compile time for every route stretches incremental builds.
 
 /// Helper to create a Decision.Continue.
 pub fn continue_() types.Decision {
@@ -139,3 +140,4 @@ pub fn fail(kind: u16, what: []const u8, key: []const u8) types.Decision {
 
 /// Re-export ErrorCode for convenience
 pub const ErrorCode = types.ErrorCode;
+

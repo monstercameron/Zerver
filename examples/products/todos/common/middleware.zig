@@ -1,3 +1,4 @@
+// examples/products/todos/common/middleware.zig
 /// Todos Product: Shared Middleware
 ///
 /// Cross-cutting concerns:
@@ -97,3 +98,4 @@ pub fn getOperationLatency(ctx: *zerver.CtxBase) u32 {
     const latency_str = ctx.slotGetString(@intFromEnum(Slot.operation_latency)) orelse "50";
     return std.fmt.parseInt(u32, latency_str, 10) catch 50;
 }
+

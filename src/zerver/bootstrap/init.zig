@@ -1,3 +1,4 @@
+// src/zerver/bootstrap/init.zig
 /// Server initialization and route setup
 ///
 /// This module handles server configuration, route registration,
@@ -22,6 +23,7 @@ const blog_errors = @import("../../features/blog/errors.zig");
 
 /// Composite effect handler that routes to the appropriate feature handler
 fn compositeEffectHandler(effect: *const root.Effect, timeout_ms: u32) anyerror!root.types.EffectResult {
+    // TODO(bug): Branch only forwards to blog_effects; register-switching for hello/todos never happens, so feature-specific effects will 404.
     // Use blog effects handler
     return try blog_effects.effectHandler(effect, timeout_ms);
 }
@@ -125,6 +127,7 @@ pub fn initializeServer(allocator: std.mem.Allocator) !Initialization {
         },
         .on_error = blog_errors.onError,
     };
+    // TODO(code-smell): Hard-wiring blog error handler here prevents consumers embedding the framework from injecting their own global handler.
 
     // Create server with a composite effect handler that routes to the appropriate feature handler
     var config = mut_config;
@@ -284,6 +287,7 @@ fn detectTempoEndpoint(
             path,
         });
     }
+    // TODO(memory-safety): Make sure caller frees the allocPrint result when autodetect succeeds; current call sites leak this buffer for the lifetime of the process.
 
     slog.debug("tempo_autodetect_unreachable", &.{
         slog.Attr.string("host", observability.autodetect_host),
@@ -304,3 +308,4 @@ fn tempoDetectBackoff(attempt: u32) u64 {
     };
     return 100 * factor * std.time.ns_per_ms;
 }
+

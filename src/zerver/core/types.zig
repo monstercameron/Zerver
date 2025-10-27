@@ -1,3 +1,4 @@
+// src/zerver/core/types.zig
 /// Core type definitions for Zerver: Decision, Effect, Response, Error, etc.
 const std = @import("std");
 const ctx_module = @import("ctx.zig");
@@ -114,6 +115,7 @@ pub const Response = struct {
     body: ResponseBody = .{ .complete = "" },
     // TODO: SSE - Consider a mechanism for streaming response bodies (e.g., an iterator or a writer) to support Server-Sent Events and other streaming use cases.
     // TODO: SSE - Consider a mechanism for streaming response bodies (e.g., an iterator or a writer) to support Server-Sent Events and other streaming use cases.
+    // TODO: Perf - Allow callers to borrow from a small fixed-capacity header array to avoid heap allocations on hot paths.
 };
 
 /// Response body can be either complete or streaming
@@ -489,6 +491,7 @@ pub const Need = struct {
     join: Join,
     continuation: ?ResumeFn = null,
     compensations: []const Compensation = &.{},
+    // TODO: Perf - Support small fixed-capacity inline storage for effects to avoid heap allocations for common single-effect cases.
 };
 
 pub const Decision = union(enum) {
@@ -527,5 +530,16 @@ pub const ParsedRequest = struct {
     query: std.StringHashMap([]const u8),
     body: []const u8,
     client_ip: []const u8,
-    // TODO: Leak - parsed requests never deinit the inner ArrayLists in `headers`; add a helper to walk and free slices after each request.
+
+    /// Clean up allocated memory in the request
+    pub fn deinit(self: *ParsedRequest) void {
+        // Deinit each header's ArrayList
+        var header_it = self.headers.valueIterator();
+        while (header_it.next()) |header_list| {
+            header_list.deinit();
+        }
+        self.headers.deinit();
+        self.query.deinit();
+    }
 };
+

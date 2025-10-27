@@ -1,3 +1,4 @@
+// src/zerver/impure/executor.zig
 /// Executor: MVP blocking engine for executing effects and continuations.
 ///
 /// The executor implements step-based orchestration:
@@ -1214,3 +1215,4 @@ pub fn testExecutor() !void {
         slog.Attr.string("status", "tests_passed"),
     });
 }
+

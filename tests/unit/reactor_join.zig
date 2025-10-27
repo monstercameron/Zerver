@@ -1,3 +1,4 @@
+// tests/unit/reactor_join.zig
 const std = @import("std");
 const join = @import("zerver").reactor_join;
 
@@ -79,3 +80,4 @@ test "join all_required fails on required failure" {
     try std.testing.expect(resolution == .Resume);
     try std.testing.expectEqual(join.Status.failure, resolution.Resume.status);
 }
+

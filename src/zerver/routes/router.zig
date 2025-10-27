@@ -1,3 +1,4 @@
+// src/zerver/routes/router.zig
 /// Router: path matching with :param support and route registration.
 ///
 /// Routes are matched longest-literal first, then by number of params,
@@ -39,16 +40,25 @@ pub const Router = struct {
 
     // TODO: RFC 9110 - Consider implementing URI normalization (Section 4.2.3) and defining consistent behavior for trailing slashes in paths.
 
-    pub fn init(allocator: std.mem.Allocator) Router {
+    pub fn init(allocator: std.mem.Allocator) !Router {
         return .{
             .allocator = allocator,
-            .routes = std.ArrayList(CompiledRoute).initCapacity(allocator, 32) catch unreachable,
-            // TODO: Safety - Replace 'catch unreachable' with proper error propagation or handling for allocation failures to prevent crashes.
+            .routes = try std.ArrayList(CompiledRoute).initCapacity(allocator, 32),
         };
     }
 
     pub fn deinit(self: *Router) void {
         for (self.routes.items) |route| {
+            // Free individual segment strings and param names
+            for (route.pattern.segments) |seg| {
+                switch (seg) {
+                    .literal => |lit| self.allocator.free(lit),
+                    .param => |param| self.allocator.free(param),
+                }
+            }
+            for (route.pattern.param_names) |param_name| {
+                self.allocator.free(param_name);
+            }
             self.allocator.free(route.pattern.segments);
             self.allocator.free(route.pattern.param_names);
         }
@@ -122,12 +132,10 @@ pub const Router = struct {
     /// Compile a path pattern into segments.
     /// "/todos/:id/items" → [literal("todos"), param("id"), literal("items")]
     fn compilePattern(self: *Router, path: []const u8) !Pattern {
-        var segments = std.ArrayList(Segment).initCapacity(self.allocator, 16) catch unreachable;
-        // TODO: Safety - Replace 'catch unreachable' with proper error propagation or handling for allocation failures to prevent crashes.
+        var segments = try std.ArrayList(Segment).initCapacity(self.allocator, 16);
         defer segments.deinit(self.allocator);
 
-        var param_names = std.ArrayList([]const u8).initCapacity(self.allocator, 8) catch unreachable;
-        // TODO: Safety - Replace 'catch unreachable' with proper error propagation or handling for allocation failures to prevent crashes.
+        var param_names = try std.ArrayList([]const u8).initCapacity(self.allocator, 8);
         defer param_names.deinit(self.allocator);
 
         var literal_count: usize = 0;
@@ -138,14 +146,14 @@ pub const Router = struct {
 
             if (std.mem.startsWith(u8, seg, ":")) {
                 const param_name = seg[1..];
-                // TODO: Bug - `param_name` still references the caller-owned `path` slice; if the caller frees
-                // that buffer after registration these stored slices dangle and routing dereferences freed memory.
-                try segments.append(self.allocator, .{ .param = param_name });
-                try param_names.append(self.allocator, param_name);
+                // Duplicate param_name to ensure it survives beyond the original path slice
+                const param_dup = try self.allocator.dupe(u8, param_name);
+                try segments.append(self.allocator, .{ .param = param_dup });
+                try param_names.append(self.allocator, param_dup);
             } else {
-                // TODO: Bug - Literal segments are also kept as slices into `path`, so the compiled pattern can
-                // outlive the original buffer and hit use-after-free. Duplicate into `self.allocator` here.
-                try segments.append(self.allocator, .{ .literal = seg });
+                // Duplicate literal segments to ensure they survive beyond the original path slice
+                const lit_dup = try self.allocator.dupe(u8, seg);
+                try segments.append(self.allocator, .{ .literal = lit_dup });
                 literal_count += 1;
             }
         }
@@ -162,8 +170,7 @@ pub const Router = struct {
 
     /// Split a path into segments by "/", filtering empty segments.
     fn splitPath(_: *Router, path: []const u8, arena: std.mem.Allocator) ![][]const u8 {
-        var segments = std.ArrayList([]const u8).initCapacity(arena, 16) catch unreachable;
-        // TODO: Safety - Replace 'catch unreachable' with proper error propagation or handling for allocation failures to prevent crashes.
+        var segments = try std.ArrayList([]const u8).initCapacity(arena, 16);
         defer segments.deinit(arena);
 
         var it = std.mem.splitSequence(u8, path, "/");
@@ -205,7 +212,7 @@ pub fn testRouter() !void {
     const gpa = std.heap.GeneralPurposeAllocator(.{}){};
     const allocator = gpa.allocator();
 
-    var router = Router.init(allocator);
+    var router = try Router.init(allocator);
     defer router.deinit();
 
     // Add some test routes
@@ -246,3 +253,4 @@ pub fn testRouter() !void {
 
     slog.info("Router tests completed successfully", &.{});
 }
+

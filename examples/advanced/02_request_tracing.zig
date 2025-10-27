@@ -1,3 +1,4 @@
+// examples/advanced/02_request_tracing.zig
 /// This example demonstrates how to use the Zerver tracer for recording and exporting request traces.
 // TODO: Logging - Replace std.debug.print with slog for consistent structured logging.
 const std = @import("std");
@@ -54,3 +55,4 @@ pub fn main() !void {
     std.debug.print("✓ Exports complete trace as JSON\n", .{});
     std.debug.print("✓ Enables observability for debugging\n", .{});
 }
+

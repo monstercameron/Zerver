@@ -1,3 +1,4 @@
+// tests/unit/continuation_tests.zig
 /// Tests for continuation resume logic
 ///
 /// Verifies that:
@@ -333,3 +334,4 @@ pub fn main() !void {
 
     slog.infof("\n✅ All continuation tests passed!\n\n", .{});
 }
+

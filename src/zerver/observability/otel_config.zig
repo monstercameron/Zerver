@@ -1,3 +1,4 @@
+// src/zerver/observability/otel_config.zig
 const std = @import("std");
 
 /// Configuration for OpenTelemetry behavior, primarily controlling span promotion thresholds.
@@ -83,3 +84,4 @@ test "OtelConfig defaults" {
     try std.testing.expectEqualStrings("continuations", config.queue_name_cont);
     try std.testing.expectEqual(false, config.export_job_depth);
 }
+

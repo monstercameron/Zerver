@@ -1,3 +1,4 @@
+// tests/integration/test_harness.zig
 /// Integration Test Suite - Comprehensive testing of Zerver MVP
 /// Tests core functionality without needing the full server
 const std = @import("std");
@@ -277,3 +278,4 @@ pub fn main() !void {
     slog.infof("║              ✓ ALL TESTS PASSED (6/6)             ║", .{});
     slog.infof("╚════════════════════════════════════════════════════╝\n", .{});
 }
+

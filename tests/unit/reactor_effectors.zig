@@ -1,3 +1,4 @@
+// tests/unit/reactor_effectors.zig
 const std = @import("std");
 const zerver = @import("zerver");
 
@@ -67,3 +68,4 @@ test "custom handler executes" {
 fn httpGetNoop(_: *Context, payload: zerver.types.HttpGet) DispatchError!void {
     std.debug.assert(std.mem.eql(u8, payload.url, "http://example.com"));
 }
+

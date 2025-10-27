@@ -1,3 +1,4 @@
+// src/features/blog/schema.zig
 const sql = @import("../../zerver/sql/mod.zig");
 
 /// Initialize the blog database schema
@@ -50,3 +51,4 @@ pub const Comment = struct {
     author: []const u8,
     created_at: i64,
 };
+

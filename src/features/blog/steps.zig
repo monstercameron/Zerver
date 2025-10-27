@@ -1,3 +1,4 @@
+// src/features/blog/steps.zig
 const std = @import("std");
 const zerver = @import("../../zerver/root.zig");
 const slog = @import("../../zerver/observability/slog.zig");
@@ -464,3 +465,4 @@ fn continuation_delete_comment(ctx: *zerver.CtxBase) !zerver.Decision {
         .body = .{ .complete = "" },
     });
 }
+

@@ -1,3 +1,4 @@
+// src/zerver/observability/slog.zig
 /// Structured Logging Library (inspired by Go's slog)
 ///
 /// Features:
@@ -131,21 +132,23 @@ pub const Handler = union(enum) {
     }
 
     pub fn enabled(self: Handler, level: Level) bool {
-        _ = self;
-        _ = level;
-        // TODO: Logical Error - The 'Handler.enabled' method currently always returns 'true', effectively disabling log level filtering. Implement proper log level enforcement based on a configurable threshold.
-        return true; // Always enabled for now
+        switch (self) {
+            .text => |th| return @intFromEnum(level) >= @intFromEnum(th.min_level),
+            .json => |jh| return @intFromEnum(level) >= @intFromEnum(jh.min_level),
+        }
     }
 };
 
 /// Text handler that outputs human-readable log lines
 pub const TextHandler = struct {
     writeFn: *const fn ([]const u8) anyerror!usize,
+    min_level: Level,
     mutex: std.Thread.Mutex = .{},
 
-    pub fn init(writeFn: *const fn ([]const u8) anyerror!usize) TextHandler {
+    pub fn init(writeFn: *const fn ([]const u8) anyerror!usize, min_level: Level) TextHandler {
         return .{
             .writeFn = writeFn,
+            .min_level = min_level,
         };
     }
 
@@ -199,11 +202,13 @@ pub const TextHandler = struct {
 /// JSON handler that outputs structured JSON log lines
 pub const JSONHandler = struct {
     writeFn: *const fn ([]const u8) anyerror!usize,
+    min_level: Level,
     mutex: std.Thread.Mutex = .{},
 
-    pub fn init(writeFn: *const fn ([]const u8) anyerror!usize) JSONHandler {
+    pub fn init(writeFn: *const fn ([]const u8) anyerror!usize, min_level: Level) JSONHandler {
         return .{
             .writeFn = writeFn,
+            .min_level = min_level,
         };
     }
 
@@ -215,15 +220,50 @@ pub const JSONHandler = struct {
         self.mutex.lock();
         defer self.mutex.unlock();
 
-        // Simple JSON format for now
-        // TODO: Logical Error - The JSON format in JSONHandler.handleRecord is too simple and does not include 'attrs'. Implement full structured JSON logging including all attributes.
-        const msg = std.fmt.allocPrint(std.heap.page_allocator, "{{\"time\":{},\"level\":\"{s}\",\"msg\":\"{s}\"}}\n", .{
-            record.time,
-            record.level.string(),
-            record.message,
-        }) catch return;
-        defer std.heap.page_allocator.free(msg);
+        var buf = std.ArrayList(u8).initCapacity(std.heap.page_allocator, 512) catch return;
+        defer buf.deinit(std.heap.page_allocator);
 
+        const writer = buf.writer(std.heap.page_allocator);
+        try writer.writeAll("{\"time\":");
+        try writer.print("{}", .{record.time});
+        try writer.writeAll(",\"level\":\"");
+        try writer.writeAll(record.level.string());
+        try writer.writeAll("\",\"msg\":\"");
+        try writer.writeAll(record.message);
+        try writer.writeAll("\"");
+
+        if (record.attrs.len > 0) {
+            try writer.writeAll(",\"attrs\":{");
+            for (record.attrs, 0..) |attr, idx| {
+                if (idx > 0) try writer.writeByte(',');
+                try writer.writeByte('"');
+                try writer.writeAll(attr.key);
+                try writer.writeAll("\":");
+                switch (attr.value) {
+                    .string => |s| {
+                        try writer.writeByte('"');
+                        try writer.writeAll(s);
+                        try writer.writeByte('"');
+                    },
+                    .enum_tag => |s| {
+                        try writer.writeByte('"');
+                        try writer.writeAll(s);
+                        try writer.writeByte('"');
+                    },
+                    .int => |i| try writer.print("{d}", .{i}),
+                    .uint => |u| try writer.print("{d}", .{u}),
+                    .float => |f| try writer.print("{d}", .{f}),
+                    .bool => |b| try writer.print("{}", .{b}),
+                    .duration => |d| try writer.print("{d}", .{d}),
+                    .any => try writer.writeAll("\"<any>\""),
+                }
+            }
+            try writer.writeAll("}");
+        }
+
+        try writer.writeAll("}\n");
+
+        const msg = buf.items;
         _ = try self.writeFn(msg);
     }
 };
@@ -240,22 +280,7 @@ pub const Logger = struct {
         };
     }
 
-    pub fn with(self: Logger, attrs: []const Attr) Logger {
-        var new_context = std.ArrayList(Attr).initCapacity(std.heap.page_allocator, self.context.len + attrs.len) catch unreachable;
-        // TODO: Safety - Replace 'catch unreachable' with proper error propagation or handling for allocation failures in Logger.with to prevent crashes.
-        defer new_context.deinit();
-
-        new_context.appendSliceAssumeCapacity(self.context);
-        new_context.appendSliceAssumeCapacity(attrs);
-
-        return .{
-            .handler = self.handler,
-            .context = new_context.toOwnedSlice() catch unreachable,
-            // TODO: Safety - Replace 'catch unreachable' with proper error propagation or handling for allocation failures in Logger.with to prevent crashes.
-        };
-    }
-
-    pub fn withContext(self: Logger, allocator: std.mem.Allocator, attrs: []const Attr) !Logger {
+    pub fn with(self: Logger, allocator: std.mem.Allocator, attrs: []const Attr) !Logger {
         var new_context = try std.ArrayList(Attr).initCapacity(allocator, self.context.len + attrs.len);
         new_context.appendSliceAssumeCapacity(self.context);
         new_context.appendSliceAssumeCapacity(attrs);
@@ -267,22 +292,26 @@ pub const Logger = struct {
     }
 
     pub fn debug(self: Logger, msg: []const u8, attrs: []const Attr) void {
-        self.log(.Debug, msg, attrs);
+        self.logWithSource(.Debug, msg, attrs, @src());
     }
 
     pub fn info(self: Logger, msg: []const u8, attrs: []const Attr) void {
-        self.log(.Info, msg, attrs);
+        self.logWithSource(.Info, msg, attrs, @src());
     }
 
     pub fn warn(self: Logger, msg: []const u8, attrs: []const Attr) void {
-        self.log(.Warn, msg, attrs);
+        self.logWithSource(.Warn, msg, attrs, @src());
     }
 
     pub fn err(self: Logger, msg: []const u8, attrs: []const Attr) void {
-        self.log(.Error, msg, attrs);
+        self.logWithSource(.Error, msg, attrs, @src());
     }
 
-    fn log(self: Logger, level: Level, msg: []const u8, attrs: []const Attr) void {
+    fn logWithSource(self: Logger, level: Level, msg: []const u8, attrs: []const Attr, src: std.builtin.SourceLocation) void {
+        self.log(level, msg, attrs, src);
+    }
+
+    fn log(self: Logger, level: Level, msg: []const u8, attrs: []const Attr, src: std.builtin.SourceLocation) void {
         if (!self.handler.enabled(level)) return;
 
         // Combine context and provided attributes
@@ -296,11 +325,10 @@ pub const Logger = struct {
             .level = level,
             .message = msg,
             .source = .{
-                .file = "unknown",
-                .function = "unknown",
-                .line = 0,
+                .file = src.file,
+                .function = src.fn_name,
+                .line = src.line,
             },
-            // TODO: Logical Error - The 'record.source' fields (file, function, line) are hardcoded to "unknown" and 0. Implement capturing actual source location information for better debugging.
             .time = @intCast(std.time.nanoTimestamp()),
             .attrs = all_attrs.toOwnedSlice(std.heap.page_allocator) catch return,
         };
@@ -354,7 +382,7 @@ pub fn setupDefaultLoggerWithFile(path: []const u8) !void {
     file_log = file;
     file_log_mutex.unlock();
 
-    default_text_handler = TextHandler.init(combinedWriter);
+    default_text_handler = TextHandler.init(combinedWriter, .Debug);
     const handler = default_text_handler.?.handler();
     const logger = Logger.init(handler);
     setDefault(logger);
@@ -387,7 +415,7 @@ pub fn default() Logger {
     }
 
     // Create a persistent default text handler
-    default_text_handler = TextHandler.init(debugWriter);
+    default_text_handler = TextHandler.init(debugWriter, .Debug);
     const handler = default_text_handler.?.handler();
     const logger = Logger.init(handler);
     default_logger = logger;
@@ -444,7 +472,7 @@ pub fn testLogger() !void {
     var buf = try std.ArrayList(u8).initCapacity(std.testing.allocator, 256);
     defer buf.deinit(std.testing.allocator);
 
-    var text_handler = TextHandler.init(buf.writer().write);
+    var text_handler = TextHandler.init(buf.writer().write, .Debug);
     const handler = text_handler.handler();
     const logger = Logger.init(handler);
 
@@ -479,3 +507,4 @@ pub fn debugWriter(bytes: []const u8) anyerror!usize {
     try stdout.writeAll(bytes);
     return bytes.len;
 }
+

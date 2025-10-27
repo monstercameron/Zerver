@@ -1,3 +1,4 @@
+// src/features/hello/routes.zig
 /// Hello feature route registration
 const std = @import("std");
 const zerver = @import("../../zerver/root.zig");
@@ -20,3 +21,4 @@ pub fn registerRoutes(server: *zerver.Server) !void {
         makeStep("hello", steps.helloStep),
     } });
 }
+

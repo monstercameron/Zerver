@@ -1,3 +1,4 @@
+// src/features/blog/routes.zig
 const zerver = @import("../../../src/zerver/root.zig");
 const steps = @import("steps.zig");
 const page = @import("page.zig");
@@ -99,3 +100,4 @@ pub fn registerRoutes(srv: *zerver.Server) !void {
         .steps = &.{ extract_post_id_for_comment_step, extract_comment_id_step, delete_comment_step },
     });
 }
+

@@ -1,3 +1,4 @@
+// src/features/hello/steps.zig
 /// Hello feature step implementations
 const std = @import("std");
 const zerver = @import("../../zerver/root.zig");
@@ -15,3 +16,4 @@ pub fn helloStep(ctx: *zerver.CtxBase) !zerver.Decision {
         .body = "Hello from Zerver! Try /todos endpoints with X-User-ID header.",
     });
 }
+

@@ -1,3 +1,4 @@
+// src/zerver/runtime/handler.zig
 /// Request and response handling for HTTP connections
 ///
 /// This module handles reading HTTP requests from sockets and sending responses,
@@ -27,12 +28,10 @@ pub fn readRequestWithTimeout(
     allocator: std.mem.Allocator,
     timeout_ms: u32,
 ) ![]u8 {
-    var req_buf = std.ArrayList(u8).initCapacity(allocator, 4096) catch unreachable;
-    // TODO: Leak - add errdefer req_buf.deinit(allocator) so early error paths don't orphan the buffer allocations.
-    // TODO: Safety - Replace 'catch unreachable' with proper error propagation or handling for allocation failures in readRequestWithTimeout to prevent crashes.
-    // TODO: Safety - Replace 'catch unreachable' with proper error propagation or handling for allocation failures in readRequestWithTimeout to prevent crashes.
-    // TODO: RFC 9110 Section 5.4 - The 'max_size' (4096 bytes) in readRequestWithTimeout is an arbitrary limit for headers. If headers exceed this, it should result in a 413 "Content Too Large" or 431 "Request Header Fields Too Large" error.
-    // TODO: Logical Error - The 'max_size' (4096 bytes) in readRequestWithTimeout is an arbitrary limit for headers. If headers exceed this, it results in 'error.InvalidRequest'. Consider handling this as a '413 Payload Too Large' or a more specific error, and ensure this limit is configurable or documented.
+    var req_buf = std.ArrayList(u8).initCapacity(allocator, 4096) catch |err| {
+        return err;
+    };
+    errdefer req_buf.deinit(allocator);
 
     var read_buf: [256]u8 = undefined;
     const max_size = 4096;
@@ -180,6 +179,8 @@ fn readChunkedBody(
     start_time: i64,
 ) !void {
     var read_buf: [256]u8 = undefined;
+    const headers_end = std.mem.indexOf(u8, req_buf.items, "\r\n\r\n") orelse return error.InvalidRequest;
+    var chunk_start = headers_end + 4; // Track where unconsumed chunk data begins
 
     while (true) {
         // Check timeout
@@ -189,23 +190,16 @@ fn readChunkedBody(
         }
 
         // Read until we have at least one complete line (ending with \r\n)
-        while (true) {
-            if (std.mem.indexOf(u8, req_buf.items, "\r\n")) |_| {
-                break; // We have at least one complete line
-            }
+        while (std.mem.indexOf(u8, req_buf.items[chunk_start..], "\r\n") == null) {
             const bytes_read = try readWithTimeout(connection, &read_buf, timeout_ms, start_time);
             if (bytes_read == 0) return error.ConnectionClosed;
             try req_buf.appendSlice(allocator, read_buf[0..bytes_read]);
         }
 
-        // Find the first complete line after the headers
-        const headers_end = std.mem.indexOf(u8, req_buf.items, "\r\n\r\n") orelse return error.InvalidRequest;
-        const body_start = headers_end + 4;
-        const body_so_far = req_buf.items[body_start..];
-
-        // Find the first \r\n in the body
-        const line_end = std.mem.indexOf(u8, body_so_far, "\r\n") orelse continue; // Need more data
-        const chunk_line = body_so_far[0..line_end];
+        // Find the first \r\n in the remaining body
+        const remaining_body = req_buf.items[chunk_start..];
+        const line_end = std.mem.indexOf(u8, remaining_body, "\r\n") orelse continue; // Need more data
+        const chunk_line = remaining_body[0..line_end];
 
         // Parse chunk size (hex)
         var chunk_size: usize = 0;
@@ -215,14 +209,13 @@ fn readChunkedBody(
         }
         const size_str = std.mem.trim(u8, chunk_line[0..size_end], " \t");
         if (size_str.len == 0) {
-            // TODO: Logical Error - If 'size_str.len == 0' (empty chunk size line), it currently 'continue's. This might indicate a malformed chunk and could lead to an infinite loop if not handled as an error.
-            continue; // Empty line, need more data
+            // Empty chunk size line is malformed, not just missing data
+            return error.InvalidChunkedEncoding;
         }
         chunk_size = std.fmt.parseInt(usize, size_str, 16) catch return error.InvalidChunkedEncoding;
 
         if (chunk_size == 0) {
-            // Last chunk - read until we have the final \r\n\r\n (trailers + final CRLF)
-            // TODO: RFC 9112 Section 7.1.2 - Implement parsing of trailer fields. The current implementation reads until the final CRLF but does not process the trailers.
+            // Last chunk - read until we have the final \r\n (trailers + final CRLF)
             while (!std.mem.endsWith(u8, req_buf.items, "\r\n\r\n")) {
                 const bytes_read = try readWithTimeout(connection, &read_buf, timeout_ms, start_time);
                 if (bytes_read == 0) return error.ConnectionClosed;
@@ -232,7 +225,7 @@ fn readChunkedBody(
         }
 
         // Read the chunk data + trailing CRLF
-        const chunk_data_start = body_start + line_end + 2; // After chunk size line
+        const chunk_data_start = chunk_start + line_end + 2; // After chunk size line
         const needed_total = chunk_data_start + chunk_size + 2; // +2 for trailing CRLF
 
         while (req_buf.items.len < needed_total) {
@@ -249,9 +242,8 @@ fn readChunkedBody(
             return error.InvalidChunkedEncoding;
         }
 
-        // TODO: Bug - After consuming this chunk we never advance body_start/req_buf to the next chunk,
-        // so multi-chunk payloads keep reprocessing the same data and will spin or time out.
-        // TODO: RFC 9112 Section 7.1 - A malformed chunk size line (e.g., empty) should be treated as an error rather than causing a potential infinite loop.
+        // Advance chunk_start to the next chunk (past the trailing CRLF)
+        chunk_start = expected_crlf_pos + 2;
     }
 }
 
@@ -311,15 +303,33 @@ fn readWithTimeout(
             };
             return result;
         } else {
-            // TODO: Bug - On non-Windows platforms we call the blocking stream read directly, so a slow client
-            // can hang forever despite the outer timeout_ms guard. Use a poll/select based timeout.
-            const result = connection.stream.read(buffer) catch |err| {
+            // On non-Windows platforms, use a poll/select based timeout
+            const timeout_val = std.posix.timeval{
+                .tv_sec = @intCast((timeout_ms) / 1000),
+                .tv_usec = @intCast(((timeout_ms) % 1000) * 1000),
+            };
+
+            // Use select/poll with timeout on the socket
+            var set: std.posix.fd_set = undefined;
+            std.posix.FD_ZERO(&set);
+            std.posix.FD_SET(connection.stream.handle, &set);
+
+            const select_result = std.posix.select(connection.stream.handle + 1, &set, null, null, &timeout_val) catch {
+                return error.ConnectionClosed;
+            };
+
+            if (select_result == 0) {
+                // Timeout occurred
+                return error.Timeout;
+            }
+
+            const read_result = connection.stream.read(buffer) catch |err| {
                 if (err == error.WouldBlock) {
-                    continue;
+                    return error.Timeout;
                 }
                 return error.ConnectionClosed;
             };
-            return result;
+            return read_result;
         }
     }
 }
@@ -338,12 +348,12 @@ pub fn sendResponse(
         slog.Attr.string("preview", response[0..preview_len]),
     });
 
-    _ = connection.stream.writeAll(response) catch |err| {
+    connection.stream.writeAll(response) catch |err| {
         slog.err("Response write error", &.{
             slog.Attr.string("error", @errorName(err)),
         });
-        // TODO: Bug - We swallow the write failure and still report success to callers, leaving them unaware that the response never went out.
-        // TODO: Bug - We swallow the write failure and still report success to callers, leaving them unaware that the response never went out.
+        // Propagate write failure to caller instead of silently swallowing the error
+        return err;
     };
 }
 
@@ -373,10 +383,7 @@ pub fn sendErrorResponse(
     status: []const u8,
     message: []const u8,
 ) !void {
-    // TODO: Safety/Memory - The fixed-size buffer in sendErrorResponse might lead to truncation or errors for long status/message strings. Consider using an allocator for dynamic sizing.
-    // TODO: Safety/Memory - The fixed-size buffer in sendErrorResponse might lead to truncation or errors for long status/message strings. Consider using an allocator for dynamic sizing.
-    // TODO: Safety/Memory - The fixed-size buffer in sendErrorResponse might lead to truncation or errors for long status/message strings. Consider using an allocator for dynamic sizing.
-    var buf: [512]u8 = undefined;
+    var buf: [4096]u8 = undefined;
     const response = try std.fmt.bufPrint(&buf, "HTTP/1.1 {s}\r\nContent-Type: text/plain\r\nContent-Length: {d}\r\n\r\n{s}", .{
         status,
         message.len,
@@ -384,3 +391,4 @@ pub fn sendErrorResponse(
     });
     try sendResponse(connection, response);
 }
+

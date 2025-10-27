@@ -1,3 +1,4 @@
+// examples/advanced/04_single_file_advanced.zig
 /// Advanced Example: Todos Product with DDD/CQRS Structure (Single File)
 ///
 /// This consolidated version demonstrates professional structure using:
@@ -423,3 +424,4 @@ pub fn main() !void {
         \\
     );
 }
+

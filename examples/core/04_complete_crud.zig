@@ -1,3 +1,4 @@
+// examples/core/04_complete_crud.zig
 /// Complete Todo CRUD example: Full demonstration of Zerver capabilities
 // TODO: Logging - Replace std.debug.print with slog for consistent structured logging.
 const std = @import("std");
@@ -382,3 +383,4 @@ pub fn main() !void {
     std.debug.print("✓ Error handling\n", .{});
     std.debug.print("✓ Complete CRUD workflow\n", .{});
 }
+

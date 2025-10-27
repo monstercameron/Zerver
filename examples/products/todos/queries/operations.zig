@@ -1,3 +1,4 @@
+// examples/products/todos/queries/operations.zig
 /// Todos Product: Query Operations (Read-Only)
 ///
 /// Queries follow CQRS pattern: read-only operations that don't modify state
@@ -70,3 +71,4 @@ pub fn render_item(ctx: *zerver.CtxBase) !zerver.Decision {
         .body = "{\"id\":\"unknown\",\"title\":\"\",\"status\":\"pending\"}",
     });
 }
+

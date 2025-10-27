@@ -1,3 +1,4 @@
+// tests/unit/reqtest_example.zig
 /// Example: ReqTest harness for isolated step testing
 ///
 /// Demonstrates:
@@ -137,3 +138,4 @@ pub fn main() !void {
     slog.infof("✓ Assert on decision outcomes\n", .{});
     slog.infof("✓ Unit test in milliseconds (no network)\n", .{});
 }
+

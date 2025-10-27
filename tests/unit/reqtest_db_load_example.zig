@@ -1,3 +1,4 @@
+// tests/unit/reqtest_db_load_example.zig
 /// ReqTest example: Unit testing a database load step in isolation.
 ///
 /// This example demonstrates how to use ReqTest to test a DB load step
@@ -224,3 +225,4 @@ pub const tests = .{
     &test_continuation_not_found,
     &test_parameter_access,
 };
+

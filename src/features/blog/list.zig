@@ -1,3 +1,4 @@
+// src/features/blog/list.zig
 const std = @import("std");
 const zerver = @import("../../zerver/root.zig");
 const components = @import("../../shared/components.zig");
@@ -432,3 +433,4 @@ fn continuation_render_blog_post_page(ctx: *zerver.CtxBase) !zerver.Decision {
 
     return http_util.htmlResponse(http_status.ok, html);
 }
+

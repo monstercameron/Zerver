@@ -1,3 +1,4 @@
+// tests/html_renderer_tests.zig
 const std = @import("std");
 const html = @import("html.zig");
 
@@ -120,3 +121,4 @@ test "html renderer: attributes escape special characters" {
         rendered,
     );
 }
+

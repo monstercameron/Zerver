@@ -1,3 +1,4 @@
+// examples/advanced/05_streaming_json_in_steps.zig
 /// Streaming JSON Writer in a Step Example
 ///
 /// Demonstrates how to use the StreamingJsonWriter within a Zerver step
@@ -357,3 +358,4 @@ pub fn main() !void {
     std.debug.print("✓ Pagination support\n", .{});
     std.debug.print("✓ Custom headers for streaming metadata\n", .{});
 }
+

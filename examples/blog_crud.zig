@@ -1,3 +1,4 @@
+// examples/blog_crud.zig
 /// Blog CRUD Example - Complete Zerver Demo
 ///
 /// Demonstrates a full-featured blog API with posts and comments,
@@ -619,3 +620,4 @@ fn printDemoInfo() void {
         \\Server starting on http://127.0.0.1:8080
     , .{});
 }
+

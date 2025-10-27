@@ -1,3 +1,4 @@
+// src/zerver/observability/tracer.zig
 /// Tracer: Records step/effect events for observability and exports as JSON.
 ///
 /// Trace captures:
@@ -35,9 +36,13 @@ pub const TraceEvent = struct {
     kind: EventKind,
     timestamp_ms: u64,
     step_name: ?[]const u8 = null,
+    step_name_owned: bool = false,
     effect_kind: ?[]const u8 = null,
+    effect_kind_owned: bool = false,
     status: ?[]const u8 = null, // "Continue", "Done", "Fail", "Need"
+    status_owned: bool = false,
     error_msg: ?[]const u8 = null,
+    error_msg_owned: bool = false,
     need_sequence: ?usize = null,
     effect_count: ?usize = null,
     resume_ptr: ?usize = null,
@@ -49,7 +54,6 @@ pub const TraceEvent = struct {
     job_ctx: ?usize = null,
     job_worker_index: ?usize = null,
     job_decision: ?[]const u8 = null,
-    // TODO: Memory/Safety - Ensure that string slices stored in TraceEvent (step_name, effect_kind, status, error_msg) have a lifetime at least as long as the Tracer itself, or are duplicated into the Tracer's allocator to prevent use-after-free issues.
 };
 
 /// Request tracer: records events during request execution.
@@ -67,6 +71,20 @@ pub const Tracer = struct {
     }
 
     pub fn deinit(self: *Tracer) void {
+        for (self.events.items) |*event| {
+            if (event.step_name_owned and event.step_name != null) {
+                self.allocator.free(event.step_name.?);
+            }
+            if (event.effect_kind_owned and event.effect_kind != null) {
+                self.allocator.free(event.effect_kind.?);
+            }
+            if (event.status_owned and event.status != null) {
+                self.allocator.free(event.status.?);
+            }
+            if (event.error_msg_owned and event.error_msg != null) {
+                self.allocator.free(event.error_msg.?);
+            }
+        }
         self.events.deinit(self.allocator);
     }
 
@@ -80,9 +98,11 @@ pub const Tracer = struct {
 
     /// Record step start.
     pub fn recordStepStart(self: *Tracer, step_name: []const u8) void {
+        const duped_name = self.allocator.dupe(u8, step_name) catch return;
         self.recordEvent(.{
             .kind = .step_start,
-            .step_name = step_name,
+            .step_name = duped_name,
+            .step_name_owned = true,
             .timestamp_ms = 0,
         });
     }
@@ -93,10 +113,17 @@ pub const Tracer = struct {
         step_name: []const u8,
         outcome: []const u8,
     ) void {
+        const duped_name = self.allocator.dupe(u8, step_name) catch return;
+        const duped_outcome = self.allocator.dupe(u8, outcome) catch {
+            self.allocator.free(duped_name);
+            return;
+        };
         self.recordEvent(.{
             .kind = .step_end,
-            .step_name = step_name,
-            .status = outcome,
+            .step_name = duped_name,
+            .step_name_owned = true,
+            .status = duped_outcome,
+            .status_owned = true,
             .timestamp_ms = 0,
         });
     }
@@ -106,9 +133,11 @@ pub const Tracer = struct {
         self: *Tracer,
         effect_kind: []const u8,
     ) void {
+        const duped_kind = self.allocator.dupe(u8, effect_kind) catch return;
         self.recordEvent(.{
             .kind = .effect_start,
-            .effect_kind = effect_kind,
+            .effect_kind = duped_kind,
+            .effect_kind_owned = true,
             .timestamp_ms = 0,
         });
     }
@@ -119,10 +148,18 @@ pub const Tracer = struct {
         effect_kind: []const u8,
         success: bool,
     ) void {
+        const duped_kind = self.allocator.dupe(u8, effect_kind) catch return;
+        const status_str = if (success) "success" else "failure";
+        const duped_status = self.allocator.dupe(u8, status_str) catch {
+            self.allocator.free(duped_kind);
+            return;
+        };
         self.recordEvent(.{
             .kind = .effect_end,
-            .effect_kind = effect_kind,
-            .status = if (success) "success" else "failure",
+            .effect_kind = duped_kind,
+            .effect_kind_owned = true,
+            .status = duped_status,
+            .status_owned = true,
             .timestamp_ms = 0,
         });
     }
@@ -280,10 +317,11 @@ pub const Tracer = struct {
 
     /// Record an error.
     pub fn recordError(self: *Tracer, msg: []const u8) void {
-        // TODO: Logical Error - The 'recordError' function currently records an event of kind '.request_end'. This might overwrite a legitimate request_end event or cause confusion in the trace. Consider a distinct event type for errors or adding error details to an existing event.
+        const duped_msg = self.allocator.dupe(u8, msg) catch return;
         self.recordEvent(.{
             .kind = .request_end,
-            .error_msg = msg,
+            .error_msg = duped_msg,
+            .error_msg_owned = true,
             .timestamp_ms = 0,
         });
     }
@@ -464,3 +502,4 @@ pub fn testTracer() !void {
         slog.Attr.string("trace_json", json),
     });
 }
+

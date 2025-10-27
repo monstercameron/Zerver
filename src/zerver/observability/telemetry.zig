@@ -1,3 +1,4 @@
+// src/zerver/observability/telemetry.zig
 const std = @import("std");
 const types = @import("../core/types.zig");
 const ctx_module = @import("../core/ctx.zig");
@@ -1155,3 +1156,4 @@ fn findHeaderValue(headers: []const types.Header, name: []const u8) []const u8 {
     }
     return "";
 }
+

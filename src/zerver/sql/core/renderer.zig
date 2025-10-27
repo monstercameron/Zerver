@@ -1,3 +1,4 @@
+// src/zerver/sql/core/renderer.zig
 const std = @import("std");
 const db = @import("../db.zig");
 const ast = @import("ast.zig");
@@ -103,3 +104,4 @@ pub const Renderer = struct {
         try sql_buf.appendSlice(quoted);
     }
 };
+

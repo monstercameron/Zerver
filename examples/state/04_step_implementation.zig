@@ -1,3 +1,4 @@
+// examples/state/04_step_implementation.zig
 /// Example: Complete Todo step implementation using slots
 ///
 /// This shows a realistic pattern for implementing steps that use slots
@@ -79,3 +80,4 @@ pub fn main() void {
     slog.infof("This file demonstrates the slot pattern.", .{});
     slog.infof("To use: Import slots_example.zig and define steps using the Slot enum.", .{});
 }
+

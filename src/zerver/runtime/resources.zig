@@ -1,3 +1,4 @@
+// src/zerver/runtime/resources.zig
 const std = @import("std");
 const config_mod = @import("config.zig");
 const sql = @import("../sql/mod.zig");
@@ -354,3 +355,4 @@ pub fn create(allocator: std.mem.Allocator, config: config_mod.AppConfig) !*Runt
     try resources_ptr.init(allocator, config);
     return resources_ptr;
 }
+

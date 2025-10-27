@@ -1,3 +1,4 @@
+// examples/advanced/01_memory_efficient_json.zig
 /// Streaming JSON Writer Example
 ///
 /// Demonstrates how to write JSON incrementally to a buffer
@@ -325,3 +326,4 @@ pub fn main() !void {
 
     std.debug.print("✓ All streaming JSON examples completed\n\n", .{});
 }
+

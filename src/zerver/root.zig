@@ -1,3 +1,4 @@
+// src/zerver/root.zig
 /// Zerver: A backend framework for Zig with observability and composable orchestration.
 ///
 /// This is the main library root that exports the public API surface.
@@ -14,6 +15,7 @@ pub const telemetry = @import("observability/telemetry.zig");
 pub const otel = @import("observability/otel.zig");
 pub const reqtest_module = @import("core/reqtest.zig");
 pub const sql = @import("sql/mod.zig");
+// TODO(code-smell): Guard this re-export behind a neutral abstraction so downstream users are not forced onto the libuv backend.
 pub const libuv_reactor = @import("runtime/reactor/libuv.zig");
 pub const reactor_join = @import("runtime/reactor/join.zig");
 pub const reactor_job_system = @import("runtime/reactor/job_system.zig");
@@ -60,3 +62,4 @@ pub const Router = router.Router;
 pub const Executor = executor.Executor;
 pub const Tracer = tracer_module.Tracer;
 pub const ReqTest = reqtest_module.ReqTest;
+

@@ -1,3 +1,4 @@
+// src/features/blog/types.zig
 pub const PostInput = struct {
     title: []const u8,
     content: []const u8,
@@ -57,3 +58,4 @@ pub fn BlogSlotType(comptime s: BlogSlot) type {
         .CommentDeleteAck => []const u8,
     };
 }
+

@@ -1,3 +1,4 @@
+// src/zerver/sql/db.zig
 const std = @import("std");
 
 /// Canonical error space for SQL driver interactions inside Zerver.
@@ -357,3 +358,4 @@ pub fn openWithDriver(driver: *const Driver, allocator: std.mem.Allocator, optio
         .closed = false,
     };
 }
+

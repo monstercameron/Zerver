@@ -1,3 +1,4 @@
+// src/zerver/runtime/config.zig
 const std = @import("std");
 
 /// Application-level runtime configuration loaded from config.json.
@@ -507,3 +508,4 @@ fn fileExists(dir: std.fs.Dir, path: []const u8) bool {
     dir.access(path, .{}) catch return false;
     return true;
 }
+

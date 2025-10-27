@@ -1,3 +1,4 @@
+// examples/core/01_basic_server.zig
 /// This example demonstrates a basic Zerver HTTP server with routing and middleware.
 const std = @import("std");
 const zerver = @import("zerver");
@@ -134,3 +135,4 @@ pub fn main() !void {
     slog.infof("✓ Response rendering (status, headers, body)", .{});
     slog.infof("✓ Flow endpoint dispatch (/flow/v1/<slug>)", .{});
 }
+

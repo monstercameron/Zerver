@@ -1,3 +1,4 @@
+// src/zerver/impure/server.zig
 /// Server: HTTP listener, routing, request handling.
 const std = @import("std");
 const types = @import("../core/types.zig");
@@ -116,6 +117,8 @@ pub const Server = struct {
     pub fn formatSSEEvent(self: *Server, event: SSEEvent, arena: std.mem.Allocator) ![]const u8 {
         _ = self;
         var buf = std.ArrayList(u8).initCapacity(arena, 256) catch unreachable;
+        // TODO: Safety - Propagate allocator failure instead of unreachable; a missed OOM here will crash the whole server.
+        // TODO: Perf - Reuse a scratch buffer or stream directly to the client to avoid per-event allocations when broadcasting SSE.
         const w = buf.writer(arena);
 
         // Event type (optional)
@@ -179,7 +182,7 @@ pub const Server = struct {
         return Server{
             .allocator = allocator,
             .config = cfg,
-            .router = router_module.Router.init(allocator),
+            .router = try router_module.Router.init(allocator),
             .executor = executor_module.Executor.init(allocator, effect_handler),
             .flows = try std.ArrayList(Flow).initCapacity(allocator, 16),
             .global_before = try std.ArrayList(types.Step).initCapacity(allocator, 8),
@@ -498,6 +501,7 @@ pub const Server = struct {
         }
 
         path = try arena.dupe(u8, path);
+        // TODO: Perf - Avoid re-duplicating the path slice when it already lives in the arena; keep a slice into `path_with_query` instead.
 
         // Parse headers (until empty line)
         var headers = std.StringHashMap(std.ArrayList([]const u8)).init(arena);
@@ -508,6 +512,7 @@ pub const Server = struct {
                 // RFC 9110 Section 5.1 - Field names are case-insensitive
                 const header_name_raw = line[0..colon_idx];
                 const header_name = try std.ascii.allocLowerString(arena, header_name_raw);
+                // TODO: Perf - Lower-casing each header allocates per field; normalize in-place over the request buffer when possible.
 
                 // RFC 9110 Section 5.6.3 - Trim OWS (optional whitespace) around field value
                 const header_value_raw = line[colon_idx + 1 ..];
@@ -654,6 +659,7 @@ pub const Server = struct {
     /// URL decode a string per RFC 3986
     fn urlDecode(encoded: []const u8, arena: std.mem.Allocator) ![]const u8 {
         var result = try std.ArrayList(u8).initCapacity(arena, encoded.len);
+        // TODO: Perf - Fast-path strings without escapes to return the original slice and skip allocation.
         var i: usize = 0;
 
         while (i < encoded.len) {
@@ -1396,3 +1402,4 @@ pub const Server = struct {
         }
     }
 };
+

@@ -1,3 +1,4 @@
+// examples/advanced/03_ddd_cqrs_patterns.zig
 /// Advanced Example: Todos Product with DDD/CQRS Structure
 ///
 /// This example demonstrates a production-ready structure using:
@@ -231,3 +232,4 @@ pub fn main() !void {
         \\
     );
 }
+

@@ -1,3 +1,4 @@
+// src/shared/http.zig
 const zerver = @import("../zerver/root.zig");
 
 const JSON_HEADERS = [_]zerver.types.Header{
@@ -27,3 +28,4 @@ pub fn htmlResponse(status: u16, body: []const u8) zerver.Decision {
         .headers = &HTML_HEADERS,
     });
 }
+

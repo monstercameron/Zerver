@@ -1,3 +1,4 @@
+// src/zerver/core/http_status.zig
 /// Canonical HTTP status codes used across Zerver.
 pub const HttpStatus = struct {
     // 1xx Informational
@@ -77,4 +78,6 @@ pub const HttpStatus = struct {
     pub fn isValid(code: u16) bool {
         return code >= 100 and code <= 599;
     }
+    // TODO: Perf - Consider switching to an enum-backed lookup so branch prediction can short-circuit common status classes.
 };
+

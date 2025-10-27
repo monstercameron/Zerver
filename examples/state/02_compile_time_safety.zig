@@ -1,3 +1,4 @@
+// examples/state/02_compile_time_safety.zig
 /// Example: CtxView compile-time safety
 ///
 /// This demonstrates how CtxView prevents invalid slot access at compile time.
@@ -71,3 +72,4 @@ pub fn main() void {
     slog.infof("This file demonstrates CtxView compile-time safety.", .{});
     slog.infof("See the commented examples above to understand what WOULD fail to compile.", .{});
 }
+

@@ -1,3 +1,4 @@
+// src/zerver/runtime/termination.zig
 /// Cross-platform termination signal handling for graceful shutdown logging.
 const std = @import("std");
 const builtin = @import("builtin");
@@ -70,3 +71,4 @@ fn posixSignalHandler(sig: c_int) callconv(.C) void {
     };
     handleTermination(signal_name);
 }
+

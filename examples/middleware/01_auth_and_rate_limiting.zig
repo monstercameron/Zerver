@@ -1,3 +1,4 @@
+// examples/middleware/01_auth_and_rate_limiting.zig
 /// Middleware examples: auth, rate limiting, and other cross-cutting concerns
 ///
 /// Middleware in Zerver are just Steps that run before main business logic.
@@ -207,3 +208,4 @@ pub fn example_protected_route(ctx: *zerver.CtxBase) !zerver.Decision {
 //     .before = &.{ zerver.step("optional_auth", optional_auth) },
 //     .steps = &.{ /* business logic */ },
 // });
+

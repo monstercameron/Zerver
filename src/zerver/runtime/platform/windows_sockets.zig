@@ -1,3 +1,4 @@
+// src/zerver/runtime/platform/windows_sockets.zig
 /// Windows-specific socket operations using raw Winsock calls
 ///
 /// This module provides low-level socket I/O operations for Windows.
@@ -156,3 +157,4 @@ pub fn sendAll(handle: std.net.Stream.Handle, data: []const u8) SendError!void {
 pub inline fn isWindows() bool {
     return builtin.os.tag == .windows;
 }
+

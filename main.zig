@@ -1,3 +1,4 @@
+// main.zig
 /// Main entry point - orchestrates server startup and initialization
 const std = @import("std");
 const server_init = @import("src/zerver/bootstrap/init.zig");
@@ -31,3 +32,4 @@ pub fn main() !void {
     // Start listening and serving
     try init_bundle.server.listen();
 }
+

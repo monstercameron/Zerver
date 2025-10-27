@@ -1,3 +1,4 @@
+// tests/libuv_smoke.zig
 const std = @import("std");
 const log = std.log.scoped(.libuv_smoke);
 
@@ -193,3 +194,4 @@ pub fn main() LibuvError!void {
     }
     log.info("All libuv smoke scenarios succeeded", .{});
 }
+

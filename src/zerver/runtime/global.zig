@@ -1,3 +1,4 @@
+// src/zerver/runtime/global.zig
 const resources_mod = @import("resources.zig");
 
 var global_resources: ?*resources_mod.RuntimeResources = null;
@@ -18,3 +19,4 @@ pub fn get() *resources_mod.RuntimeResources {
 pub fn clear() void {
     global_resources = null;
 }
+

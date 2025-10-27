@@ -1,3 +1,4 @@
+// tests/integration/server_test.zig
 /// Server Integration Test - Start server and test HTTP responses
 /// Tests the full request/response cycle with real HTTP
 const std = @import("std");
@@ -129,3 +130,4 @@ pub fn main() !void {
     slog.infof("║         ✓ SERVER INTEGRATION TESTS COMPLETE       ║", .{});
     slog.infof("╚════════════════════════════════════════════════════╝\n", .{});
 }
+

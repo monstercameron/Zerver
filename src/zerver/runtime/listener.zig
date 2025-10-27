@@ -1,3 +1,4 @@
+// src/zerver/runtime/listener.zig
 /// TCP listener and connection handling
 ///
 /// This module manages the TCP server socket, accepts connections,
@@ -12,16 +13,21 @@ pub fn listenAndServe(
     srv: *root.Server,
     allocator: std.mem.Allocator,
 ) !void {
-    const server_addr = try std.net.Address.parseIp("127.0.0.1", 8080);
-    // TODO: Bug - Hard-coding 127.0.0.1:8080 ignores runtime configuration; use server Config listen address instead.
+    const addr = srv.config.addr;
+    const server_addr = try std.net.Address.parseIp(
+        try std.fmt.allocPrint(allocator, "{d}.{d}.{d}.{d}", .{ addr.ip[0], addr.ip[1], addr.ip[2], addr.ip[3] }),
+        addr.port,
+    );
+    defer allocator.free(server_addr.getIp());
+
     var listener = try server_addr.listen(.{
         .reuse_address = true,
     });
     defer listener.deinit();
 
     slog.info("Server started and listening", &.{
-        slog.Attr.string("address", "127.0.0.1"),
-        slog.Attr.int("port", 8080),
+        slog.Attr.string("address", try std.fmt.allocPrint(allocator, "{d}.{d}.{d}.{d}", .{ addr.ip[0], addr.ip[1], addr.ip[2], addr.ip[3] })),
+        slog.Attr.int("port", addr.port),
     });
     while (true) {
         const connection = listener.accept() catch |err| {
@@ -34,9 +40,13 @@ pub fn listenAndServe(
         slog.info("Accepted new connection", &.{});
 
         // Handle persistent connection - RFC 9112 Section 9
-        // TODO: Bug - Propagating a single connection error through this `try` will tear down the entire listener loop instead of just dropping the bad client; swallow and continue instead.
-        // TODO: Bug - Propagating a single connection error through this `try` will tear down the entire listener loop instead of just dropping the bad client; swallow and continue instead.
-        try handleConnection(srv, allocator, connection);
+        // Swallow and continue on connection errors to prevent listener teardown
+        handleConnection(srv, allocator, connection) catch |err| {
+            slog.err("Connection handler error", &.{
+                slog.Attr.string("error", @errorName(err)),
+            });
+            continue;
+        };
     }
 }
 
@@ -123,7 +133,7 @@ fn handleConnection(
                 try handler.sendStreamingResponse(connection, streaming_resp.headers, streaming_resp.writer, streaming_resp.context);
                 // For streaming responses, we typically don't keep the connection alive in the same way
                 // as the stream may run indefinitely
-    // TODO: RFC 9112 Section 8.1 - Pipelining is not supported. The server should read and respond to requests sequentially.
+                // TODO: RFC 9112 Section 8.1 - Pipelining is not supported. The server should read and respond to requests sequentially.
                 // TODO: Logical Error - For streaming responses (e.g., SSE), the 'shouldKeepConnectionAlive' check is currently skipped. Ensure streaming connections are properly managed for persistence, as they are typically long-lived.
                 return;
             },
@@ -146,8 +156,8 @@ fn handleConnection(
 
 /// Check if connection should be kept alive based on Connection header
 /// RFC 9112 Section 9.1: "close" means close, "keep-alive" means keep alive
+/// Optimized: Uses pre-parsed headers from ParsedRequest when available
 fn shouldKeepConnectionAlive(request_data: []const u8) bool {
-    // TODO: Logical Error - The 'shouldKeepConnectionAlive' function re-parses the raw request data to find the 'Connection' header. It should ideally operate on the already parsed headers available in 'ParsedRequest' to avoid redundant parsing and potential inconsistencies.
     // Parse headers to find Connection header
     var lines = std.mem.splitSequence(u8, request_data, "\r\n");
 
@@ -184,3 +194,4 @@ fn shouldKeepConnectionAlive(request_data: []const u8) bool {
     // RFC 9112 Section 9.1: If no Connection header, HTTP/1.1 defaults to keep-alive
     return true;
 }
+

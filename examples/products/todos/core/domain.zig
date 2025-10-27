@@ -1,3 +1,4 @@
+// examples/products/todos/core/domain.zig
 /// Todos Product: Core Domain Models
 ///
 /// Domain entities and value objects following Domain-Driven Design (DDD):
@@ -100,3 +101,4 @@ pub const OperationLatency = struct {
         return self.min_ms + offset;
     }
 };
+

@@ -1,3 +1,4 @@
+// src/zerver/sql/dialects/sqlite/dialect.zig
 const std = @import("std");
 const base = @import("../dialect.zig");
 
@@ -51,3 +52,4 @@ fn escapeStringLiteral(allocator: std.mem.Allocator, literal: []const u8) anyerr
 
     return buffer.toOwnedSlice();
 }
+

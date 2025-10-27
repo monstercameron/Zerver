@@ -1,3 +1,4 @@
+// src/zerver/core/error_renderer.zig
 /// Error renderer: converts Error structs into formatted HTTP responses.
 const std = @import("std");
 const types = @import("types.zig");
@@ -6,6 +7,22 @@ const slog = @import("../observability/slog.zig");
 const http_status = @import("http_status.zig").HttpStatus;
 
 pub const ErrorRenderer = struct {
+    /// Escape a string for safe JSON embedding
+    fn escapeJsonString(writer: anytype, s: []const u8) !void {
+        try writer.writeAll("\"");
+        for (s) |char| {
+            switch (char) {
+                '"' => try writer.writeAll("\\\""),
+                '\\' => try writer.writeAll("\\\\"),
+                '\n' => try writer.writeAll("\\n"),
+                '\r' => try writer.writeAll("\\r"),
+                '\t' => try writer.writeAll("\\t"),
+                else => try writer.writeByte(char),
+            }
+        }
+        try writer.writeAll("\"");
+    }
+
     /// Render an error as a formatted HTTP response with JSON body
     pub fn render(allocator: std.mem.Allocator, error_val: types.Error) !types.Response {
         const status = errorCodeToStatus(error_val.kind);
@@ -16,19 +33,20 @@ pub const ErrorRenderer = struct {
             .body = .{ .complete = "Internal Server Error" },
             // TODO: Bug - Fallback path omits Content-Type headers so clients see a 500 with no indication of payload format.
         };
+        // TODO: Perf - Pool reusable buffers for error rendering instead of allocating a fresh ArrayList each time.
         defer buf.deinit();
 
         const writer = buf.writer();
-        try writer.print("{{\"error\":{{\"code\":{},\"what\":\"{s}\",\"key\":\"{s}\"}}}}", .{
-            error_val.kind,
-            error_val.ctx.what,
-            error_val.ctx.key,
-        });
-        // TODO: Bug - `{s}` does not escape quotes/backslashes; emitting user-controlled strings will produce invalid JSON or allow response-splitting.
+        try writer.print("{{\"error\":{{\"code\":{},\"what\":", .{error_val.kind});
+        try escapeJsonString(&writer, error_val.ctx.what);
+        try writer.writeAll(",\"key\":");
+        try escapeJsonString(&writer, error_val.ctx.key);
+        try writer.writeAll("}}}");
 
         const body = try allocator.dupe(u8, buf.items);
 
         const headers = try allocator.alloc(types.Header, 1);
+        // TODO: Perf - Reuse a static Content-Type header slice instead of allocating a new array for every error.
         headers[0] = .{
             .name = "Content-Type",
             .value = "application/json",
@@ -37,8 +55,7 @@ pub const ErrorRenderer = struct {
         return types.Response{
             .status = status,
             .headers = headers,
-            // TODO: Bug - `body` is a raw slice; wrap it in `.complete = body` so we honor the ResponseBody union invariant.
-            .body = body,
+            .body = .{ .complete = body },
         };
     }
 
@@ -97,3 +114,4 @@ pub fn testErrorRenderer() !void {
         slog.Attr.string("body", response.body),
     });
 }
+

@@ -1,3 +1,4 @@
+// src/zerver/sql/dialects/sqlite/driver.zig
 const std = @import("std");
 const db = @import("../../db.zig");
 const ffi = @import("ffi.zig");
@@ -319,3 +320,4 @@ fn connectionFromHandle(handle: db.ConnectionHandle) *ConnectionState {
 fn statementFromHandle(handle: db.StatementHandle) *StatementState {
     return @ptrCast(@alignCast(handle));
 }
+

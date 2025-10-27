@@ -1,3 +1,4 @@
+// src/features/todos/errors.zig
 /// Todo feature error handler
 const std = @import("std");
 const zerver = @import("../../zerver/root.zig");
@@ -45,3 +46,4 @@ pub fn onError(ctx: *zerver.CtxBase) anyerror!zerver.Decision {
         });
     }
 }
+

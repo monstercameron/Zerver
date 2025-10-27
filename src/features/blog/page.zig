@@ -1,3 +1,4 @@
+// src/features/blog/page.zig
 const std = @import("std");
 const zerver = @import("../../zerver/root.zig");
 const components = @import("../../shared/components.zig");
@@ -163,3 +164,4 @@ pub fn homepageStep(ctx: *zerver.CtxBase) !zerver.Decision {
         },
     };
 }
+

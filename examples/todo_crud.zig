@@ -1,3 +1,4 @@
+// examples/todo_crud.zig
 /// Complete Todo CRUD example: Full demonstration of Zerver capabilities
 ///
 /// Demonstrates:
@@ -448,3 +449,4 @@ pub fn main() !void {
     slog.infof("✓ Error handling", .{});
     slog.infof("✓ Complete CRUD workflow", .{});
 }
+

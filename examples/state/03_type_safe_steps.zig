@@ -1,3 +1,4 @@
+// examples/state/03_type_safe_steps.zig
 /// Example: Using the step() trampoline to wrap typed step functions
 ///
 /// The step() function bridges the gap between:
@@ -80,3 +81,4 @@ pub fn main() void {
     slog.infof("The framework can call them via generic *CtxBase pointers.", .{});
     slog.infof("But the type system still enforces slot access at compile-time.", .{});
 }
+

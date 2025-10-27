@@ -1,3 +1,4 @@
+// src/zerver/sql/dialects/dialect.zig
 const std = @import("std");
 
 /// Dialect feature discovery flags for renderer decisions.
@@ -15,3 +16,4 @@ pub const Dialect = struct {
     escapeStringLiteral: fn (allocator: std.mem.Allocator, literal: []const u8) anyerror![]u8,
     features: FeatureFlags,
 };
+

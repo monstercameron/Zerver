@@ -1,3 +1,4 @@
+// src/features/blog/effects.zig
 const std = @import("std");
 const zerver = @import("../../zerver/root.zig");
 const slog = @import("../../zerver/observability/slog.zig");
@@ -535,3 +536,4 @@ fn writeEscapedString(writer: anytype, text: []const u8) !void {
     }
     try writer.writeByte('"');
 }
+

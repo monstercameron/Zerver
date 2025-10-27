@@ -1,3 +1,4 @@
+// src/features/todos/types.zig
 /// Todo feature types and slots
 const std = @import("std");
 
@@ -17,3 +18,4 @@ pub fn TodoSlotType(comptime s: TodoSlot) type {
         .TodoList => []const u8, // JSON string
     };
 }
+

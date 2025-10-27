@@ -1,3 +1,4 @@
+// src/features/blog/logging.zig
 const std = @import("std");
 const slog = @import("../../zerver/observability/slog.zig");
 const blog_types = @import("types.zig");
@@ -48,3 +49,4 @@ pub fn logFallbackSuccess(post: blog_types.PostInput) void {
         slog.Attr.uint("content_len", post.content.len),
     });
 }
+

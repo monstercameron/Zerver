@@ -1,3 +1,4 @@
+// src/zerver/observability/otel.zig
 const std = @import("std");
 const telemetry = @import("telemetry.zig");
 const types = @import("../core/types.zig");
@@ -2071,3 +2072,4 @@ pub fn freeHeaderList(allocator: std.mem.Allocator, headers: []Header) void {
     }
     allocator.free(headers);
 }
+

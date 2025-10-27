@@ -1,3 +1,4 @@
+// src/zerver/sql/dialects/sqlite/ffi.zig
 const std = @import("std");
 
 pub const sqlite3 = opaque {};
@@ -49,3 +50,4 @@ pub extern "c" fn sqlite3_extended_errcode(db: *sqlite3) c_int;
 pub fn errmsgSlice(db: *sqlite3) []const u8 {
     return std.mem.sliceTo(sqlite3_errmsg(db), 0);
 }
+
