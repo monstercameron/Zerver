@@ -27,10 +27,14 @@ const homepage_step = zerver.step("homepage", page.homepageStep);
 
 // Blog list page steps
 const load_blog_posts_step = zerver.step("load_blog_posts", list.step_load_blog_posts);
+const render_blog_list_page_step = zerver.step("render_blog_list_page", list.step_render_blog_list_page);
 const load_blog_post_cards_step = zerver.step("load_blog_post_cards", list.step_load_blog_post_cards);
+const render_blog_post_cards_step = zerver.step("render_blog_post_cards", list.step_render_blog_post_cards);
 const load_single_blog_post_card_step = zerver.step("load_single_blog_post_card", list.step_load_single_blog_post_card);
+const render_single_blog_post_card_step = zerver.step("render_single_blog_post_card", list.step_render_single_blog_post_card);
 const render_blog_list_header_step = zerver.step("render_blog_list_header", list.step_render_blog_list_header);
 const load_blog_post_page_step = zerver.step("load_blog_post_page", list.step_load_blog_post_page);
+const render_blog_post_page_step = zerver.step("render_blog_post_page", list.step_render_blog_post_page);
 
 pub fn registerRoutes(srv: *zerver.Server) !void {
     // Homepage route
@@ -40,16 +44,16 @@ pub fn registerRoutes(srv: *zerver.Server) !void {
 
     // Blog list page with full HTML
     try srv.addRoute(.GET, "/blogs/list", .{
-        .steps = &.{load_blog_posts_step},
+        .steps = &.{ load_blog_posts_step, render_blog_list_page_step },
     });
 
     // HTMX fragment endpoints
     try srv.addRoute(.GET, "/blogs/htmx/cards", .{
-        .steps = &.{load_blog_post_cards_step},
+        .steps = &.{ load_blog_post_cards_step, render_blog_post_cards_step },
     });
 
     try srv.addRoute(.GET, "/blogs/htmx/card/:id", .{
-        .steps = &.{load_single_blog_post_card_step},
+        .steps = &.{ load_single_blog_post_card_step, render_single_blog_post_card_step },
     });
 
     try srv.addRoute(.GET, "/blogs/htmx/header", .{
@@ -58,10 +62,10 @@ pub fn registerRoutes(srv: *zerver.Server) !void {
 
     // Blog post page
     try srv.addRoute(.GET, "/blogs/posts/:id", .{
-        .steps = &.{load_blog_post_page_step},
+        .steps = &.{ load_blog_post_page_step, render_blog_post_page_step },
     });
     try srv.addRoute(.GET, "/blogs/posts/:id/fragment", .{
-        .steps = &.{load_blog_post_page_step},
+        .steps = &.{ load_blog_post_page_step, render_blog_post_page_step },
     });
 
     // Posts API

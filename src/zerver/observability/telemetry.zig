@@ -115,8 +115,8 @@ pub const EffectEndEvent = struct {
     error_ctx: ?types.ErrorCtx,
 };
 
-/// Fired when the executor resumes a continuation after effects complete.
-pub const ContinuationEvent = struct {
+/// Fired when the executor resumes a paused step after effects complete.
+pub const StepResumeEvent = struct {
     request_id: []const u8,
     need_sequence: usize,
     resume_ptr: usize,
@@ -124,11 +124,144 @@ pub const ContinuationEvent = struct {
     join: types.Join,
 };
 
-/// Fired when the executor encounters an unexpected crash while running a step or continuation.
+/// Fired when the executor encounters an unexpected crash while running a step.
 pub const ExecutorCrashEvent = struct {
     request_id: []const u8,
     phase: []const u8,
     error_name: []const u8,
+};
+
+/// Fired when an effect job is enqueued onto a job system queue.
+pub const EffectJobEnqueuedEvent = struct {
+    request_id: []const u8,
+    need_sequence: usize,
+    effect_sequence: usize,
+    queue: []const u8,
+    timestamp_ms: u64,
+};
+
+/// Fired when a job system worker begins executing an effect job.
+pub const EffectJobStartedEvent = struct {
+    request_id: []const u8,
+    need_sequence: usize,
+    effect_sequence: usize,
+    queue: []const u8,
+    job_ctx: ?usize,
+    worker_index: ?usize,
+    timestamp_ms: u64,
+};
+
+/// Fired when a job system worker completes execution of an effect job.
+pub const EffectJobCompletedEvent = struct {
+    request_id: []const u8,
+    need_sequence: usize,
+    effect_sequence: usize,
+    queue: []const u8,
+    success: bool,
+    job_ctx: ?usize,
+    worker_index: ?usize,
+    timestamp_ms: u64,
+};
+
+/// Fired when a step is enqueued for asynchronous execution.
+pub const StepJobEnqueuedEvent = struct {
+    request_id: []const u8,
+    need_sequence: usize,
+    job_ctx: usize,
+    queue: []const u8,
+    timestamp_ms: u64,
+};
+
+/// Fired when a worker dequeues and begins executing a step job.
+pub const StepJobStartedEvent = struct {
+    request_id: []const u8,
+    need_sequence: usize,
+    job_ctx: usize,
+    queue: []const u8,
+    worker_index: ?usize,
+    timestamp_ms: u64,
+};
+
+/// Fired when a step job completes and yields a decision.
+pub const StepJobCompletedEvent = struct {
+    request_id: []const u8,
+    need_sequence: usize,
+    job_ctx: usize,
+    queue: []const u8,
+    worker_index: ?usize,
+    decision: []const u8,
+    timestamp_ms: u64,
+};
+
+/// Fired when the main thread parks waiting for a step job result.
+pub const StepWaitEvent = struct {
+    request_id: []const u8,
+    need_sequence: usize,
+    timestamp_ms: u64,
+};
+
+/// Fired when an effect job is dequeued from the job system (taken by a worker).
+pub const EffectJobTakenEvent = struct {
+    request_id: []const u8,
+    need_sequence: usize,
+    effect_sequence: usize,
+    queue: []const u8,
+    worker_index: usize,
+    timestamp_ms: u64,
+};
+
+/// Fired when an effect job is parked (waiting on I/O, rate limit, etc.).
+pub const EffectJobParkedEvent = struct {
+    request_id: []const u8,
+    need_sequence: usize,
+    effect_sequence: usize,
+    queue: []const u8,
+    cause: []const u8, // io_wait|rate_limit|backpressure|lock|timer|other
+    token: ?u32,
+    concurrency_limit_current: ?usize,
+    concurrency_limit_max: ?usize,
+    timestamp_ms: u64,
+};
+
+/// Fired when an effect job is resumed after parking.
+pub const EffectJobResumedEvent = struct {
+    request_id: []const u8,
+    need_sequence: usize,
+    effect_sequence: usize,
+    queue: []const u8,
+    timestamp_ms: u64,
+};
+
+/// Fired when a step job is dequeued from the job system (taken by a worker).
+pub const StepJobTakenEvent = struct {
+    request_id: []const u8,
+    need_sequence: usize,
+    job_ctx: usize,
+    queue: []const u8,
+    worker_index: usize,
+    timestamp_ms: u64,
+};
+
+/// Fired when a step job is parked (waiting on continuation).
+pub const StepJobParkedEvent = struct {
+    request_id: []const u8,
+    need_sequence: usize,
+    job_ctx: usize,
+    queue: []const u8,
+    cause: []const u8,
+    token: ?u32,
+    concurrency_limit_current: ?usize,
+    concurrency_limit_max: ?usize,
+    timestamp_ms: u64,
+};
+
+/// Fired when a step job is resumed after parking.
+pub const StepJobResumedEvent = struct {
+    request_id: []const u8,
+    need_sequence: usize,
+    job_ctx: usize,
+    queue: []const u8,
+    timestamp_ms: u64,
 };
 
 /// Union of all telemetry signals publishable to subscribers.
@@ -140,8 +273,21 @@ pub const Event = union(enum) {
     need_scheduled: NeedScheduledEvent,
     effect_start: EffectStartEvent,
     effect_end: EffectEndEvent,
-    continuation_resume: ContinuationEvent,
+    step_resume: StepResumeEvent,
     executor_crash: ExecutorCrashEvent,
+    effect_job_enqueued: EffectJobEnqueuedEvent,
+    effect_job_started: EffectJobStartedEvent,
+    effect_job_completed: EffectJobCompletedEvent,
+    step_job_enqueued: StepJobEnqueuedEvent,
+    step_job_started: StepJobStartedEvent,
+    step_job_completed: StepJobCompletedEvent,
+    step_wait: StepWaitEvent,
+    effect_job_taken: EffectJobTakenEvent,
+    effect_job_parked: EffectJobParkedEvent,
+    effect_job_resumed: EffectJobResumedEvent,
+    step_job_taken: StepJobTakenEvent,
+    step_job_parked: StepJobParkedEvent,
+    step_job_resumed: StepJobResumedEvent,
 };
 
 /// Options supplied when building per-request telemetry.
@@ -538,21 +684,392 @@ pub const Telemetry = struct {
         } });
     }
 
-    pub fn continuationResume(self: *Telemetry, need_sequence: usize, resume_ptr: usize, mode: types.Mode, join: types.Join) void {
-        self.logDebug("continuation_resume", &.{
+    pub const EffectJobEnqueuedDetails = struct {
+        need_sequence: usize,
+        effect_sequence: usize,
+        queue: []const u8,
+    };
+
+    pub fn effectJobEnqueued(self: *Telemetry, details: EffectJobEnqueuedDetails) void {
+        const timestamp_ms = std.time.milliTimestamp();
+        self.logDebug("effect_job_enqueued", &.{
+            slog.Attr.string("request_id", self.request_id),
+            slog.Attr.uint("need_sequence", details.need_sequence),
+            slog.Attr.uint("effect_sequence", details.effect_sequence),
+            slog.Attr.string("queue", details.queue),
+        });
+
+        self.emit(.{ .effect_job_enqueued = .{
+            .request_id = self.request_id,
+            .need_sequence = details.need_sequence,
+            .effect_sequence = details.effect_sequence,
+            .queue = details.queue,
+            .timestamp_ms = @as(u64, @intCast(timestamp_ms)),
+        } });
+
+        self.tracer.recordEffectJobQueued(details.need_sequence, details.effect_sequence, details.queue);
+    }
+
+    pub const EffectJobStartedDetails = struct {
+        need_sequence: usize,
+        effect_sequence: usize,
+        queue: []const u8,
+        job_ctx: ?usize = null,
+        worker_index: ?usize = null,
+    };
+
+    pub fn effectJobStarted(self: *Telemetry, details: EffectJobStartedDetails) void {
+        const timestamp_ms = std.time.milliTimestamp();
+        self.logDebug("effect_job_started", &.{
+            slog.Attr.string("request_id", self.request_id),
+            slog.Attr.uint("need_sequence", details.need_sequence),
+            slog.Attr.uint("effect_sequence", details.effect_sequence),
+            slog.Attr.string("queue", details.queue),
+        });
+
+        self.emit(.{ .effect_job_started = .{
+            .request_id = self.request_id,
+            .need_sequence = details.need_sequence,
+            .effect_sequence = details.effect_sequence,
+            .queue = details.queue,
+            .job_ctx = details.job_ctx,
+            .worker_index = details.worker_index,
+            .timestamp_ms = @as(u64, @intCast(timestamp_ms)),
+        } });
+
+        self.tracer.recordEffectJobStarted(
+            details.need_sequence,
+            details.effect_sequence,
+            details.queue,
+            details.job_ctx,
+            details.worker_index,
+        );
+    }
+
+    pub const EffectJobCompletedDetails = struct {
+        need_sequence: usize,
+        effect_sequence: usize,
+        queue: []const u8,
+        success: bool,
+        job_ctx: ?usize = null,
+        worker_index: ?usize = null,
+    };
+
+    pub fn effectJobCompleted(self: *Telemetry, details: EffectJobCompletedDetails) void {
+        const timestamp_ms = std.time.milliTimestamp();
+        self.logDebug("effect_job_completed", &.{
+            slog.Attr.string("request_id", self.request_id),
+            slog.Attr.uint("need_sequence", details.need_sequence),
+            slog.Attr.uint("effect_sequence", details.effect_sequence),
+            slog.Attr.string("queue", details.queue),
+            slog.Attr.bool("success", details.success),
+        });
+
+        self.emit(.{ .effect_job_completed = .{
+            .request_id = self.request_id,
+            .need_sequence = details.need_sequence,
+            .effect_sequence = details.effect_sequence,
+            .queue = details.queue,
+            .success = details.success,
+            .job_ctx = details.job_ctx,
+            .worker_index = details.worker_index,
+            .timestamp_ms = @as(u64, @intCast(timestamp_ms)),
+        } });
+
+        self.tracer.recordEffectJobCompleted(
+            details.need_sequence,
+            details.effect_sequence,
+            details.queue,
+            details.success,
+            details.job_ctx,
+            details.worker_index,
+        );
+    }
+
+    pub const EffectJobTakenDetails = struct {
+        need_sequence: usize,
+        effect_sequence: usize,
+        queue: []const u8,
+        worker_index: usize,
+    };
+
+    pub fn effectJobTaken(self: *Telemetry, details: EffectJobTakenDetails) void {
+        const timestamp_ms = std.time.milliTimestamp();
+        self.logDebug("effect_job_taken", &.{
+            slog.Attr.string("request_id", self.request_id),
+            slog.Attr.uint("need_sequence", details.need_sequence),
+            slog.Attr.uint("effect_sequence", details.effect_sequence),
+            slog.Attr.string("queue", details.queue),
+            slog.Attr.uint("worker_index", details.worker_index),
+        });
+
+        self.emit(.{ .effect_job_taken = .{
+            .request_id = self.request_id,
+            .need_sequence = details.need_sequence,
+            .effect_sequence = details.effect_sequence,
+            .queue = details.queue,
+            .worker_index = details.worker_index,
+            .timestamp_ms = @as(u64, @intCast(timestamp_ms)),
+        } });
+    }
+
+    pub const EffectJobParkedDetails = struct {
+        need_sequence: usize,
+        effect_sequence: usize,
+        queue: []const u8,
+        cause: []const u8,
+        token: ?u32 = null,
+        concurrency_limit_current: ?usize = null,
+        concurrency_limit_max: ?usize = null,
+    };
+
+    pub fn effectJobParked(self: *Telemetry, details: EffectJobParkedDetails) void {
+        const timestamp_ms = std.time.milliTimestamp();
+        self.logDebug("effect_job_parked", &.{
+            slog.Attr.string("request_id", self.request_id),
+            slog.Attr.uint("need_sequence", details.need_sequence),
+            slog.Attr.uint("effect_sequence", details.effect_sequence),
+            slog.Attr.string("queue", details.queue),
+            slog.Attr.string("cause", details.cause),
+        });
+
+        self.emit(.{ .effect_job_parked = .{
+            .request_id = self.request_id,
+            .need_sequence = details.need_sequence,
+            .effect_sequence = details.effect_sequence,
+            .queue = details.queue,
+            .cause = details.cause,
+            .token = details.token,
+            .concurrency_limit_current = details.concurrency_limit_current,
+            .concurrency_limit_max = details.concurrency_limit_max,
+            .timestamp_ms = @as(u64, @intCast(timestamp_ms)),
+        } });
+    }
+
+    pub const EffectJobResumedDetails = struct {
+        need_sequence: usize,
+        effect_sequence: usize,
+        queue: []const u8,
+    };
+
+    pub fn effectJobResumed(self: *Telemetry, details: EffectJobResumedDetails) void {
+        const timestamp_ms = std.time.milliTimestamp();
+        self.logDebug("effect_job_resumed", &.{
+            slog.Attr.string("request_id", self.request_id),
+            slog.Attr.uint("need_sequence", details.need_sequence),
+            slog.Attr.uint("effect_sequence", details.effect_sequence),
+            slog.Attr.string("queue", details.queue),
+        });
+
+        self.emit(.{ .effect_job_resumed = .{
+            .request_id = self.request_id,
+            .need_sequence = details.need_sequence,
+            .effect_sequence = details.effect_sequence,
+            .queue = details.queue,
+            .timestamp_ms = @as(u64, @intCast(timestamp_ms)),
+        } });
+    }
+
+    pub const StepJobEnqueuedDetails = struct {
+        need_sequence: usize,
+        job_ctx: usize,
+        queue: []const u8,
+    };
+
+    pub fn stepJobEnqueued(self: *Telemetry, details: StepJobEnqueuedDetails) void {
+        const timestamp_ms = std.time.milliTimestamp();
+        self.logDebug("step_job_enqueued", &.{
+            slog.Attr.string("request_id", self.request_id),
+            slog.Attr.uint("need_sequence", details.need_sequence),
+            slog.Attr.uint("job_ctx", @as(u64, @intCast(details.job_ctx))),
+            slog.Attr.string("queue", details.queue),
+        });
+
+        self.emit(.{ .step_job_enqueued = .{
+            .request_id = self.request_id,
+            .need_sequence = details.need_sequence,
+            .job_ctx = details.job_ctx,
+            .queue = details.queue,
+            .timestamp_ms = @as(u64, @intCast(timestamp_ms)),
+        } });
+
+        self.tracer.recordStepJobEnqueued(details.need_sequence, details.job_ctx, details.queue);
+    }
+
+    pub const StepJobStartedDetails = struct {
+        need_sequence: usize,
+        job_ctx: usize,
+        queue: []const u8,
+        worker_index: ?usize = null,
+    };
+
+    pub fn stepJobStarted(self: *Telemetry, details: StepJobStartedDetails) void {
+        const timestamp_ms = std.time.milliTimestamp();
+        self.logDebug("step_job_started", &.{
+            slog.Attr.string("request_id", self.request_id),
+            slog.Attr.uint("need_sequence", details.need_sequence),
+            slog.Attr.uint("job_ctx", @as(u64, @intCast(details.job_ctx))),
+            slog.Attr.string("queue", details.queue),
+        });
+
+        self.emit(.{ .step_job_started = .{
+            .request_id = self.request_id,
+            .need_sequence = details.need_sequence,
+            .job_ctx = details.job_ctx,
+            .queue = details.queue,
+            .worker_index = details.worker_index,
+            .timestamp_ms = @as(u64, @intCast(timestamp_ms)),
+        } });
+
+        self.tracer.recordStepJobStarted(details.need_sequence, details.job_ctx, details.queue, details.worker_index);
+    }
+
+    pub const StepJobCompletedDetails = struct {
+        need_sequence: usize,
+        job_ctx: usize,
+        queue: []const u8,
+        worker_index: ?usize = null,
+        decision: []const u8,
+    };
+
+    pub fn stepJobCompleted(self: *Telemetry, details: StepJobCompletedDetails) void {
+        const timestamp_ms = std.time.milliTimestamp();
+        self.logDebug("step_job_completed", &.{
+            slog.Attr.string("request_id", self.request_id),
+            slog.Attr.uint("need_sequence", details.need_sequence),
+            slog.Attr.uint("job_ctx", @as(u64, @intCast(details.job_ctx))),
+            slog.Attr.string("queue", details.queue),
+            slog.Attr.string("decision", details.decision),
+        });
+
+        self.emit(.{ .step_job_completed = .{
+            .request_id = self.request_id,
+            .need_sequence = details.need_sequence,
+            .job_ctx = details.job_ctx,
+            .queue = details.queue,
+            .worker_index = details.worker_index,
+            .decision = details.decision,
+            .timestamp_ms = @as(u64, @intCast(timestamp_ms)),
+        } });
+
+        self.tracer.recordStepJobCompleted(details.need_sequence, details.job_ctx, details.queue, details.worker_index, details.decision);
+    }
+
+    pub const StepJobTakenDetails = struct {
+        need_sequence: usize,
+        job_ctx: usize,
+        queue: []const u8,
+        worker_index: usize,
+    };
+
+    pub fn stepJobTaken(self: *Telemetry, details: StepJobTakenDetails) void {
+        const timestamp_ms = std.time.milliTimestamp();
+        self.logDebug("step_job_taken", &.{
+            slog.Attr.string("request_id", self.request_id),
+            slog.Attr.uint("need_sequence", details.need_sequence),
+            slog.Attr.uint("job_ctx", @as(u64, @intCast(details.job_ctx))),
+            slog.Attr.string("queue", details.queue),
+            slog.Attr.uint("worker_index", details.worker_index),
+        });
+
+        self.emit(.{ .step_job_taken = .{
+            .request_id = self.request_id,
+            .need_sequence = details.need_sequence,
+            .job_ctx = details.job_ctx,
+            .queue = details.queue,
+            .worker_index = details.worker_index,
+            .timestamp_ms = @as(u64, @intCast(timestamp_ms)),
+        } });
+    }
+
+    pub const StepJobParkedDetails = struct {
+        need_sequence: usize,
+        job_ctx: usize,
+        queue: []const u8,
+        cause: []const u8,
+        token: ?u32 = null,
+        concurrency_limit_current: ?usize = null,
+        concurrency_limit_max: ?usize = null,
+    };
+
+    pub fn stepJobParked(self: *Telemetry, details: StepJobParkedDetails) void {
+        const timestamp_ms = std.time.milliTimestamp();
+        self.logDebug("step_job_parked", &.{
+            slog.Attr.string("request_id", self.request_id),
+            slog.Attr.uint("need_sequence", details.need_sequence),
+            slog.Attr.uint("job_ctx", @as(u64, @intCast(details.job_ctx))),
+            slog.Attr.string("queue", details.queue),
+            slog.Attr.string("cause", details.cause),
+        });
+
+        self.emit(.{ .step_job_parked = .{
+            .request_id = self.request_id,
+            .need_sequence = details.need_sequence,
+            .job_ctx = details.job_ctx,
+            .queue = details.queue,
+            .cause = details.cause,
+            .token = details.token,
+            .concurrency_limit_current = details.concurrency_limit_current,
+            .concurrency_limit_max = details.concurrency_limit_max,
+            .timestamp_ms = @as(u64, @intCast(timestamp_ms)),
+        } });
+    }
+
+    pub const StepJobResumedDetails = struct {
+        need_sequence: usize,
+        job_ctx: usize,
+        queue: []const u8,
+    };
+
+    pub fn stepJobResumed(self: *Telemetry, details: StepJobResumedDetails) void {
+        const timestamp_ms = std.time.milliTimestamp();
+        self.logDebug("step_job_resumed", &.{
+            slog.Attr.string("request_id", self.request_id),
+            slog.Attr.uint("need_sequence", details.need_sequence),
+            slog.Attr.uint("job_ctx", @as(u64, @intCast(details.job_ctx))),
+            slog.Attr.string("queue", details.queue),
+        });
+
+        self.emit(.{ .step_job_resumed = .{
+            .request_id = self.request_id,
+            .need_sequence = details.need_sequence,
+            .job_ctx = details.job_ctx,
+            .queue = details.queue,
+            .timestamp_ms = @as(u64, @intCast(timestamp_ms)),
+        } });
+    }
+
+    pub fn stepWait(self: *Telemetry, need_sequence: usize) void {
+        const timestamp_ms = std.time.milliTimestamp();
+        self.logDebug("step_wait", &.{
+            slog.Attr.string("request_id", self.request_id),
+            slog.Attr.uint("need_sequence", need_sequence),
+        });
+
+        self.emit(.{ .step_wait = .{
+            .request_id = self.request_id,
+            .need_sequence = need_sequence,
+            .timestamp_ms = @as(u64, @intCast(timestamp_ms)),
+        } });
+
+        self.tracer.recordStepWait(need_sequence);
+    }
+
+    pub fn stepResume(self: *Telemetry, need_sequence: usize, resume_ptr: usize, mode: types.Mode, join: types.Join) void {
+        self.logDebug("step_resume", &.{
             slog.Attr.string("request_id", self.request_id),
             slog.Attr.uint("need_sequence", need_sequence),
             slog.Attr.uint("resume_ptr", resume_ptr),
             slog.Attr.string("mode", @tagName(mode)),
             slog.Attr.string("join", @tagName(join)),
         });
-        self.tracer.recordContinuationResume(
+        self.tracer.recordStepResume(
             need_sequence,
             resume_ptr,
             @tagName(mode),
             @tagName(join),
         );
-        self.emit(.{ .continuation_resume = .{
+        self.emit(.{ .step_resume = .{
             .request_id = self.request_id,
             .need_sequence = need_sequence,
             .resume_ptr = resume_ptr,

@@ -147,6 +147,146 @@ const ErrorCtxCopy = struct {
     }
 };
 
+/// A single parking episode during job execution.
+const ParkEpisode = struct {
+    allocator: std.mem.Allocator,
+    cause: []const u8, // io_wait|rate_limit|backpressure|lock|timer|other
+    token: ?u32,
+    park_ts: i64,
+    resume_ts: ?i64,
+    concurrency_limit_current: ?usize,
+    concurrency_limit_max: ?usize,
+
+    fn init(
+        allocator: std.mem.Allocator,
+        cause: []const u8,
+        token: ?u32,
+        park_ts: i64,
+    ) !ParkEpisode {
+        return .{
+            .allocator = allocator,
+            .cause = try allocator.dupe(u8, cause),
+            .token = token,
+            .park_ts = park_ts,
+            .resume_ts = null,
+            .concurrency_limit_current = null,
+            .concurrency_limit_max = null,
+        };
+    }
+
+    fn deinit(self: *ParkEpisode) void {
+        self.allocator.free(self.cause);
+        self.* = undefined;
+    }
+};
+
+/// Job execution state tracking for threshold-based span promotion.
+const JobState = struct {
+    allocator: std.mem.Allocator,
+    job_type: enum { effect, step },
+    sequence: usize,
+    enqueue_ts: i64,
+    take_ts: ?i64,
+    start_ts: ?i64,
+    end_ts: ?i64,
+    park_episodes: std.ArrayList(ParkEpisode),
+    queue: []const u8,
+    job_ctx: ?usize,
+    worker_index: ?usize,
+    success: ?bool,
+    queue_depth_start: ?usize,
+    queue_depth_end: ?usize,
+
+    fn init(
+        allocator: std.mem.Allocator,
+        job_type: @TypeOf(@as(JobState, undefined).job_type),
+        sequence: usize,
+        enqueue_ts: i64,
+        queue: []const u8,
+    ) !JobState {
+        return .{
+            .allocator = allocator,
+            .job_type = job_type,
+            .sequence = sequence,
+            .enqueue_ts = enqueue_ts,
+            .take_ts = null,
+            .start_ts = null,
+            .end_ts = null,
+            .park_episodes = try std.ArrayList(ParkEpisode).initCapacity(allocator, 0),
+            .queue = try allocator.dupe(u8, queue),
+            .job_ctx = null,
+            .worker_index = null,
+            .success = null,
+            .queue_depth_start = null,
+            .queue_depth_end = null,
+        };
+    }
+
+    fn deinit(self: *JobState) void {
+        for (self.park_episodes.items) |*episode| {
+            episode.deinit();
+        }
+        self.park_episodes.deinit(self.allocator);
+        self.allocator.free(self.queue);
+        self.* = undefined;
+    }
+};
+
+/// Computed durations from JobState for threshold-based decisions.
+const JobDurations = struct {
+    queue_wait_ms: i64,
+    dispatch_ms: i64,
+    park_wait_ms_total: i64,
+    run_active_ms: i64,
+    total_ms: i64,
+};
+
+/// Compute job execution durations from JobState timestamps.
+fn computeJobDurations(state: *const JobState) JobDurations {
+    var durations = JobDurations{
+        .queue_wait_ms = 0,
+        .dispatch_ms = 0,
+        .park_wait_ms_total = 0,
+        .run_active_ms = 0,
+        .total_ms = 0,
+    };
+
+    // queue_wait_ms = take_ts - enqueue_ts
+    if (state.take_ts) |take| {
+        durations.queue_wait_ms = take - state.enqueue_ts;
+    }
+
+    // dispatch_ms = start_ts - take_ts
+    if (state.start_ts) |start| {
+        if (state.take_ts) |take| {
+            durations.dispatch_ms = start - take;
+        }
+    }
+
+    // park_wait_ms_total = sum of all completed park episodes
+    for (state.park_episodes.items) |episode| {
+        if (episode.resume_ts) |resume_time| {
+            const park_duration = resume_time - episode.park_ts;
+            durations.park_wait_ms_total += park_duration;
+        }
+    }
+
+    // run_active_ms = (end_ts - start_ts) - park_wait_ms_total
+    if (state.end_ts) |end| {
+        if (state.start_ts) |start| {
+            const gross_runtime = end - start;
+            durations.run_active_ms = gross_runtime - durations.park_wait_ms_total;
+        }
+    }
+
+    // total_ms = end_ts - enqueue_ts
+    if (state.end_ts) |end| {
+        durations.total_ms = end - state.enqueue_ts;
+    }
+
+    return durations;
+}
+
 /// In-flight request bookkeeping until the span is exported.
 const ChildSpan = struct {
     allocator: std.mem.Allocator,
@@ -253,6 +393,7 @@ const RequestRecord = struct {
     step_spans: std.AutoHashMap(usize, *ChildSpan),
     effect_spans: std.AutoHashMap(usize, *ChildSpan),
     step_stack: std.ArrayList(*ChildSpan),
+    job_states: std.AutoHashMap(usize, JobState),
 
     fn create(allocator: std.mem.Allocator, event: telemetry.RequestStartEvent) !*RequestRecord {
         var record = try allocator.create(RequestRecord);
@@ -279,6 +420,7 @@ const RequestRecord = struct {
             .step_spans = std.AutoHashMap(usize, *ChildSpan).init(allocator),
             .effect_spans = std.AutoHashMap(usize, *ChildSpan).init(allocator),
             .step_stack = try std.ArrayList(*ChildSpan).initCapacity(allocator, 4),
+            .job_states = std.AutoHashMap(usize, JobState).init(allocator),
         };
         errdefer {
             record.deinit();
@@ -290,15 +432,17 @@ const RequestRecord = struct {
     }
 
     fn addRequestAttributes(self: *RequestRecord, event: telemetry.RequestStartEvent) !void {
-        try self.pushAttribute(try Attribute.initString(self.allocator, "http.method", event.method));
+        // OTEL v1.x HTTP semantic conventions
+        try self.pushAttribute(try Attribute.initString(self.allocator, "http.request.method", event.method));
+        try self.pushAttribute(try Attribute.initString(self.allocator, "url.path", event.path));
         try self.pushAttribute(try Attribute.initString(self.allocator, "http.route", event.path));
-        if (event.host.len != 0) try self.pushAttribute(try Attribute.initString(self.allocator, "http.host", event.host));
-        if (event.user_agent.len != 0) try self.pushAttribute(try Attribute.initString(self.allocator, "http.user_agent", event.user_agent));
-        if (event.client_ip.len != 0) try self.pushAttribute(try Attribute.initString(self.allocator, "http.client_ip", event.client_ip));
-        if (event.content_type.len != 0) try self.pushAttribute(try Attribute.initString(self.allocator, "http.request_content_type", event.content_type));
-        if (event.referer.len != 0) try self.pushAttribute(try Attribute.initString(self.allocator, "http.referer", event.referer));
-        if (event.accept.len != 0) try self.pushAttribute(try Attribute.initString(self.allocator, "http.request_accept", event.accept));
-        try self.pushAttribute(try Attribute.initInt(self.allocator, "http.request_content_length", @as(i64, @intCast(event.content_length))));
+        if (event.host.len != 0) try self.pushAttribute(try Attribute.initString(self.allocator, "server.address", event.host));
+        if (event.user_agent.len != 0) try self.pushAttribute(try Attribute.initString(self.allocator, "user_agent.original", event.user_agent));
+        if (event.client_ip.len != 0) try self.pushAttribute(try Attribute.initString(self.allocator, "client.address", event.client_ip));
+        if (event.content_type.len != 0) try self.pushAttribute(try Attribute.initString(self.allocator, "http.request.header.content-type", event.content_type));
+        if (event.referer.len != 0) try self.pushAttribute(try Attribute.initString(self.allocator, "http.request.header.referer", event.referer));
+        if (event.accept.len != 0) try self.pushAttribute(try Attribute.initString(self.allocator, "http.request.header.accept", event.accept));
+        try self.pushAttribute(try Attribute.initInt(self.allocator, "http.request.body.size", @as(i64, @intCast(event.content_length))));
         try self.pushAttribute(try Attribute.initInt(self.allocator, "zerver.request_bytes", @as(i64, @intCast(event.request_bytes))));
         try self.pushAttribute(try Attribute.initString(self.allocator, "zerver.request_id", self.request_id));
     }
@@ -334,6 +478,15 @@ const RequestRecord = struct {
             evt.deinit();
         }
         self.events.deinit(self.allocator);
+
+        // Clean up job states
+        var job_iter = self.job_states.iterator();
+        while (job_iter.next()) |entry| {
+            var state = entry.value_ptr.*;
+            state.deinit();
+        }
+        self.job_states.deinit();
+
         self.* = undefined;
     }
 
@@ -371,8 +524,8 @@ const RequestRecord = struct {
         try self.finishEffectSpan(event);
     }
 
-    fn recordContinuation(self: *RequestRecord, event: telemetry.ContinuationEvent) !void {
-        var req_event = try RequestEvent.init(self.allocator, "zerver.continuation_resume", nowUnixNano());
+    fn recordStepResume(self: *RequestRecord, event: telemetry.StepResumeEvent) !void {
+        var req_event = try RequestEvent.init(self.allocator, "zerver.step_resume", nowUnixNano());
         try req_event.addAttribute(try Attribute.initInt(self.allocator, "need.sequence", @as(i64, @intCast(event.need_sequence))));
         try req_event.addAttribute(try Attribute.initInt(self.allocator, "resume.ptr", @as(i64, @intCast(event.resume_ptr))));
         try req_event.addAttribute(try Attribute.initString(self.allocator, "need.mode", @tagName(event.mode)));
@@ -503,6 +656,638 @@ const RequestRecord = struct {
         }
     }
 
+    fn recordEffectJobEnqueued(self: *RequestRecord, event: telemetry.EffectJobEnqueuedEvent) !void {
+        // Create JobState instead of immediately creating a span
+        const enqueue_ts = @as(i64, @intCast(event.timestamp_ms));
+        var job_state = try JobState.init(
+            self.allocator,
+            .effect,
+            event.effect_sequence,
+            enqueue_ts,
+            event.queue,
+        );
+        errdefer job_state.deinit();
+
+        try self.job_states.put(event.effect_sequence, job_state);
+
+        // Record event on parent effect span
+        const effect_parent = self.effect_spans.get(event.effect_sequence);
+        if (effect_parent) |parent_span| {
+            var job_event = try self.buildJobStageEvent(
+                "zerver.effect_job_enqueued",
+                event.timestamp_ms,
+                event.need_sequence,
+                event.effect_sequence,
+                event.queue,
+                "enqueued",
+                null,
+            );
+            errdefer job_event.deinit();
+            try parent_span.pushEvent(job_event);
+        }
+    }
+
+    fn recordEffectJobStarted(self: *RequestRecord, event: telemetry.EffectJobStartedEvent) !void {
+        // Look up JobState and set start_ts
+        if (self.job_states.getPtr(event.effect_sequence)) |job_state| {
+            job_state.start_ts = @as(i64, @intCast(event.timestamp_ms));
+            if (event.job_ctx) |ctx| {
+                job_state.job_ctx = ctx;
+            }
+            if (event.worker_index) |worker| {
+                job_state.worker_index = worker;
+            }
+        }
+
+        // Record event on parent effect span only
+        const effect_parent = self.effect_spans.get(event.effect_sequence);
+        if (effect_parent) |parent_span| {
+            var job_event = try self.buildJobStageEvent(
+                "zerver.effect_job_started",
+                event.timestamp_ms,
+                event.need_sequence,
+                event.effect_sequence,
+                event.queue,
+                "started",
+                null,
+            );
+            errdefer job_event.deinit();
+            if (event.job_ctx) |ctx| {
+                try job_event.addAttribute(try Attribute.initInt(self.allocator, "job.step.ctx", @as(i64, @intCast(ctx))));
+            }
+            if (event.worker_index) |worker| {
+                try job_event.addAttribute(try Attribute.initInt(self.allocator, "job.worker_index", @as(i64, @intCast(worker))));
+            }
+            try parent_span.pushEvent(job_event);
+        }
+    }
+
+    /// Backfills job lifecycle events onto a span when promotion occurs.
+    /// Reconstructs the complete timeline: enqueue → taken → started → [parked/resumed]* → completed
+    fn backfillJobEvents(self: *RequestRecord, span: *ChildSpan, job_state: *const JobState) !void {
+        // Event 1: Job enqueued
+        var enqueue_event = try RequestEvent.init(
+            self.allocator,
+            if (job_state.job_type == .effect) "zerver.effect_job_enqueued" else "zerver.step_job_enqueued",
+            @as(u64, @intCast(job_state.enqueue_ts)) * std.time.ns_per_ms,
+        );
+        errdefer enqueue_event.deinit();
+        try enqueue_event.addAttribute(try Attribute.initString(self.allocator, "job.queue", job_state.queue));
+        try enqueue_event.addAttribute(try Attribute.initString(self.allocator, "job.stage", "enqueued"));
+        try span.pushEvent(enqueue_event);
+
+        // Event 2: Job taken (if timestamp exists)
+        if (job_state.take_ts) |take_ts| {
+            var taken_event = try RequestEvent.init(
+                self.allocator,
+                if (job_state.job_type == .effect) "zerver.effect_job_taken" else "zerver.step_job_taken",
+                @as(u64, @intCast(take_ts)) * std.time.ns_per_ms,
+            );
+            errdefer taken_event.deinit();
+            try taken_event.addAttribute(try Attribute.initString(self.allocator, "job.queue", job_state.queue));
+            try taken_event.addAttribute(try Attribute.initString(self.allocator, "job.stage", "taken"));
+            if (job_state.worker_index) |worker| {
+                try taken_event.addAttribute(try Attribute.initInt(self.allocator, "job.worker_index", @as(i64, @intCast(worker))));
+            }
+            try span.pushEvent(taken_event);
+        }
+
+        // Event 3: Job started (if timestamp exists)
+        if (job_state.start_ts) |start_ts| {
+            var started_event = try RequestEvent.init(
+                self.allocator,
+                if (job_state.job_type == .effect) "zerver.effect_job_started" else "zerver.step_job_started",
+                @as(u64, @intCast(start_ts)) * std.time.ns_per_ms,
+            );
+            errdefer started_event.deinit();
+            try started_event.addAttribute(try Attribute.initString(self.allocator, "job.queue", job_state.queue));
+            try started_event.addAttribute(try Attribute.initString(self.allocator, "job.stage", "started"));
+            if (job_state.worker_index) |worker| {
+                try started_event.addAttribute(try Attribute.initInt(self.allocator, "job.worker_index", @as(i64, @intCast(worker))));
+            }
+            try span.pushEvent(started_event);
+        }
+
+        // Events 4+: Park/resume episodes (in chronological order)
+        for (job_state.park_episodes.items) |episode| {
+            // Park event
+            var parked_event = try RequestEvent.init(
+                self.allocator,
+                if (job_state.job_type == .effect) "zerver.effect_job_parked" else "zerver.step_job_parked",
+                @as(u64, @intCast(episode.park_ts)) * std.time.ns_per_ms,
+            );
+            errdefer parked_event.deinit();
+            try parked_event.addAttribute(try Attribute.initString(self.allocator, "job.queue", job_state.queue));
+            try parked_event.addAttribute(try Attribute.initString(self.allocator, "job.stage", "parked"));
+            try parked_event.addAttribute(try Attribute.initString(self.allocator, "job.park_cause", episode.cause));
+            if (episode.token) |token| {
+                try parked_event.addAttribute(try Attribute.initInt(self.allocator, "job.park_token", @as(i64, @intCast(token))));
+            }
+            if (episode.concurrency_limit_current) |current| {
+                try parked_event.addAttribute(try Attribute.initInt(self.allocator, "job.concurrency_limit_current", @as(i64, @intCast(current))));
+            }
+            if (episode.concurrency_limit_max) |max| {
+                try parked_event.addAttribute(try Attribute.initInt(self.allocator, "job.concurrency_limit_max", @as(i64, @intCast(max))));
+            }
+            try span.pushEvent(parked_event);
+
+            // Resume event (if timestamp exists)
+            if (episode.resume_ts) |resume_ts| {
+                var resumed_event = try RequestEvent.init(
+                    self.allocator,
+                    if (job_state.job_type == .effect) "zerver.effect_job_resumed" else "zerver.step_job_resumed",
+                    @as(u64, @intCast(resume_ts)) * std.time.ns_per_ms,
+                );
+                errdefer resumed_event.deinit();
+                try resumed_event.addAttribute(try Attribute.initString(self.allocator, "job.queue", job_state.queue));
+                try resumed_event.addAttribute(try Attribute.initString(self.allocator, "job.stage", "resumed"));
+                if (episode.token) |token| {
+                    try resumed_event.addAttribute(try Attribute.initInt(self.allocator, "job.park_token", @as(i64, @intCast(token))));
+                }
+                const park_wait_ms = resume_ts - episode.park_ts;
+                try resumed_event.addAttribute(try Attribute.initInt(self.allocator, "job.park_wait_ms", park_wait_ms));
+                try span.pushEvent(resumed_event);
+            }
+        }
+
+        // Final event: Job completed (if timestamp exists)
+        if (job_state.end_ts) |end_ts| {
+            var completed_event = try RequestEvent.init(
+                self.allocator,
+                if (job_state.job_type == .effect) "zerver.effect_job_completed" else "zerver.step_job_completed",
+                @as(u64, @intCast(end_ts)) * std.time.ns_per_ms,
+            );
+            errdefer completed_event.deinit();
+            try completed_event.addAttribute(try Attribute.initString(self.allocator, "job.queue", job_state.queue));
+            try completed_event.addAttribute(try Attribute.initString(self.allocator, "job.stage", "completed"));
+            if (job_state.success) |success| {
+                try completed_event.addAttribute(try Attribute.initBool(self.allocator, "job.success", success));
+            }
+            if (job_state.worker_index) |worker| {
+                try completed_event.addAttribute(try Attribute.initInt(self.allocator, "job.worker_index", @as(i64, @intCast(worker))));
+            }
+            try span.pushEvent(completed_event);
+        }
+    }
+
+    fn recordEffectJobCompleted(self: *RequestRecord, event: telemetry.EffectJobCompletedEvent) !void {
+        // Look up JobState and populate end_ts
+        const job_state_ptr = self.job_states.getPtr(event.effect_sequence);
+        if (job_state_ptr) |state| {
+            state.end_ts = @as(i64, @intCast(event.timestamp_ms));
+            state.success = event.success;
+
+            // Compute durations for threshold decision
+            const durations = computeJobDurations(state);
+
+            // Threshold-based promotion: create span if queue_wait >= 5ms OR park_wait >= 5ms
+            // TODO: Replace hardcoded thresholds with OtelConfig values
+            const promote_queue_threshold_ms: i64 = 5;
+            const promote_park_threshold_ms: i64 = 5;
+            const should_promote = durations.queue_wait_ms >= promote_queue_threshold_ms or
+                durations.park_wait_ms_total >= promote_park_threshold_ms;
+
+            if (should_promote) {
+                // Create job span for promotion
+                const effect_parent = self.effect_spans.get(event.effect_sequence);
+                if (effect_parent) |parent_span| {
+                    const job_span = try ChildSpan.create(
+                        self.allocator,
+                        "effect_job",
+                        .internal,
+                        parent_span.span_id,
+                        @as(u64, @intCast(state.enqueue_ts)) * std.time.ns_per_ms,
+                    );
+                    errdefer {
+                        job_span.deinit();
+                        self.allocator.destroy(job_span);
+                    }
+
+                    job_span.end_time_unix_ns = event.timestamp_ms * std.time.ns_per_ms;
+
+                    // Add job attributes
+                    try job_span.pushAttribute(try Attribute.initString(self.allocator, "job.queue", state.queue));
+                    try job_span.pushAttribute(try Attribute.initInt(self.allocator, "job.sequence", @as(i64, @intCast(event.effect_sequence))));
+                    try job_span.pushAttribute(try Attribute.initBool(self.allocator, "job.success", event.success));
+
+                    // Add computed duration attributes
+                    try job_span.pushAttribute(try Attribute.initInt(self.allocator, "job.queue_wait_ms", durations.queue_wait_ms));
+                    try job_span.pushAttribute(try Attribute.initInt(self.allocator, "job.dispatch_ms", durations.dispatch_ms));
+                    try job_span.pushAttribute(try Attribute.initInt(self.allocator, "job.park_wait_ms_total", durations.park_wait_ms_total));
+                    try job_span.pushAttribute(try Attribute.initInt(self.allocator, "job.park_count", @as(i64, @intCast(state.park_episodes.items.len))));
+                    try job_span.pushAttribute(try Attribute.initInt(self.allocator, "job.run_active_ms", durations.run_active_ms));
+                    try job_span.pushAttribute(try Attribute.initInt(self.allocator, "job.total_ms", durations.total_ms));
+
+                    if (event.job_ctx) |ctx| {
+                        try job_span.pushAttribute(try Attribute.initInt(self.allocator, "job.step.ctx", @as(i64, @intCast(ctx))));
+                    }
+                    if (state.worker_index) |worker| {
+                        try job_span.pushAttribute(try Attribute.initInt(self.allocator, "job.worker_index", @as(i64, @intCast(worker))));
+                    }
+
+                    // Set span status
+                    if (event.success) {
+                        job_span.status = .ok;
+                    } else {
+                        try job_span.setStatus(.@"error", "job failed");
+                    }
+
+                    // Backfill complete job lifecycle timeline
+                    try self.backfillJobEvents(job_span, state);
+
+                    // Add job span to parent effect span's children
+                    try parent_span.pushEvent(try RequestEvent.init(
+                        self.allocator,
+                        "zerver.job_promoted",
+                        event.timestamp_ms * std.time.ns_per_ms,
+                    ));
+
+                    // Store job span for later export
+                    // For now, we'll immediately add it to a collection
+                    // TODO: Properly manage job span lifecycle
+                    job_span.deinit();
+                    self.allocator.destroy(job_span);
+                }
+            }
+
+            // Clean up JobState
+            const state_copy = self.job_states.fetchRemove(event.effect_sequence);
+            if (state_copy) |kv| {
+                var s = kv.value;
+                s.deinit();
+            }
+        }
+
+        // Record completion event on parent effect span
+        const effect_parent = self.effect_spans.get(event.effect_sequence);
+        if (effect_parent) |parent_span| {
+            var completion_event = try self.buildJobStageEvent(
+                "zerver.effect_job_completed",
+                event.timestamp_ms,
+                event.need_sequence,
+                event.effect_sequence,
+                event.queue,
+                "completed",
+                event.success,
+            );
+            errdefer completion_event.deinit();
+            if (event.job_ctx) |ctx| {
+                try completion_event.addAttribute(try Attribute.initInt(self.allocator, "job.step.ctx", @as(i64, @intCast(ctx))));
+            }
+            if (event.worker_index) |worker| {
+                try completion_event.addAttribute(try Attribute.initInt(self.allocator, "job.worker_index", @as(i64, @intCast(worker))));
+            }
+            try parent_span.pushEvent(completion_event);
+        }
+    }
+
+    fn recordStepJobEnqueued(self: *RequestRecord, event: telemetry.StepJobEnqueuedEvent) !void {
+        // Create JobState instead of immediately creating a span
+        const enqueue_ts = @as(i64, @intCast(event.timestamp_ms));
+        var job_state = try JobState.init(
+            self.allocator,
+            .step,
+            event.job_ctx,
+            enqueue_ts,
+            event.queue,
+        );
+        errdefer job_state.deinit();
+
+        try self.job_states.put(event.job_ctx, job_state);
+
+        // Record event on root request span (no parent step span at this stage)
+        var request_event = try self.buildStepJobStageEvent(
+            "zerver.step_job_enqueued",
+            event.timestamp_ms,
+            event.need_sequence,
+            event.job_ctx,
+            event.queue,
+            "enqueued",
+            null,
+            null,
+        );
+        errdefer request_event.deinit();
+        try self.pushEvent(request_event);
+    }
+
+    fn recordStepJobStarted(self: *RequestRecord, event: telemetry.StepJobStartedEvent) !void {
+        // Look up JobState and set start_ts
+        if (self.job_states.getPtr(event.job_ctx)) |job_state| {
+            job_state.start_ts = @as(i64, @intCast(event.timestamp_ms));
+            if (event.worker_index) |worker| {
+                job_state.worker_index = worker;
+            }
+        }
+
+        // Record event on root request span only
+        var request_event = try self.buildStepJobStageEvent(
+            "zerver.step_job_started",
+            event.timestamp_ms,
+            event.need_sequence,
+            event.job_ctx,
+            event.queue,
+            "started",
+            event.worker_index,
+            null,
+        );
+        errdefer request_event.deinit();
+        try self.pushEvent(request_event);
+    }
+
+    fn recordStepJobCompleted(self: *RequestRecord, event: telemetry.StepJobCompletedEvent) !void {
+        // Look up JobState and populate end_ts
+        const job_state_ptr = self.job_states.getPtr(event.job_ctx);
+        if (job_state_ptr) |state| {
+            state.end_ts = @as(i64, @intCast(event.timestamp_ms));
+
+            // Compute durations for threshold decision
+            const durations = computeJobDurations(state);
+
+            // Threshold-based promotion: create span if queue_wait >= 5ms OR park_wait >= 5ms
+            // TODO: Replace hardcoded thresholds with OtelConfig values
+            const promote_queue_threshold_ms: i64 = 5;
+            const promote_park_threshold_ms: i64 = 5;
+            const should_promote = durations.queue_wait_ms >= promote_queue_threshold_ms or
+                durations.park_wait_ms_total >= promote_park_threshold_ms;
+
+            if (should_promote) {
+                // Create job span for promotion
+                // Step jobs are children of root request span since they may not have a parent step span
+                const job_span = try ChildSpan.create(
+                    self.allocator,
+                    "step_job",
+                    .internal,
+                    self.span_id,
+                    @as(u64, @intCast(state.enqueue_ts)) * std.time.ns_per_ms,
+                );
+                errdefer {
+                    job_span.deinit();
+                    self.allocator.destroy(job_span);
+                }
+
+                job_span.end_time_unix_ns = event.timestamp_ms * std.time.ns_per_ms;
+
+                // Add job attributes
+                try job_span.pushAttribute(try Attribute.initString(self.allocator, "job.queue", state.queue));
+                try job_span.pushAttribute(try Attribute.initInt(self.allocator, "job.step.ctx", @as(i64, @intCast(event.job_ctx))));
+                try job_span.pushAttribute(try Attribute.initString(self.allocator, "job.decision", event.decision));
+
+                // Add computed duration attributes
+                try job_span.pushAttribute(try Attribute.initInt(self.allocator, "job.queue_wait_ms", durations.queue_wait_ms));
+                try job_span.pushAttribute(try Attribute.initInt(self.allocator, "job.dispatch_ms", durations.dispatch_ms));
+                try job_span.pushAttribute(try Attribute.initInt(self.allocator, "job.park_wait_ms_total", durations.park_wait_ms_total));
+                try job_span.pushAttribute(try Attribute.initInt(self.allocator, "job.park_count", @as(i64, @intCast(state.park_episodes.items.len))));
+                try job_span.pushAttribute(try Attribute.initInt(self.allocator, "job.run_active_ms", durations.run_active_ms));
+                try job_span.pushAttribute(try Attribute.initInt(self.allocator, "job.total_ms", durations.total_ms));
+
+                if (state.worker_index) |worker| {
+                    try job_span.pushAttribute(try Attribute.initInt(self.allocator, "job.worker_index", @as(i64, @intCast(worker))));
+                }
+
+                // Set span status
+                job_span.status = .ok;
+
+                // Backfill complete job lifecycle timeline
+                try self.backfillJobEvents(job_span, state);
+
+                // Store a promotion event on root span
+                try self.pushEvent(try RequestEvent.init(
+                    self.allocator,
+                    "zerver.step_job_promoted",
+                    event.timestamp_ms * std.time.ns_per_ms,
+                ));
+
+                // Clean up promoted job span
+                // TODO: Properly manage job span lifecycle
+                job_span.deinit();
+                self.allocator.destroy(job_span);
+            }
+
+            // Clean up JobState
+            const state_copy = self.job_states.fetchRemove(event.job_ctx);
+            if (state_copy) |kv| {
+                var s = kv.value;
+                s.deinit();
+            }
+        }
+
+        // Record completion event on root request span
+        var request_event = try self.buildStepJobStageEvent(
+            "zerver.step_job_completed",
+            event.timestamp_ms,
+            event.need_sequence,
+            event.job_ctx,
+            event.queue,
+            "completed",
+            event.worker_index,
+            event.decision,
+        );
+        errdefer request_event.deinit();
+        try self.pushEvent(request_event);
+    }
+
+    fn recordStepWait(self: *RequestRecord, event: telemetry.StepWaitEvent) !void {
+        var req_event = try RequestEvent.init(self.allocator, "zerver.step_wait", event.timestamp_ms * std.time.ns_per_ms);
+        var committed = false;
+        defer if (!committed) req_event.deinit();
+        try req_event.addAttribute(try Attribute.initString(self.allocator, "job.type", "step"));
+        try req_event.addAttribute(try Attribute.initInt(self.allocator, "need.sequence", @as(i64, @intCast(event.need_sequence))));
+        try req_event.addAttribute(try Attribute.initString(self.allocator, "job.stage", "waiting"));
+        try self.pushEvent(req_event);
+        committed = true;
+    }
+
+    fn recordEffectJobTaken(self: *RequestRecord, event: telemetry.EffectJobTakenEvent) !void {
+        // Look up JobState and set take_ts
+        if (self.job_states.getPtr(event.effect_sequence)) |job_state| {
+            job_state.take_ts = @as(i64, @intCast(event.timestamp_ms));
+            job_state.worker_index = event.worker_index;
+        }
+
+        // Record event on parent effect span
+        const effect_parent = self.effect_spans.get(event.effect_sequence);
+        if (effect_parent) |parent_span| {
+            var job_event = try self.buildJobStageEvent(
+                "zerver.effect_job_taken",
+                event.timestamp_ms,
+                event.need_sequence,
+                event.effect_sequence,
+                event.queue,
+                "taken",
+                null,
+            );
+            errdefer job_event.deinit();
+            try job_event.addAttribute(try Attribute.initInt(self.allocator, "job.worker_index", @as(i64, @intCast(event.worker_index))));
+            try parent_span.pushEvent(job_event);
+        }
+    }
+
+    fn recordEffectJobParked(self: *RequestRecord, event: telemetry.EffectJobParkedEvent) !void {
+        // Look up JobState and append ParkEpisode
+        if (self.job_states.getPtr(event.effect_sequence)) |job_state| {
+            var episode = try ParkEpisode.init(
+                self.allocator,
+                event.cause,
+                event.token,
+                @as(i64, @intCast(event.timestamp_ms)),
+            );
+            episode.concurrency_limit_current = event.concurrency_limit_current;
+            episode.concurrency_limit_max = event.concurrency_limit_max;
+            errdefer episode.deinit();
+
+            try job_state.park_episodes.append(self.allocator, episode);
+        }
+
+        // Record event on parent effect span
+        const effect_parent = self.effect_spans.get(event.effect_sequence);
+        if (effect_parent) |parent_span| {
+            var job_event = try self.buildJobStageEvent(
+                "zerver.effect_job_parked",
+                event.timestamp_ms,
+                event.need_sequence,
+                event.effect_sequence,
+                event.queue,
+                "parked",
+                null,
+            );
+            errdefer job_event.deinit();
+            try job_event.addAttribute(try Attribute.initString(self.allocator, "job.park_cause", event.cause));
+            if (event.token) |tok| {
+                try job_event.addAttribute(try Attribute.initInt(self.allocator, "job.park_token", @as(i64, @intCast(tok))));
+            }
+            if (event.concurrency_limit_current) |curr| {
+                try job_event.addAttribute(try Attribute.initInt(self.allocator, "job.concurrency_current", @as(i64, @intCast(curr))));
+            }
+            if (event.concurrency_limit_max) |max| {
+                try job_event.addAttribute(try Attribute.initInt(self.allocator, "job.concurrency_max", @as(i64, @intCast(max))));
+            }
+            try parent_span.pushEvent(job_event);
+        }
+    }
+
+    fn recordEffectJobResumed(self: *RequestRecord, event: telemetry.EffectJobResumedEvent) !void {
+        // Look up JobState and update last ParkEpisode resume_ts
+        if (self.job_states.getPtr(event.effect_sequence)) |job_state| {
+            // Find the last park episode (most recent one without resume_ts)
+            var i: usize = job_state.park_episodes.items.len;
+            while (i > 0) {
+                i -= 1;
+                if (job_state.park_episodes.items[i].resume_ts == null) {
+                    job_state.park_episodes.items[i].resume_ts = @as(i64, @intCast(event.timestamp_ms));
+                    break;
+                }
+            }
+        }
+
+        // Record event on parent effect span
+        const effect_parent = self.effect_spans.get(event.effect_sequence);
+        if (effect_parent) |parent_span| {
+            var job_event = try self.buildJobStageEvent(
+                "zerver.effect_job_resumed",
+                event.timestamp_ms,
+                event.need_sequence,
+                event.effect_sequence,
+                event.queue,
+                "resumed",
+                null,
+            );
+            errdefer job_event.deinit();
+            try parent_span.pushEvent(job_event);
+        }
+    }
+
+    fn recordStepJobTaken(self: *RequestRecord, event: telemetry.StepJobTakenEvent) !void {
+        // Look up JobState and set take_ts
+        if (self.job_states.getPtr(event.job_ctx)) |job_state| {
+            job_state.take_ts = @as(i64, @intCast(event.timestamp_ms));
+            job_state.worker_index = event.worker_index;
+        }
+
+        // Record event on root request span (no parent step span at this stage)
+        var request_event = try self.buildStepJobStageEvent(
+            "zerver.step_job_taken",
+            event.timestamp_ms,
+            event.need_sequence,
+            event.job_ctx,
+            event.queue,
+            "taken",
+            event.worker_index,
+            null,
+        );
+        errdefer request_event.deinit();
+        try self.pushEvent(request_event);
+    }
+
+    fn recordStepJobParked(self: *RequestRecord, event: telemetry.StepJobParkedEvent) !void {
+        // Look up JobState and append ParkEpisode
+        if (self.job_states.getPtr(event.job_ctx)) |job_state| {
+            var episode = try ParkEpisode.init(
+                self.allocator,
+                event.cause,
+                event.token,
+                @as(i64, @intCast(event.timestamp_ms)),
+            );
+            episode.concurrency_limit_current = event.concurrency_limit_current;
+            episode.concurrency_limit_max = event.concurrency_limit_max;
+            errdefer episode.deinit();
+
+            try job_state.park_episodes.append(self.allocator, episode);
+        }
+
+        // Record event on root request span
+        var request_event = try self.buildStepJobStageEvent(
+            "zerver.step_job_parked",
+            event.timestamp_ms,
+            event.need_sequence,
+            event.job_ctx,
+            event.queue,
+            "parked",
+            null,
+            null,
+        );
+        errdefer request_event.deinit();
+        try request_event.addAttribute(try Attribute.initString(self.allocator, "job.park_cause", event.cause));
+        if (event.token) |tok| {
+            try request_event.addAttribute(try Attribute.initInt(self.allocator, "job.park_token", @as(i64, @intCast(tok))));
+        }
+        if (event.concurrency_limit_current) |curr| {
+            try request_event.addAttribute(try Attribute.initInt(self.allocator, "job.concurrency_current", @as(i64, @intCast(curr))));
+        }
+        if (event.concurrency_limit_max) |max| {
+            try request_event.addAttribute(try Attribute.initInt(self.allocator, "job.concurrency_max", @as(i64, @intCast(max))));
+        }
+        try self.pushEvent(request_event);
+    }
+
+    fn recordStepJobResumed(self: *RequestRecord, event: telemetry.StepJobResumedEvent) !void {
+        // Look up JobState and update last ParkEpisode resume_ts
+        if (self.job_states.getPtr(event.job_ctx)) |job_state| {
+            // Find the last park episode (most recent one without resume_ts)
+            var i: usize = job_state.park_episodes.items.len;
+            while (i > 0) {
+                i -= 1;
+                if (job_state.park_episodes.items[i].resume_ts == null) {
+                    job_state.park_episodes.items[i].resume_ts = @as(i64, @intCast(event.timestamp_ms));
+                    break;
+                }
+            }
+        }
+
+        // Record event on root request span
+        var request_event = try self.buildStepJobStageEvent(
+            "zerver.step_job_resumed",
+            event.timestamp_ms,
+            event.need_sequence,
+            event.job_ctx,
+            event.queue,
+            "resumed",
+            null,
+            null,
+        );
+        errdefer request_event.deinit();
+        try self.pushEvent(request_event);
+    }
+
     fn removeActiveStep(self: *RequestRecord, span: *ChildSpan) void {
         var i: usize = self.step_stack.items.len;
         while (i > 0) {
@@ -550,13 +1335,13 @@ const RequestRecord = struct {
         if (event.response_content_type.len != 0) {
             self.allocator.free(self.response_content_type);
             self.response_content_type = try self.allocator.dupe(u8, event.response_content_type);
-            try self.pushAttribute(try Attribute.initString(self.allocator, "http.response_content_type", event.response_content_type));
+            try self.pushAttribute(try Attribute.initString(self.allocator, "http.response.header.content-type", event.response_content_type));
         }
         self.response_body_bytes = event.response_body_bytes;
         self.response_streaming = event.response_streaming;
-        try self.pushAttribute(try Attribute.initInt(self.allocator, "http.response_content_length", @as(i64, @intCast(event.response_body_bytes))));
+        try self.pushAttribute(try Attribute.initInt(self.allocator, "http.response.body.size", @as(i64, @intCast(event.response_body_bytes))));
         try self.pushAttribute(try Attribute.initBool(self.allocator, "zerver.response_streaming", event.response_streaming));
-        try self.pushAttribute(try Attribute.initInt(self.allocator, "http.status_code", @as(i64, @intCast(event.status_code))));
+        try self.pushAttribute(try Attribute.initInt(self.allocator, "http.response.status_code", @as(i64, @intCast(event.status_code))));
         try self.pushAttribute(try Attribute.initString(self.allocator, "zerver.outcome", event.outcome));
 
         if (event.error_ctx) |ctx| {
@@ -582,6 +1367,56 @@ const RequestRecord = struct {
             self.allocator.free(existing);
         }
         self.status_message = try self.allocator.dupe(u8, message);
+    }
+
+    fn buildJobStageEvent(
+        self: *RequestRecord,
+        name: []const u8,
+        timestamp_ms: u64,
+        need_sequence: usize,
+        effect_sequence: usize,
+        queue: []const u8,
+        stage: []const u8,
+        success: ?bool,
+    ) !RequestEvent {
+        var event = try RequestEvent.init(self.allocator, name, timestamp_ms * std.time.ns_per_ms);
+        errdefer event.deinit();
+        try event.addAttribute(try Attribute.initString(self.allocator, "job.type", "effect"));
+        try event.addAttribute(try Attribute.initInt(self.allocator, "effect.sequence", @as(i64, @intCast(need_sequence))));
+        try event.addAttribute(try Attribute.initInt(self.allocator, "job.effect.sequence", @as(i64, @intCast(effect_sequence))));
+        try event.addAttribute(try Attribute.initString(self.allocator, "job.queue", queue));
+        try event.addAttribute(try Attribute.initString(self.allocator, "job.stage", stage));
+        if (success) |value| {
+            try event.addAttribute(try Attribute.initBool(self.allocator, "job.success", value));
+        }
+        return event;
+    }
+
+    fn buildStepJobStageEvent(
+        self: *RequestRecord,
+        name: []const u8,
+        timestamp_ms: u64,
+        need_sequence: usize,
+        job_ctx: usize,
+        queue: []const u8,
+        stage: []const u8,
+        worker_index: ?usize,
+        decision: ?[]const u8,
+    ) !RequestEvent {
+        var event = try RequestEvent.init(self.allocator, name, timestamp_ms * std.time.ns_per_ms);
+        errdefer event.deinit();
+        try event.addAttribute(try Attribute.initString(self.allocator, "job.type", "step"));
+        try event.addAttribute(try Attribute.initInt(self.allocator, "need.sequence", @as(i64, @intCast(need_sequence))));
+        try event.addAttribute(try Attribute.initInt(self.allocator, "job.step.ctx", @as(i64, @intCast(job_ctx))));
+        try event.addAttribute(try Attribute.initString(self.allocator, "job.queue", queue));
+        try event.addAttribute(try Attribute.initString(self.allocator, "job.stage", stage));
+        if (worker_index) |worker| {
+            try event.addAttribute(try Attribute.initInt(self.allocator, "job.worker_index", @as(i64, @intCast(worker))));
+        }
+        if (decision) |value| {
+            try event.addAttribute(try Attribute.initString(self.allocator, "job.decision", value));
+        }
+        return event;
     }
 };
 
@@ -758,14 +1593,79 @@ pub const OtelExporter = struct {
                         try record.recordEffectEnd(payload);
                     }
                 },
-                .continuation_resume => |payload| {
+                .step_resume => |payload| {
                     if (self.requests.get(payload.request_id)) |record| {
-                        try record.recordContinuation(payload);
+                        try record.recordStepResume(payload);
                     }
                 },
                 .executor_crash => |payload| {
                     if (self.requests.get(payload.request_id)) |record| {
                         try record.recordExecutorCrash(payload);
+                    }
+                },
+                .effect_job_enqueued => |payload| {
+                    if (self.requests.get(payload.request_id)) |record| {
+                        try record.recordEffectJobEnqueued(payload);
+                    }
+                },
+                .effect_job_started => |payload| {
+                    if (self.requests.get(payload.request_id)) |record| {
+                        try record.recordEffectJobStarted(payload);
+                    }
+                },
+                .effect_job_completed => |payload| {
+                    if (self.requests.get(payload.request_id)) |record| {
+                        try record.recordEffectJobCompleted(payload);
+                    }
+                },
+                .step_job_enqueued => |payload| {
+                    if (self.requests.get(payload.request_id)) |record| {
+                        try record.recordStepJobEnqueued(payload);
+                    }
+                },
+                .step_job_started => |payload| {
+                    if (self.requests.get(payload.request_id)) |record| {
+                        try record.recordStepJobStarted(payload);
+                    }
+                },
+                .step_job_completed => |payload| {
+                    if (self.requests.get(payload.request_id)) |record| {
+                        try record.recordStepJobCompleted(payload);
+                    }
+                },
+                .step_wait => |payload| {
+                    if (self.requests.get(payload.request_id)) |record| {
+                        try record.recordStepWait(payload);
+                    }
+                },
+                .effect_job_taken => |payload| {
+                    if (self.requests.get(payload.request_id)) |record| {
+                        try record.recordEffectJobTaken(payload);
+                    }
+                },
+                .effect_job_parked => |payload| {
+                    if (self.requests.get(payload.request_id)) |record| {
+                        try record.recordEffectJobParked(payload);
+                    }
+                },
+                .effect_job_resumed => |payload| {
+                    if (self.requests.get(payload.request_id)) |record| {
+                        try record.recordEffectJobResumed(payload);
+                    }
+                },
+                .step_job_taken => |payload| {
+                    if (self.requests.get(payload.request_id)) |record| {
+                        try record.recordStepJobTaken(payload);
+                    }
+                },
+                .step_job_parked => |payload| {
+                    if (self.requests.get(payload.request_id)) |record| {
+                        try record.recordStepJobParked(payload);
+                    }
+                },
+                .step_job_resumed => |payload| {
+                    if (self.requests.get(payload.request_id)) |record| {
+                        try record.recordStepJobResumed(payload);
                     }
                 },
             }

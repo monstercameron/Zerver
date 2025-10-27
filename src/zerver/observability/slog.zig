@@ -49,6 +49,7 @@ pub const Attr = struct {
 
     pub const Value = union(enum) {
         string: []const u8,
+        enum_tag: []const u8,
         int: i64,
         uint: u64,
         float: f64,
@@ -67,6 +68,7 @@ pub const Attr = struct {
 
             switch (self) {
                 .string => |s| try writer.writeAll(s),
+                .enum_tag => |s| try writer.writeAll(s),
                 .int => |i| try writer.print("{}", .{i}),
                 .uint => |u| try writer.print("{}", .{u}),
                 .float => |f| try writer.print("{d}", .{f}),
@@ -79,6 +81,20 @@ pub const Attr = struct {
 
     pub fn string(key: []const u8, value: []const u8) Attr {
         return .{ .key = key, .value = .{ .string = value } };
+    }
+
+    pub fn enumeration(key: []const u8, value: anytype) Attr {
+        const type_info = @typeInfo(@TypeOf(value));
+        return switch (type_info) {
+            .@"enum" => .{ .key = key, .value = .{ .enum_tag = @tagName(value) } },
+            .@"union" => |union_info| blk: {
+                if (union_info.tag_type == null) {
+                    @compileError("Attr.enumeration expects a tagged union");
+                }
+                break :blk .{ .key = key, .value = .{ .enum_tag = @tagName(value) } };
+            },
+            else => @compileError("Attr.enumeration expects an enum or tagged union"),
+        };
     }
 
     pub fn int(key: []const u8, value: i64) Attr {
@@ -160,6 +176,9 @@ pub const TextHandler = struct {
                     writer.writeByte('"') catch return;
                     writer.writeAll(s) catch return;
                     writer.writeByte('"') catch return;
+                },
+                .enum_tag => |s| {
+                    writer.writeAll(s) catch return;
                 },
                 .int => |i| writer.print("{d}", .{i}) catch return,
                 .uint => |u| writer.print("{d}", .{u}) catch return,

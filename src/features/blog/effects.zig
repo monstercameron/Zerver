@@ -1,10 +1,13 @@
 const std = @import("std");
 const zerver = @import("../../zerver/root.zig");
 const slog = @import("../../zerver/observability/slog.zig");
+const effectors = @import("../../zerver/runtime/reactor/effectors.zig");
 const schema = @import("schema.zig");
 const sql = @import("../../zerver/sql/mod.zig");
 const runtime_resources = @import("../../zerver/runtime/resources.zig");
 const runtime_global = @import("../../zerver/runtime/global.zig");
+
+const types = zerver.types;
 
 const allocator = std.heap.c_allocator;
 const ValueConvertError = error{UnexpectedType};
@@ -16,7 +19,10 @@ pub fn initialize(resources: *runtime_resources.RuntimeResources) !void {
     schema_mutex.lock();
     defer schema_mutex.unlock();
 
-    if (schema_initialized) return;
+    if (schema_initialized) {
+        registerReactorHandlers(resources);
+        return;
+    }
 
     var lease = try resources.acquireConnection();
     defer lease.release();
@@ -24,9 +30,11 @@ pub fn initialize(resources: *runtime_resources.RuntimeResources) !void {
     try schema.initSchema(lease.connection());
     schema_initialized = true;
     slog.info("blog sqlite schema ensured", &.{});
+
+    registerReactorHandlers(resources);
 }
 
-pub fn effectHandler(effect: *const zerver.Effect, _timeout_ms: u32) anyerror!zerver.executor.EffectResult {
+pub fn effectHandler(effect: *const zerver.Effect, _timeout_ms: u32) anyerror!zerver.types.EffectResult {
     _ = _timeout_ms;
     const resources = runtime_global.get();
 
@@ -95,7 +103,90 @@ pub fn effectHandler(effect: *const zerver.Effect, _timeout_ms: u32) anyerror!ze
     }
 }
 
-fn handleDbGet(database: *sql.db.Connection, key: []const u8) !zerver.executor.EffectResult {
+fn registerReactorHandlers(resources: *runtime_resources.RuntimeResources) void {
+    if (resources.reactorEffectDispatcher()) |dispatcher| {
+        dispatcher.setDbGetHandler(reactorDbGetHandler);
+        dispatcher.setDbPutHandler(reactorDbPutHandler);
+        dispatcher.setDbDelHandler(reactorDbDelHandler);
+    }
+}
+
+fn reactorDbGetHandler(_: *effectors.Context, payload: types.DbGet) effectors.DispatchError!types.EffectResult {
+    slog.debug("blog reactor db_get", &.{
+        slog.Attr.string("key", payload.key),
+        slog.Attr.uint("token", payload.token),
+    });
+
+    const resources = runtime_global.get();
+    var lease = resources.acquireConnection() catch |err| {
+        slog.err("blog reactor db acquire failed", &.{
+            slog.Attr.string("error", @errorName(err)),
+        });
+        return .{ .failure = unexpectedError("db_acquire") };
+    };
+    defer lease.release();
+
+    const conn = lease.connection();
+    return handleDbGet(conn, payload.key) catch |err| {
+        slog.err("blog reactor db_get error", &.{
+            slog.Attr.string("key", payload.key),
+            slog.Attr.string("error", @errorName(err)),
+        });
+        return .{ .failure = unexpectedError("db_get") };
+    };
+}
+
+fn reactorDbPutHandler(_: *effectors.Context, payload: types.DbPut) effectors.DispatchError!types.EffectResult {
+    slog.debug("blog reactor db_put", &.{
+        slog.Attr.string("key", payload.key),
+        slog.Attr.uint("token", payload.token),
+    });
+
+    const resources = runtime_global.get();
+    var lease = resources.acquireConnection() catch |err| {
+        slog.err("blog reactor db acquire failed", &.{
+            slog.Attr.string("error", @errorName(err)),
+        });
+        return .{ .failure = unexpectedError("db_acquire") };
+    };
+    defer lease.release();
+
+    const conn = lease.connection();
+    return handleDbPut(conn, payload.key, payload.value) catch |err| {
+        slog.err("blog reactor db_put error", &.{
+            slog.Attr.string("key", payload.key),
+            slog.Attr.string("error", @errorName(err)),
+        });
+        return .{ .failure = unexpectedError("db_put") };
+    };
+}
+
+fn reactorDbDelHandler(_: *effectors.Context, payload: types.DbDel) effectors.DispatchError!types.EffectResult {
+    slog.debug("blog reactor db_del", &.{
+        slog.Attr.string("key", payload.key),
+        slog.Attr.uint("token", payload.token),
+    });
+
+    const resources = runtime_global.get();
+    var lease = resources.acquireConnection() catch |err| {
+        slog.err("blog reactor db acquire failed", &.{
+            slog.Attr.string("error", @errorName(err)),
+        });
+        return .{ .failure = unexpectedError("db_acquire") };
+    };
+    defer lease.release();
+
+    const conn = lease.connection();
+    return handleDbDel(conn, payload.key) catch |err| {
+        slog.err("blog reactor db_del error", &.{
+            slog.Attr.string("key", payload.key),
+            slog.Attr.string("error", @errorName(err)),
+        });
+        return .{ .failure = unexpectedError("db_del") };
+    };
+}
+
+fn handleDbGet(database: *sql.db.Connection, key: []const u8) !zerver.types.EffectResult {
     if (std.mem.eql(u8, key, "posts")) {
         return getAllPosts(database);
     } else if (std.mem.startsWith(u8, key, "posts/")) {
@@ -112,7 +203,7 @@ fn handleDbGet(database: *sql.db.Connection, key: []const u8) !zerver.executor.E
     } };
 }
 
-fn handleDbPut(database: *sql.db.Connection, key: []const u8, value: []const u8) !zerver.executor.EffectResult {
+fn handleDbPut(database: *sql.db.Connection, key: []const u8, value: []const u8) !zerver.types.EffectResult {
     if (std.mem.startsWith(u8, key, "posts/")) {
         try putPost(database, value);
         const empty_ptr = @constCast(&[_]u8{});
@@ -129,7 +220,7 @@ fn handleDbPut(database: *sql.db.Connection, key: []const u8, value: []const u8)
     } };
 }
 
-fn handleDbDel(database: *sql.db.Connection, key: []const u8) !zerver.executor.EffectResult {
+fn handleDbDel(database: *sql.db.Connection, key: []const u8) !zerver.types.EffectResult {
     if (std.mem.startsWith(u8, key, "posts/")) {
         try deletePost(database, key[6..]);
         const empty_ptr = @constCast(&[_]u8{});
@@ -146,7 +237,7 @@ fn handleDbDel(database: *sql.db.Connection, key: []const u8) !zerver.executor.E
     } };
 }
 
-fn getAllPosts(database: *sql.db.Connection) !zerver.executor.EffectResult {
+fn getAllPosts(database: *sql.db.Connection) !zerver.types.EffectResult {
     var stmt = try database.prepare("SELECT id, title, content, author, created_at, updated_at FROM posts ORDER BY created_at DESC");
     defer stmt.deinit();
 
@@ -172,7 +263,7 @@ fn getAllPosts(database: *sql.db.Connection) !zerver.executor.EffectResult {
     return .{ .success = .{ .bytes = data, .allocator = allocator } };
 }
 
-fn getPost(database: *sql.db.Connection, id: []const u8) !zerver.executor.EffectResult {
+fn getPost(database: *sql.db.Connection, id: []const u8) !zerver.types.EffectResult {
     var stmt = try database.prepare("SELECT id, title, content, author, created_at, updated_at FROM posts WHERE id = ?");
     defer stmt.deinit();
 
@@ -196,7 +287,7 @@ fn getPost(database: *sql.db.Connection, id: []const u8) !zerver.executor.Effect
     } };
 }
 
-fn getCommentsForPost(database: *sql.db.Connection, post_id: []const u8) !zerver.executor.EffectResult {
+fn getCommentsForPost(database: *sql.db.Connection, post_id: []const u8) !zerver.types.EffectResult {
     var stmt = try database.prepare("SELECT id, post_id, content, author, created_at FROM comments WHERE post_id = ? ORDER BY created_at ASC");
     defer stmt.deinit();
 
@@ -224,7 +315,7 @@ fn getCommentsForPost(database: *sql.db.Connection, post_id: []const u8) !zerver
     return .{ .success = .{ .bytes = data, .allocator = allocator } };
 }
 
-fn getComment(database: *sql.db.Connection, id: []const u8) !zerver.executor.EffectResult {
+fn getComment(database: *sql.db.Connection, id: []const u8) !zerver.types.EffectResult {
     var stmt = try database.prepare("SELECT id, post_id, content, author, created_at FROM comments WHERE id = ?");
     defer stmt.deinit();
 

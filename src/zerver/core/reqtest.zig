@@ -14,11 +14,13 @@ const slog = @import("../observability/slog.zig");
 pub const ReqTest = struct {
     allocator: std.mem.Allocator,
     ctx: ctx_module.CtxBase,
+    // TODO: Leak - store the ArenaAllocator so we can deinit it; right now ReqTest.init leaks every arena allocation.
 
     pub fn init(allocator: std.mem.Allocator) !ReqTest {
         var arena = std.heap.ArenaAllocator.init(allocator);
         errdefer arena.deinit();
 
+        // TODO: Bug - CtxBase.init currently takes a single allocator; passing the arena allocator compiles only because the signature mismatches. Thread the arena allocator through CtxBase instead of ignoring it.
         const ctx = try ctx_module.CtxBase.init(allocator, arena.allocator());
 
         return .{
@@ -28,16 +30,19 @@ pub const ReqTest = struct {
     }
 
     pub fn deinit(self: *ReqTest) void {
+        // TODO: Leak - deinit never frees the arena allocator from init(); call arena.deinit() once we retain it on the struct.
         self.ctx.deinit();
     }
 
     /// Set a path parameter.
     pub fn setParam(self: *ReqTest, name: []const u8, value: []const u8) !void {
+        // TODO: Safety - params map keeps borrowed slices; duplicate the data so tests that pass temporary strings remain valid.
         try self.ctx.params.put(name, value);
     }
 
     /// Set a query parameter.
     pub fn setQuery(self: *ReqTest, name: []const u8, value: []const u8) !void {
+        // TODO: Safety - query map keeps borrowed slices; duplicate the data so tests that pass temporary strings remain valid.
         try self.ctx.query.put(name, value);
     }
 

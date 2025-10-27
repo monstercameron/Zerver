@@ -1,4 +1,10 @@
 {
+  "project": {
+    "name": "Zerver",
+    "version": "0.1.0",
+    "description": "Zerver is a backend framework for Zig that gives you X-ray vision into your API. It's built on the idea that observability isn't a feature you add later—it's the architecture.",
+    "repository": "https://github.com/monstercameron/Zerver"
+  },
   "database": {
     "driver": "sqlite",
     "path": "resources/blog.db",
@@ -7,6 +13,22 @@
   },
   "thread_pool": {
     "worker_count": 4
+  },
+  "reactor": {
+    "enabled": true,
+    "continuation_pool": {
+      "size": 4,
+      "queue_capacity": 1024
+    },
+    "effector_pool": {
+      "size": 4,
+      "queue_capacity": 1024
+    },
+    "compute_pool": {
+      "type": "disabled",
+      "size": 0,
+      "queue_capacity": 0
+    }
   },
   "server": {
     "host": "127.0.0.1",

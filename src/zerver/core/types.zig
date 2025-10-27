@@ -4,6 +4,12 @@ const ctx_module = @import("ctx.zig");
 
 // TODO: Memory/Safety - Review all structs containing '[]const u8' fields to ensure that string slices are either duplicated into appropriate allocators or their lifetimes are carefully managed to prevent use-after-free issues.
 
+// TODO: Memory/Safety - Review all structs containing '[]const u8' fields to ensure that string slices are either duplicated into appropriate allocators or their lifetimes are carefully managed to prevent use-after-free issues.
+
+// TODO: Memory/Safety - Review all structs containing '[]const u8' fields to ensure that string slices are either duplicated into appropriate allocators or their lifetimes are carefully managed to prevent use-after-free issues.
+
+// TODO: Memory/Safety - Review all structs containing '[]const u8' fields to ensure that string slices are either duplicated into appropriate allocators or their lifetimes are carefully managed to prevent use-after-free issues.
+
 /// HTTP method.
 pub const Method = enum {
     // RFC 9110 Section 9 - Standard HTTP methods
@@ -18,6 +24,7 @@ pub const Method = enum {
     // PATCH is not in RFC 9110 but widely supported
     PATCH,
 };
+// TODO: RFC 9110 Section 16.1 - Consider a mechanism for method extensibility beyond the predefined enum.
 // TODO: RFC 9110 Section 16.1 - Consider a mechanism for method extensibility beyond the predefined enum.
 
 /// Common HTTP error codes (for convenience).
@@ -106,6 +113,7 @@ pub const Response = struct {
     headers: []const Header = &.{},
     body: ResponseBody = .{ .complete = "" },
     // TODO: SSE - Consider a mechanism for streaming response bodies (e.g., an iterator or a writer) to support Server-Sent Events and other streaming use cases.
+    // TODO: SSE - Consider a mechanism for streaming response bodies (e.g., an iterator or a writer) to support Server-Sent Events and other streaming use cases.
 };
 
 /// Response body can be either complete or streaming
@@ -138,6 +146,16 @@ pub const ErrorCtx = struct {
 pub const Error = struct {
     kind: u16,
     ctx: ErrorCtx,
+};
+
+/// Effect result: either success payload bytes or failure metadata.
+pub const EffectResult = union(enum) {
+    success: struct {
+        bytes: []u8,
+        allocator: ?std.mem.Allocator,
+        // TODO: Ownership - Clarify who frees `bytes`. Without a contract to call a deinit helper we leak buffers when effects succeed.
+    },
+    failure: Error,
 };
 
 /// Retry policy with configurable parameters for fault tolerance.
@@ -177,6 +195,12 @@ pub const AdvancedRetryPolicy = struct {
 
         // TODO: Safety - Review arithmetic operations in retry/backoff calculations (e.g., calculateExponentialBackoff, calculateFibonacciBackoff) for potential integer overflows and use checked arithmetic (e.g., @add, @mul) or larger integer types if necessary.
 
+        // TODO: Safety - Review arithmetic operations in retry/backoff calculations (e.g., calculateExponentialBackoff, calculateFibonacciBackoff) for potential integer overflows and use checked arithmetic (e.g., @add, @mul) or larger integer types if necessary.
+
+        // TODO: Safety - Review arithmetic operations in retry/backoff calculations (e.g., calculateExponentialBackoff, calculateFibonacciBackoff) for potential integer overflows and use checked arithmetic (e.g., @add, @mul) or larger integer types if necessary.
+
+        // TODO: Safety - Review arithmetic operations in retry/backoff calculations (e.g., calculateExponentialBackoff, calculateFibonacciBackoff) for potential integer overflows and use checked arithmetic (e.g., @add, @mul) or larger integer types if necessary.
+
         return switch (self.backoff_strategy) {
             .NoBackoff => 0,
             .Linear => if (self.initial_delay_ms * attempt > self.max_delay_ms) self.max_delay_ms else self.initial_delay_ms * attempt,
@@ -189,6 +213,7 @@ pub const AdvancedRetryPolicy = struct {
         var delay: u32 = initial;
         var i: u8 = 1;
         // TODO: Logical Error - The 'calculateExponentialBackoff' function uses f32 for calculations, which can introduce floating-point precision errors. Consider using fixed-point arithmetic or a larger float type (f64) if precision is critical for backoff timing.
+        // TODO: Logical Error - The 'calculateExponentialBackoff' function uses f32 for calculations, which can introduce floating-point precision errors. Consider using fixed-point arithmetic or a larger float type (f64) if precision is critical for backoff timing.
         while (i < attempt) : (i += 1) {
             delay = @as(u32, @intFromFloat(@as(f32, @floatFromInt(delay)) * 1.5));
             if (delay > max) return max;
@@ -200,6 +225,7 @@ pub const AdvancedRetryPolicy = struct {
         var fib_prev: u32 = 0;
         var fib_curr: u32 = 1;
         var i: u8 = 0;
+        // TODO: Logical Error - The Fibonacci sequence in 'calculateFibonacciBackoff' grows rapidly. For larger 'attempt' values, intermediate 'fib_curr' or 'delay' calculations might overflow u32, leading to incorrect backoff values. Consider using larger integer types or checked arithmetic.
         // TODO: Logical Error - The Fibonacci sequence in 'calculateFibonacciBackoff' grows rapidly. For larger 'attempt' values, intermediate 'fib_curr' or 'delay' calculations might overflow u32, leading to incorrect backoff values. Consider using larger integer types or checked arithmetic.
         while (i < attempt) : (i += 1) {
             const temp = fib_curr;
@@ -226,6 +252,79 @@ pub const HttpPost = struct {
     body: []const u8,
     headers: []const Header = &.{},
     token: u32, // Slot identifier (enum tag value) for result storage
+    timeout_ms: u32 = 1000,
+    retry: Retry = .{},
+    required: bool = true,
+};
+
+/// HTTP HEAD effect.
+pub const HttpHead = struct {
+    url: []const u8,
+    headers: []const Header = &.{},
+    token: u32,
+    timeout_ms: u32 = 1000,
+    retry: Retry = .{},
+    required: bool = true,
+};
+
+/// HTTP PUT effect.
+pub const HttpPut = struct {
+    url: []const u8,
+    body: []const u8,
+    headers: []const Header = &.{},
+    token: u32,
+    timeout_ms: u32 = 1000,
+    retry: Retry = .{},
+    required: bool = true,
+};
+
+/// HTTP DELETE effect.
+pub const HttpDelete = struct {
+    url: []const u8,
+    body: []const u8 = "",
+    headers: []const Header = &.{},
+    token: u32,
+    timeout_ms: u32 = 1000,
+    retry: Retry = .{},
+    required: bool = true,
+};
+
+/// HTTP OPTIONS effect.
+pub const HttpOptions = struct {
+    url: []const u8,
+    headers: []const Header = &.{},
+    token: u32,
+    timeout_ms: u32 = 1000,
+    retry: Retry = .{},
+    required: bool = true,
+};
+
+/// HTTP TRACE effect.
+pub const HttpTrace = struct {
+    url: []const u8,
+    headers: []const Header = &.{},
+    token: u32,
+    timeout_ms: u32 = 1000,
+    retry: Retry = .{},
+    required: bool = true,
+};
+
+/// HTTP CONNECT effect.
+pub const HttpConnect = struct {
+    url: []const u8,
+    headers: []const Header = &.{},
+    token: u32,
+    timeout_ms: u32 = 1000,
+    retry: Retry = .{},
+    required: bool = true,
+};
+
+/// HTTP PATCH effect.
+pub const HttpPatch = struct {
+    url: []const u8,
+    body: []const u8,
+    headers: []const Header = &.{},
+    token: u32,
     timeout_ms: u32 = 1000,
     retry: Retry = .{},
     required: bool = true,
@@ -285,16 +384,85 @@ pub const FileJsonWrite = struct {
     required: bool = true,
 };
 
+/// Compute-bound task scheduled on dedicated worker pool.
+pub const ComputeTask = struct {
+    operation: []const u8,
+    token: u32,
+    timeout_ms: u32 = 0,
+    required: bool = true,
+    metadata: ?*const anyopaque = null,
+};
+
+/// Accelerator task (GPU/TPU/etc.) routed to specialized queue.
+pub const AcceleratorTask = struct {
+    kernel: []const u8,
+    token: u32,
+    timeout_ms: u32 = 2000,
+    required: bool = true,
+    metadata: ?*const anyopaque = null,
+};
+
+/// Key-value cache read.
+pub const KvCacheGet = struct {
+    key: []const u8,
+    token: u32,
+    timeout_ms: u32 = 50,
+    required: bool = true,
+};
+
+/// Key-value cache write.
+pub const KvCacheSet = struct {
+    key: []const u8,
+    value: []const u8,
+    token: u32,
+    timeout_ms: u32 = 50,
+    required: bool = true,
+    ttl_ms: u32 = 0,
+};
+
+/// Key-value cache delete/invalidate.
+pub const KvCacheDelete = struct {
+    key: []const u8,
+    token: u32,
+    timeout_ms: u32 = 50,
+    required: bool = false,
+};
+
 /// An Effect represents a request to perform I/O (HTTP, DB, etc.).
 pub const Effect = union(enum) {
     http_get: HttpGet,
+    http_head: HttpHead,
     http_post: HttpPost,
+    http_put: HttpPut,
+    http_delete: HttpDelete,
+    http_options: HttpOptions,
+    http_trace: HttpTrace,
+    http_connect: HttpConnect,
+    http_patch: HttpPatch,
     db_get: DbGet,
     db_put: DbPut,
     db_del: DbDel,
     db_scan: DbScan,
     file_json_read: FileJsonRead,
     file_json_write: FileJsonWrite,
+    compute_task: ComputeTask,
+    accelerator_task: AcceleratorTask,
+    kv_cache_get: KvCacheGet,
+    kv_cache_set: KvCacheSet,
+    kv_cache_delete: KvCacheDelete,
+};
+
+/// Trigger condition for running compensating actions.
+pub const CompensationTrigger = enum {
+    on_failure,
+    on_cancel,
+};
+
+/// Description of a compensating action for saga-style orchestration.
+pub const Compensation = struct {
+    label: []const u8 = "",
+    trigger: CompensationTrigger = .on_failure,
+    effect: Effect,
 };
 
 /// Mode for executing multiple effects.
@@ -319,7 +487,8 @@ pub const Need = struct {
     effects: []const Effect,
     mode: Mode,
     join: Join,
-    continuation: ResumeFn,
+    continuation: ?ResumeFn = null,
+    compensations: []const Compensation = &.{},
 };
 
 pub const Decision = union(enum) {
@@ -358,4 +527,5 @@ pub const ParsedRequest = struct {
     query: std.StringHashMap([]const u8),
     body: []const u8,
     client_ip: []const u8,
+    // TODO: Leak - parsed requests never deinit the inner ArrayLists in `headers`; add a helper to walk and free slices after each request.
 };

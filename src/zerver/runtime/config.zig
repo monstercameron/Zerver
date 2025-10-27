@@ -4,6 +4,7 @@ const std = @import("std");
 pub const AppConfig = struct {
     database: DatabaseConfig,
     thread_pool: ThreadPoolConfig = .{},
+    reactor: ReactorConfig,
     observability: ObservabilityConfig,
     server: ServerConfig,
 
@@ -25,6 +26,30 @@ pub const DatabaseConfig = struct {
 
 pub const ThreadPoolConfig = struct {
     worker_count: usize = 1,
+};
+
+pub const ReactorPoolConfig = struct {
+    size: usize,
+    queue_capacity: usize,
+};
+
+pub const ComputePoolKind = enum {
+    disabled,
+    shared,
+    dedicated,
+};
+
+pub const ComputePoolConfig = struct {
+    kind: ComputePoolKind = .disabled,
+    size: usize = 0,
+    queue_capacity: usize = 0,
+};
+
+pub const ReactorConfig = struct {
+    enabled: bool,
+    continuation_pool: ReactorPoolConfig,
+    effector_pool: ReactorPoolConfig,
+    compute_pool: ComputePoolConfig,
 };
 
 pub const ServerConfig = struct {
@@ -75,6 +100,24 @@ const RawThreadPoolConfig = struct {
     worker_count: ?usize = null,
 };
 
+const RawReactorPoolConfig = struct {
+    size: ?usize = null,
+    queue_capacity: ?usize = null,
+};
+
+const RawComputePoolConfig = struct {
+    type: ?[]const u8 = null,
+    size: ?usize = null,
+    queue_capacity: ?usize = null,
+};
+
+const RawReactorConfig = struct {
+    enabled: ?bool = null,
+    continuation_pool: ?RawReactorPoolConfig = null,
+    effector_pool: ?RawReactorPoolConfig = null,
+    compute_pool: ?RawComputePoolConfig = null,
+};
+
 const RawServerConfig = struct {
     host: ?[]const u8 = null,
     port: ?u16 = null,
@@ -98,6 +141,7 @@ const RawObservabilityConfig = struct {
 const RawAppConfig = struct {
     database: RawDatabaseConfig,
     thread_pool: ?RawThreadPoolConfig = null,
+    reactor: ?RawReactorConfig = null,
     observability: ?RawObservabilityConfig = null,
     server: ?RawServerConfig = null,
 };
@@ -132,6 +176,7 @@ pub fn load(allocator: std.mem.Allocator, path: []const u8) !AppConfig {
     errdefer observability.deinit(allocator);
     var server = try buildServerConfig(allocator, raw.server);
     errdefer server.deinit(allocator);
+    const reactor = try buildReactorConfig(raw.reactor, default_workers);
 
     return AppConfig{
         .database = .{
@@ -146,10 +191,16 @@ pub fn load(allocator: std.mem.Allocator, path: []const u8) !AppConfig {
             else
                 default_workers,
         },
+        .reactor = reactor,
         .observability = observability,
         .server = server,
     };
 }
+
+const DEFAULT_REACTOR_ENABLED = false;
+const DEFAULT_CONTINUATION_QUEUE_CAPACITY: usize = 1024;
+const DEFAULT_EFFECTOR_QUEUE_CAPACITY: usize = 1024;
+const DEFAULT_COMPUTE_QUEUE_CAPACITY: usize = 1024;
 
 const DEFAULT_SERVICE_NAME = "zerver";
 const DEFAULT_SERVICE_VERSION = "0.1.0";
@@ -163,6 +214,131 @@ const DEFAULT_OTLP_AUTODETECT_HOST = "127.0.0.1";
 const DEFAULT_OTLP_AUTODETECT_PORT: u16 = 4318;
 const DEFAULT_OTLP_AUTODETECT_PATH = "/v1/traces";
 const DEFAULT_OTLP_AUTODETECT_SCHEME = "http";
+
+fn buildReactorConfig(
+    raw: ?RawReactorConfig,
+    default_workers: usize,
+) !ReactorConfig {
+    const default_continuation_workers = if (default_workers == 0) 1 else default_workers;
+    const default_effector_workers = default_continuation_workers;
+    const default_compute_workers = if (default_continuation_workers <= 1)
+        1
+    else
+        (default_continuation_workers + 1) / 2;
+
+    var config = ReactorConfig{
+        .enabled = DEFAULT_REACTOR_ENABLED,
+        .continuation_pool = .{
+            .size = default_continuation_workers,
+            .queue_capacity = DEFAULT_CONTINUATION_QUEUE_CAPACITY,
+        },
+        .effector_pool = .{
+            .size = default_effector_workers,
+            .queue_capacity = DEFAULT_EFFECTOR_QUEUE_CAPACITY,
+        },
+        .compute_pool = .{
+            .kind = .disabled,
+            .size = 0,
+            .queue_capacity = 0,
+        },
+    };
+
+    if (raw) |reactor_raw| {
+        if (reactor_raw.enabled) |flag| {
+            config.enabled = flag;
+        }
+
+        if (reactor_raw.continuation_pool) |pool_raw| {
+            if (pool_raw.size) |size| {
+                if (size == 0) return error.InvalidContinuationPoolSize;
+                config.continuation_pool.size = size;
+            }
+            if (pool_raw.queue_capacity) |capacity| {
+                if (capacity == 0) return error.InvalidContinuationQueueCapacity;
+                config.continuation_pool.queue_capacity = capacity;
+            }
+        }
+
+        if (reactor_raw.effector_pool) |pool_raw| {
+            if (pool_raw.size) |size| {
+                if (size == 0) return error.InvalidEffectorPoolSize;
+                config.effector_pool.size = size;
+            }
+            if (pool_raw.queue_capacity) |capacity| {
+                if (capacity == 0) return error.InvalidEffectorQueueCapacity;
+                config.effector_pool.queue_capacity = capacity;
+            }
+        }
+
+        if (reactor_raw.compute_pool) |pool_raw| {
+            if (pool_raw.type) |type_str| {
+                config.compute_pool.kind = try parseComputePoolKind(type_str);
+            }
+
+            if (config.compute_pool.kind == .disabled) {
+                if (pool_raw.size) |size| {
+                    if (size != 0) {
+                        config.compute_pool.kind = .dedicated;
+                        config.compute_pool.size = size;
+                    }
+                }
+            }
+
+            switch (config.compute_pool.kind) {
+                .disabled => {
+                    config.compute_pool.size = 0;
+                    config.compute_pool.queue_capacity = 0;
+                },
+                .shared => {
+                    if (pool_raw.size) |size| {
+                        if (size == 0) return error.InvalidComputePoolSize;
+                        config.compute_pool.size = size;
+                    } else {
+                        config.compute_pool.size = config.continuation_pool.size;
+                    }
+
+                    config.compute_pool.queue_capacity = if (pool_raw.queue_capacity) |capacity| blk: {
+                        if (capacity == 0) return error.InvalidComputeQueueCapacity;
+                        break :blk capacity;
+                    } else DEFAULT_COMPUTE_QUEUE_CAPACITY;
+                },
+                .dedicated => {
+                    const workers = if (pool_raw.size) |size| blk: {
+                        if (size == 0) return error.InvalidComputePoolSize;
+                        break :blk size;
+                    } else default_compute_workers;
+                    config.compute_pool.size = workers;
+
+                    config.compute_pool.queue_capacity = if (pool_raw.queue_capacity) |capacity| blk: {
+                        if (capacity == 0) return error.InvalidComputeQueueCapacity;
+                        break :blk capacity;
+                    } else DEFAULT_COMPUTE_QUEUE_CAPACITY;
+                },
+            }
+        }
+    }
+
+    if (config.compute_pool.kind == .disabled) {
+        config.compute_pool.size = 0;
+        config.compute_pool.queue_capacity = 0;
+    } else {
+        if (config.compute_pool.queue_capacity == 0) {
+            config.compute_pool.queue_capacity = DEFAULT_COMPUTE_QUEUE_CAPACITY;
+        }
+        if (config.compute_pool.size == 0) {
+            config.compute_pool.size = default_compute_workers;
+        }
+    }
+
+    return config;
+}
+
+fn parseComputePoolKind(value: []const u8) !ComputePoolKind {
+    if (std.mem.eql(u8, value, "disabled")) return .disabled;
+    if (std.mem.eql(u8, value, "shared")) return .shared;
+    if (std.mem.eql(u8, value, "dedicated")) return .dedicated;
+    return error.InvalidComputePoolType;
+}
 
 fn buildObservabilityConfig(
     allocator: std.mem.Allocator,

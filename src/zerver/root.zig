@@ -14,6 +14,12 @@ pub const telemetry = @import("observability/telemetry.zig");
 pub const otel = @import("observability/otel.zig");
 pub const reqtest_module = @import("core/reqtest.zig");
 pub const sql = @import("sql/mod.zig");
+pub const libuv_reactor = @import("runtime/reactor/libuv.zig");
+pub const reactor_join = @import("runtime/reactor/join.zig");
+pub const reactor_job_system = @import("runtime/reactor/job_system.zig");
+pub const reactor_effectors = @import("runtime/reactor/effectors.zig");
+pub const reactor_saga = @import("runtime/reactor/saga.zig");
+pub const reactor_task_system = @import("runtime/reactor/task_system.zig");
 
 // Main types
 pub const CtxBase = ctx_module.CtxBase;

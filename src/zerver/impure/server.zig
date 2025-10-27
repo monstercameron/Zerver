@@ -8,11 +8,43 @@ const tracer_module = @import("../observability/tracer.zig");
 const slog = @import("../observability/slog.zig");
 const http_status = @import("../core/http_status.zig").HttpStatus;
 const telemetry = @import("../observability/telemetry.zig");
+const net_handler = @import("../runtime/handler.zig");
 
 pub const Address = struct {
     ip: [4]u8,
     port: u16,
 };
+
+fn shouldKeepConnectionAliveFromRaw(request_data: []const u8) bool {
+    // Parse Connection header from raw request bytes. Mirrors runtime/listener behaviour.
+    var lines = std.mem.splitSequence(u8, request_data, "\r\n");
+
+    // Skip request line
+    _ = lines.next();
+
+    while (lines.next()) |line| {
+        if (line.len == 0) break;
+
+        if (std.ascii.startsWithIgnoreCase(line, "connection:")) {
+            const value_start = "connection:".len;
+            if (value_start >= line.len) continue;
+
+            const value = std.mem.trim(u8, line[value_start..], " \t");
+
+            if (std.ascii.eqlIgnoreCase(value, "close")) {
+                return false;
+            }
+
+            if (std.ascii.eqlIgnoreCase(value, "keep-alive")) {
+                return true;
+            }
+
+            return true;
+        }
+    }
+
+    return true;
+}
 
 pub const Config = struct {
     addr: Address,
@@ -142,7 +174,7 @@ pub const Server = struct {
     pub fn init(
         allocator: std.mem.Allocator,
         cfg: Config,
-        effect_handler: *const fn (*const types.Effect, u32) anyerror!executor_module.EffectResult,
+        effect_handler: *const fn (*const types.Effect, u32) anyerror!types.EffectResult,
     ) !Server {
         return Server{
             .allocator = allocator,
@@ -742,6 +774,8 @@ pub const Server = struct {
             .need => types.Response{ .status = http_status.internal_server_error, .body = .{ .complete = "Pipeline incomplete" } },
         };
 
+        ctx.runExitCallbacks();
+
         const response_metrics = telemetry.Telemetry.responseMetricsFromResponse(response);
         telemetry_ctx.recordResponseMetrics(response_metrics);
 
@@ -807,6 +841,8 @@ pub const Server = struct {
             .Done => |resp| final_response = resp,
             else => {},
         }
+
+        ctx.runExitCallbacks();
 
         const response_metrics = telemetry.Telemetry.responseMetricsFromResponse(final_response);
         telemetry_ctx.recordResponseMetrics(response_metrics);
@@ -1234,19 +1270,129 @@ pub const Server = struct {
 
     /// Start listening for HTTP requests (blocking).
     pub fn listen(self: *Server) !void {
-        slog.info("Server starting", &.{
-            slog.Attr.uint("ip0", self.config.addr.ip[0]),
-            slog.Attr.uint("ip1", self.config.addr.ip[1]),
-            slog.Attr.uint("ip2", self.config.addr.ip[2]),
-            slog.Attr.uint("ip3", self.config.addr.ip[3]),
-            slog.Attr.uint("port", self.config.addr.port),
+        var ip_buf: [32]u8 = undefined;
+        const ip_str = std.fmt.bufPrint(&ip_buf, "{d}.{d}.{d}.{d}", .{
+            self.config.addr.ip[0],
+            self.config.addr.ip[1],
+            self.config.addr.ip[2],
+            self.config.addr.ip[3],
+        }) catch "0.0.0.0";
+
+        const listen_addr = std.net.Address.initIp4(self.config.addr.ip, self.config.addr.port);
+        var listener = try listen_addr.listen(.{ .reuse_address = true });
+        defer listener.deinit();
+
+        slog.info("Server ready for HTTP requests", &.{
+            slog.Attr.string("host", ip_str),
+            slog.Attr.int("port", @as(i64, @intCast(self.config.addr.port))),
+            slog.Attr.string("status", "running"),
         });
 
-        // TODO: Phase-2: Implement actual TCP listener
-        // For MVP, this is a stub that allows testing via handleRequest()
-        slog.info("MVP server initialized", &.{
-            slog.Attr.string("note", "requires explicit handleRequest() calls"),
-            slog.Attr.string("status", "no TCP listener yet"),
-        });
+        while (true) {
+            const connection = listener.accept() catch |err| {
+                slog.err("Failed to accept connection", &.{
+                    slog.Attr.string("error", @errorName(err)),
+                });
+                continue;
+            };
+
+            slog.info("Accepted new connection", &.{});
+
+            self.handleConnection(connection) catch |err| {
+                slog.err("Connection handling failed", &.{
+                    slog.Attr.string("error", @errorName(err)),
+                });
+            };
+        }
+    }
+
+    fn handleConnection(self: *Server, connection: std.net.Server.Connection) !void {
+        defer connection.stream.close();
+
+        const keep_alive_timeout_ms: i64 = 60 * 1000;
+        var last_activity = std.time.milliTimestamp();
+
+        while (true) {
+            const now = std.time.milliTimestamp();
+            if (now - last_activity > keep_alive_timeout_ms) {
+                slog.debug("Connection idle timeout", &.{});
+                return;
+            }
+
+            var request_arena = std.heap.ArenaAllocator.init(self.allocator);
+            defer request_arena.deinit();
+
+            const request_bytes = net_handler.readRequestWithTimeout(
+                connection,
+                request_arena.allocator(),
+                5000,
+            ) catch |err| {
+                switch (err) {
+                    error.Timeout, error.ConnectionClosed => {
+                        slog.debug("Request read timeout or connection closed", &.{});
+                        return;
+                    },
+                    else => {
+                        slog.err("Failed to read request", &.{
+                            slog.Attr.string("error", @errorName(err)),
+                        });
+                        return;
+                    },
+                }
+            };
+
+            if (request_bytes.len == 0) {
+                slog.debug("Received empty request", &.{});
+                return;
+            }
+
+            last_activity = std.time.milliTimestamp();
+
+            const preview_len = @min(request_bytes.len, 120);
+            slog.info("Received HTTP request", &.{
+                slog.Attr.uint("bytes", request_bytes.len),
+                slog.Attr.string("preview", request_bytes[0..preview_len]),
+            });
+
+            if (request_bytes.len > 0) {
+                const line_end = std.mem.indexOf(u8, request_bytes, "\r\n") orelse request_bytes.len;
+                const request_line = request_bytes[0..line_end];
+                slog.info("HTTP request line", &.{
+                    slog.Attr.string("line", request_line),
+                });
+            }
+
+            const response_result = self.handleRequest(request_bytes, request_arena.allocator()) catch |err| {
+                slog.err("Failed to handle request", &.{
+                    slog.Attr.string("error", @errorName(err)),
+                });
+                try net_handler.sendErrorResponse(connection, "500 Internal Server Error", "Internal Server Error");
+                return;
+            };
+
+            slog.info("handleRequest completed", &.{
+                slog.Attr.enumeration("result", response_result),
+            });
+
+            switch (response_result) {
+                .complete => |response| {
+                    try net_handler.sendResponse(connection, response);
+                    slog.info("Response sent successfully", &.{});
+                },
+                .streaming => |streaming_resp| {
+                    try net_handler.sendStreamingResponse(connection, streaming_resp.headers, streaming_resp.writer, streaming_resp.context);
+                    slog.info("Streaming response initiated", &.{});
+                    return;
+                },
+            }
+
+            const keep_alive = shouldKeepConnectionAliveFromRaw(request_bytes);
+            if (!keep_alive) {
+                slog.info("Connection close requested by client", &.{});
+                return;
+            }
+
+            slog.info("Keeping connection alive for next request", &.{});
+        }
     }
 };

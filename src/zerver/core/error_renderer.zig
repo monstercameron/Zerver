@@ -13,7 +13,8 @@ pub const ErrorRenderer = struct {
         // Build JSON error response
         var buf = std.ArrayList(u8).initCapacity(allocator, 256) catch return types.Response{
             .status = http_status.internal_server_error,
-            .body = .{ .complete = "Internal Server Error" }, // TODO: Logical Error - The fallback Response in ErrorRenderer.render returns a raw '[]const u8' for the body, but 'types.Response.body' expects a 'types.ResponseBody' union. This is a type mismatch and needs to be corrected to '.complete = "Internal Server Error"'.
+            .body = .{ .complete = "Internal Server Error" },
+            // TODO: Bug - Fallback path omits Content-Type headers so clients see a 500 with no indication of payload format.
         };
         defer buf.deinit();
 
@@ -23,6 +24,7 @@ pub const ErrorRenderer = struct {
             error_val.ctx.what,
             error_val.ctx.key,
         });
+        // TODO: Bug - `{s}` does not escape quotes/backslashes; emitting user-controlled strings will produce invalid JSON or allow response-splitting.
 
         const body = try allocator.dupe(u8, buf.items);
 
@@ -35,7 +37,7 @@ pub const ErrorRenderer = struct {
         return types.Response{
             .status = status,
             .headers = headers,
-            // TODO: Bug - `body` is a raw slice; we must wrap it in the `.complete` union tag or the response misrepresents its payload and miscompiles.
+            // TODO: Bug - `body` is a raw slice; wrap it in `.complete = body` so we honor the ResponseBody union invariant.
             .body = body,
         };
     }

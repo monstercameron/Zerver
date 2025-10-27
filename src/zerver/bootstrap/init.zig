@@ -21,7 +21,7 @@ const blog_effects = @import("../../features/blog/effects.zig");
 const blog_errors = @import("../../features/blog/errors.zig");
 
 /// Composite effect handler that routes to the appropriate feature handler
-fn compositeEffectHandler(effect: *const root.Effect, timeout_ms: u32) anyerror!root.executor.EffectResult {
+fn compositeEffectHandler(effect: *const root.Effect, timeout_ms: u32) anyerror!root.types.EffectResult {
     // Use blog effects handler
     return try blog_effects.effectHandler(effect, timeout_ms);
 }
@@ -78,6 +78,18 @@ pub fn initializeServer(allocator: std.mem.Allocator) !Initialization {
         slog.Attr.string("version", "mvp"),
         slog.Attr.string("host", server_host),
         slog.Attr.int("port", @as(i64, @intCast(server_port))),
+    });
+
+    const reactor_cfg = app_config.reactor;
+    slog.info("reactor_config", &[_]slog.Attr{
+        slog.Attr.bool("enabled", reactor_cfg.enabled),
+        slog.Attr.uint("continuation_workers", reactor_cfg.continuation_pool.size),
+        slog.Attr.uint("continuation_queue", reactor_cfg.continuation_pool.queue_capacity),
+        slog.Attr.uint("effector_workers", reactor_cfg.effector_pool.size),
+        slog.Attr.uint("effector_queue", reactor_cfg.effector_pool.queue_capacity),
+        slog.Attr.string("compute_kind", @tagName(reactor_cfg.compute_pool.kind)),
+        slog.Attr.uint("compute_workers", reactor_cfg.compute_pool.size),
+        slog.Attr.uint("compute_queue", reactor_cfg.compute_pool.queue_capacity),
     });
 
     if (app_config.observability.otlp_endpoint.len == 0) {

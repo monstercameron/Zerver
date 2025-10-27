@@ -13,6 +13,7 @@ pub fn listenAndServe(
     allocator: std.mem.Allocator,
 ) !void {
     const server_addr = try std.net.Address.parseIp("127.0.0.1", 8080);
+    // TODO: Bug - Hard-coding 127.0.0.1:8080 ignores runtime configuration; use server Config listen address instead.
     var listener = try server_addr.listen(.{
         .reuse_address = true,
     });
@@ -33,6 +34,7 @@ pub fn listenAndServe(
         slog.info("Accepted new connection", &.{});
 
         // Handle persistent connection - RFC 9112 Section 9
+        // TODO: Bug - Propagating a single connection error through this `try` will tear down the entire listener loop instead of just dropping the bad client; swallow and continue instead.
         // TODO: Bug - Propagating a single connection error through this `try` will tear down the entire listener loop instead of just dropping the bad client; swallow and continue instead.
         try handleConnection(srv, allocator, connection);
     }
@@ -107,7 +109,7 @@ fn handleConnection(
         };
 
         slog.info("handleRequest completed", &.{
-            slog.Attr.string("result", @tagName(response_result)),
+            slog.Attr.enumeration("result", response_result),
         });
 
         // Send response based on type
@@ -121,6 +123,7 @@ fn handleConnection(
                 try handler.sendStreamingResponse(connection, streaming_resp.headers, streaming_resp.writer, streaming_resp.context);
                 // For streaming responses, we typically don't keep the connection alive in the same way
                 // as the stream may run indefinitely
+    // TODO: RFC 9112 Section 8.1 - Pipelining is not supported. The server should read and respond to requests sequentially.
                 // TODO: Logical Error - For streaming responses (e.g., SSE), the 'shouldKeepConnectionAlive' check is currently skipped. Ensure streaming connections are properly managed for persistence, as they are typically long-lived.
                 return;
             },

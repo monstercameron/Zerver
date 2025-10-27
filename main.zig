@@ -2,7 +2,7 @@
 const std = @import("std");
 const server_init = @import("src/zerver/bootstrap/init.zig");
 const slog = @import("src/zerver/observability/slog.zig");
-const listener = @import("src/zerver/runtime/listener.zig");
+const termination = @import("src/zerver/runtime/termination.zig");
 
 pub fn main() !void {
     try slog.setupDefaultLoggerWithFile("logs/server.log");
@@ -10,6 +10,12 @@ pub fn main() !void {
     slog.info("Logging configured", &.{
         slog.Attr.string("file", "logs/server.log"),
     });
+
+    termination.installHandlers() catch |err| {
+        slog.warn("Failed to install termination handlers", &.{
+            slog.Attr.string("error", @errorName(err)),
+        });
+    };
 
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
@@ -23,5 +29,5 @@ pub fn main() !void {
     server_init.printDemoInfo(init_bundle.resources.configPtr());
 
     // Start listening and serving
-    try listener.listenAndServe(&init_bundle.server, allocator);
+    try init_bundle.server.listen();
 }

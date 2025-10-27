@@ -161,6 +161,20 @@ We welcome discussion, feedback, and contributions on the design. Please review 
 
 ---
 
+## Configuration
+
+Runtime settings live in `config.json`. The file now centralises:
+
+- database driver, file path, pool size, and busy timeout
+- blocking thread pool sizing for legacy/middleware work
+- reactor pools (continuation workers, effector workers, compute pool type/size)
+- HTTP server bind address
+- observability endpoints and Tempo auto-detection
+
+Tuning pool sizes here avoids recompilation; `runtime/config.zig` loads the `reactor` section and feeds those values into the job and task systems during startup.
+
+---
+
 ## Full Example: Todo CRUD API
 
 For a complete, runnable example demonstrating all of Zerver's core features working together, see [`examples/todo_crud.zig`](examples/todo_crud.zig).

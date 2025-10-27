@@ -8,33 +8,52 @@ on:
 
 jobs:
   build:
-    runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
-    
-    steps:
-        - uses: actions/checkout@v4
-    
-        - name: Cache Zig build cache
-          id: cache-zig
-          uses: actions/cache@v4
-          with:
-            path: ~/.zig-cache
-            key: ${{ runner.os }}-zig-${{ hashFiles('build.zig') }}
-            restore-keys: |
-              ${{ runner.os }}-zig-
-    
-        - name: Install Zig
-          uses: ziglang/setup-zig@v1
-          with:
-            zig-version: 0.15.2
-    
-    - name: Build
-      run: zig build
+        include:
+          - os: ubuntu-latest
+            artifact_name: zerver-example-linux
+            artifact_path: zig-out/bin/zerver_example
+          - os: macos-latest
+            artifact_name: zerver-example-macos
+            artifact_path: zig-out/bin/zerver_example
+          - os: windows-latest
+            artifact_name: zerver-example-windows
+            artifact_path: zig-out/bin/zerver_example.exe
+    runs-on: ${{ matrix.os }}
 
-    - name: Test
-      run: zig test
-    
-    - name: Check formatting
-      run: zig fmt --check src/ examples/
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache Zig build cache
+        id: cache-zig
+        uses: actions/cache@v4
+        with:
+          path: |
+            zig-cache
+            ~/.cache/zig
+            ~/AppData/Local/zig
+          key: ${{ runner.os }}-zig-${{ hashFiles('build.zig', 'main.zig', 'src/**', 'tests/**', 'examples/**', 'third_party/libuv/**') }}
+          restore-keys: |
+            ${{ runner.os }}-zig-
+
+      - name: Install Zig
+        uses: ziglang/setup-zig@v1
+        with:
+          zig-version: 0.15.2
+
+      - name: Build (ReleaseSafe)
+        run: zig build -Doptimize=ReleaseSafe
+
+      - name: Run tests
+        run: zig build test
+
+      - name: Check formatting
+        run: zig fmt --check .
+
+      - name: Upload executable
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: ${{ matrix.artifact_path }}
+          if-no-files-found: error
