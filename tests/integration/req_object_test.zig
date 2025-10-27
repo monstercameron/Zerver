@@ -1,376 +1,258 @@
 // tests/integration/req_object_test.zig
 const std = @import("std");
 const zerver = @import("../../src/zerver/root.zig");
-const test_harness = @import("test_harness.zig");
+const common = @import("common.zig");
+
+const TestServer = common.TestServer;
+const withServer = common.withServer;
+const addRouteStep = common.addRouteStep;
+const expectStartsWith = common.expectStartsWith;
+const expectEndsWith = common.expectEndsWith;
+const expectContains = common.expectContains;
+
+fn responseBody(response: []const u8) []const u8 {
+    const separator = std.mem.indexOf(u8, response, "\r\n\r\n") orelse return response;
+    const start = separator + 4;
+    if (start > response.len) return &[_]u8{};
+    return response[start..];
+}
+
+fn requestHeaderReturnsSpecific(server: *TestServer, allocator: std.mem.Allocator) !void {
+    try addRouteStep(server, .GET, "/test", "header_value", struct {
+        fn handler(ctx: *zerver.CtxBase) !zerver.Decision {
+            const value = ctx.header("X-Custom-Header");
+            return zerver.done(.{ .body = .{ .complete = value orelse "" } });
+        }
+    }.handler);
+
+    const response = try server.handle(
+        allocator,
+        "GET /test HTTP/1.1\r\n" ++ "Host: localhost\r\n" ++ "X-Custom-Header: MyValue\r\n" ++ "\r\n",
+    );
+    defer allocator.free(response);
+
+    try std.testing.expectEqualStrings("MyValue", responseBody(response));
+}
+
+fn requestHeaderCaseInsensitive(server: *TestServer, allocator: std.mem.Allocator) !void {
+    try addRouteStep(server, .GET, "/test", "header_case", struct {
+        fn handler(ctx: *zerver.CtxBase) !zerver.Decision {
+            const value = ctx.header("x-custom-header");
+            return zerver.done(.{ .body = .{ .complete = value orelse "" } });
+        }
+    }.handler);
+
+    const response = try server.handle(
+        allocator,
+        "GET /test HTTP/1.1\r\n" ++ "Host: localhost\r\n" ++ "X-CUSTOM-HEADER: AnotherValue\r\n" ++ "\r\n",
+    );
+    defer allocator.free(response);
+
+    try std.testing.expectEqualStrings("AnotherValue", responseBody(response));
+}
+
+fn requestHeaderMissing(server: *TestServer, allocator: std.mem.Allocator) !void {
+    try addRouteStep(server, .GET, "/test", "header_missing", struct {
+        fn handler(ctx: *zerver.CtxBase) !zerver.Decision {
+            const value = ctx.header("Non-Existent-Header");
+            return zerver.done(.{ .body = .{ .complete = value orelse "" } });
+        }
+    }.handler);
+
+    const response = try server.handle(
+        allocator,
+        "GET /test HTTP/1.1\r\n" ++ "Host: localhost\r\n" ++ "\r\n",
+    );
+    defer allocator.free(response);
+
+    try std.testing.expectEqual(@as(usize, 0), responseBody(response).len);
+}
+
+fn requestParamReturnsValue(server: *TestServer, allocator: std.mem.Allocator) !void {
+    try addRouteStep(server, .GET, "/users/:id", "get_user_id", struct {
+        fn handler(ctx: *zerver.CtxBase) !zerver.Decision {
+            const id = ctx.param("id");
+            return zerver.done(.{ .body = .{ .complete = id orelse "" } });
+        }
+    }.handler);
+
+    const response = try server.handle(
+        allocator,
+        "GET /users/123 HTTP/1.1\r\n" ++ "Host: localhost\r\n" ++ "\r\n",
+    );
+    defer allocator.free(response);
+
+    try std.testing.expectEqualStrings("123", responseBody(response));
+}
+
+fn requestParamMissing(server: *TestServer, allocator: std.mem.Allocator) !void {
+    try addRouteStep(server, .GET, "/users", "get_user_id", struct {
+        fn handler(ctx: *zerver.CtxBase) !zerver.Decision {
+            const id = ctx.param("id");
+            return zerver.done(.{ .body = .{ .complete = id orelse "" } });
+        }
+    }.handler);
+
+    const response = try server.handle(
+        allocator,
+        "GET /users HTTP/1.1\r\n" ++ "Host: localhost\r\n" ++ "\r\n",
+    );
+    defer allocator.free(response);
+
+    try std.testing.expectEqual(@as(usize, 0), responseBody(response).len);
+}
+
+fn requestQueryReturnsValue(server: *TestServer, allocator: std.mem.Allocator) !void {
+    try addRouteStep(server, .GET, "/search", "search_query", struct {
+        fn handler(ctx: *zerver.CtxBase) !zerver.Decision {
+            const q = ctx.query("q");
+            return zerver.done(.{ .body = .{ .complete = q orelse "" } });
+        }
+    }.handler);
+
+    const response = try server.handle(
+        allocator,
+        "GET /search?q=ziglang HTTP/1.1\r\n" ++ "Host: localhost\r\n" ++ "\r\n",
+    );
+    defer allocator.free(response);
+
+    try std.testing.expectEqualStrings("ziglang", responseBody(response));
+}
+
+fn requestQueryMissing(server: *TestServer, allocator: std.mem.Allocator) !void {
+    try addRouteStep(server, .GET, "/search", "search_query", struct {
+        fn handler(ctx: *zerver.CtxBase) !zerver.Decision {
+            const q = ctx.query("q");
+            return zerver.done(.{ .body = .{ .complete = q orelse "" } });
+        }
+    }.handler);
+
+    const response = try server.handle(
+        allocator,
+        "GET /search HTTP/1.1\r\n" ++ "Host: localhost\r\n" ++ "\r\n",
+    );
+    defer allocator.free(response);
+
+    try std.testing.expectEqual(@as(usize, 0), responseBody(response).len);
+}
+
+fn requestBodyEchoes(server: *TestServer, allocator: std.mem.Allocator) !void {
+    try addRouteStep(server, .POST, "/submit", "read_body", struct {
+        fn handler(ctx: *zerver.CtxBase) !zerver.Decision {
+            return zerver.done(.{ .body = .{ .complete = ctx.body } });
+        }
+    }.handler);
+
+    const response = try server.handle(
+        allocator,
+        "POST /submit HTTP/1.1\r\n" ++ "Host: localhost\r\n" ++ "Content-Length: 11\r\n" ++ "\r\n" ++ "Hello World",
+    );
+    defer allocator.free(response);
+
+    try std.testing.expectEqualStrings("Hello World", responseBody(response));
+}
+
+fn requestBodyEmpty(server: *TestServer, allocator: std.mem.Allocator) !void {
+    try addRouteStep(server, .POST, "/submit", "read_body", struct {
+        fn handler(ctx: *zerver.CtxBase) !zerver.Decision {
+            return zerver.done(.{ .body = .{ .complete = ctx.body } });
+        }
+    }.handler);
+
+    const response = try server.handle(
+        allocator,
+        "POST /submit HTTP/1.1\r\n" ++ "Host: localhost\r\n" ++ "Content-Length: 0\r\n" ++ "\r\n",
+    );
+    defer allocator.free(response);
+
+    const body = responseBody(response);
+    try std.testing.expectEqual(@as(usize, 0), body.len);
+    try expectContains(response, "Content-Length: 0");
+}
+
+fn requestJsonParsesBody(server: *TestServer, allocator: std.mem.Allocator) !void {
+    try addRouteStep(server, .POST, "/json", "parse_json", struct {
+        fn handler(ctx: *zerver.CtxBase) !zerver.Decision {
+            var json_parser = std.json.Parser.init(ctx.allocator, ctx.body);
+            defer json_parser.deinit();
+            const value = try json_parser.parse();
+            defer value.deinit();
+
+            const name_node = value.object.get("name") orelse return zerver.fail(400, "json", "missing");
+            const name = try name_node.string;
+            const duped = try ctx.allocator.dupe(u8, name);
+            return zerver.done(.{ .body = .{ .complete = duped } });
+        }
+    }.handler);
+
+    const response = try server.handle(
+        allocator,
+        "POST /json HTTP/1.1\r\n" ++ "Host: localhost\r\n" ++ "Content-Type: application/json\r\n" ++ "Content-Length: 18\r\n" ++ "\r\n" ++ "{\"name\": \"Zerver\"}",
+    );
+    defer allocator.free(response);
+
+    try std.testing.expectEqualStrings("Zerver", responseBody(response));
+}
+
+fn requestJsonInvalid(server: *TestServer, allocator: std.mem.Allocator) !void {
+    try addRouteStep(server, .POST, "/json", "parse_json", struct {
+        fn handler(ctx: *zerver.CtxBase) !zerver.Decision {
+            var json_parser = std.json.Parser.init(ctx.allocator, ctx.body);
+            defer json_parser.deinit();
+            _ = try json_parser.parse();
+            return zerver.done(.{ .body = .{ .complete = "Should not reach here" } });
+        }
+    }.handler);
+
+    const response = try server.handle(
+        allocator,
+        "POST /json HTTP/1.1\r\n" ++ "Host: localhost\r\n" ++ "Content-Type: application/json\r\n" ++ "Content-Length: 10\r\n" ++ "\r\n" ++ "{\"name\": ",
+    );
+    defer allocator.free(response);
+
+    try expectStartsWith(response, "HTTP/1.1 500 Internal Server Error");
+}
 
 test "Request - header returns specific header value" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    const allocator = gpa.allocator();
-    defer _ = gpa.deinit();
-
-    var server = try test_harness.createTestServer(allocator);
-    defer server.deinit();
-
-    try server.addRoute(.GET, "/test", .{
-        .steps = &.{ 
-            zerver.step("test", struct {
-                fn handler(ctx: *zerver.Ctx) !zerver.Decision {
-                    const value = ctx.header("X-Custom-Header");
-                    return zerver.done(.{ .body = .{ .complete = value orelse "" } });
-                }
-            }.handler),
-        },
-    });
-
-    const request_text = 
-        GET /test HTTP/1.1
-
-        Host: localhost
-
-        X-Custom-Header: MyValue
-
-        
-    ;
-
-    const response_text = try server.handleRequest(request_text, allocator);
-    try std.testing.expect(std.mem.endsWith(u8, response_text, "MyValue"));
+    try withServer(requestHeaderReturnsSpecific);
 }
 
 test "Request - header is case-insensitive" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    const allocator = gpa.allocator();
-    defer _ = gpa.deinit();
-
-    var server = try test_harness.createTestServer(allocator);
-    defer server.deinit();
-
-    try server.addRoute(.GET, "/test", .{
-        .steps = &.{ 
-            zerver.step("test", struct {
-                fn handler(ctx: *zerver.Ctx) !zerver.Decision {
-                    const value = ctx.header("x-custom-header"); // Requesting in lowercase
-                    return zerver.done(.{ .body = .{ .complete = value orelse "" } });
-                }
-            }.handler),
-        },
-    });
-
-    const request_text = 
-        GET /test HTTP/1.1
-
-        Host: localhost
-
-        X-CUSTOM-HEADER: AnotherValue
-
-        
-    ;
-
-    const response_text = try server.handleRequest(request_text, allocator);
-    try std.testing.expect(std.mem.endsWith(u8, response_text, "AnotherValue"));
+    try withServer(requestHeaderCaseInsensitive);
 }
 
 test "Request - header handles missing headers correctly" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    const allocator = gpa.allocator();
-    defer _ = gpa.deinit();
-
-    var server = try test_harness.createTestServer(allocator);
-    defer server.deinit();
-
-    try server.addRoute(.GET, "/test", .{
-        .steps = &.{ 
-            zerver.step("test", struct {
-                fn handler(ctx: *zerver.Ctx) !zerver.Decision {
-                    const value = ctx.header("Non-Existent-Header");
-                    return zerver.done(.{ .body = .{ .complete = value orelse "" } });
-                }
-            }.handler),
-        },
-    });
-
-    const request_text = 
-        GET /test HTTP/1.1
-
-        Host: localhost
-
-        
-    ;
-
-    const response_text = try server.handleRequest(request_text, allocator);
-    try std.testing.expect(std.mem.endsWith(u8, response_text, "")); // Expect empty string if header is missing
+    try withServer(requestHeaderMissing);
 }
 
 test "Request - param returns path parameter value" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    const allocator = gpa.allocator();
-    defer _ = gpa.deinit();
-
-    var server = try test_harness.createTestServer(allocator);
-    defer server.deinit();
-
-    try server.addRoute(.GET, "/users/:id", .{
-        .steps = &.{ 
-            zerver.step("get_user_id", struct {
-                fn handler(ctx: *zerver.Ctx) !zerver.Decision {
-                    const id = ctx.param("id");
-                    return zerver.done(.{ .body = .{ .complete = id orelse "" } });
-                }
-            }.handler),
-        },
-    });
-
-    const request_text = 
-        GET /users/123 HTTP/1.1
-
-        Host: localhost
-
-        
-    ;
-
-    const response_text = try server.handleRequest(request_text, allocator);
-    try std.testing.expect(std.mem.endsWith(u8, response_text, "123"));
+    try withServer(requestParamReturnsValue);
 }
 
 test "Request - param handles missing path parameters correctly" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    const allocator = gpa.allocator();
-    defer _ = gpa.deinit();
-
-    var server = try test_harness.createTestServer(allocator);
-    defer server.deinit();
-
-    try server.addRoute(.GET, "/users", .{
-        .steps = &.{ 
-            zerver.step("get_user_id", struct {
-                fn handler(ctx: *zerver.Ctx) !zerver.Decision {
-                    const id = ctx.param("id");
-                    return zerver.done(.{ .body = .{ .complete = id orelse "" } });
-                }
-            }.handler),
-        },
-    });
-
-    const request_text = 
-        GET /users HTTP/1.1
-
-        Host: localhost
-
-        
-    ;
-
-    const response_text = try server.handleRequest(request_text, allocator);
-    try std.testing.expect(std.mem.endsWith(u8, response_text, "")); // Expect empty string if param is missing
+    try withServer(requestParamMissing);
 }
 
 test "Request - query returns query parameter value" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    const allocator = gpa.allocator();
-    defer _ = gpa.deinit();
-
-    var server = try test_harness.createTestServer(allocator);
-    defer server.deinit();
-
-    try server.addRoute(.GET, "/search", .{
-        .steps = &.{ 
-            zerver.step("search_query", struct {
-                fn handler(ctx: *zerver.Ctx) !zerver.Decision {
-                    const q = ctx.query("q");
-                    return zerver.done(.{ .body = .{ .complete = q orelse "" } });
-                }
-            }.handler),
-        },
-    });
-
-    const request_text = 
-        GET /search?q=ziglang HTTP/1.1
-
-        Host: localhost
-
-        
-    ;
-
-    const response_text = try server.handleRequest(request_text, allocator);
-    try std.testing.expect(std.mem.endsWith(u8, response_text, "ziglang"));
+    try withServer(requestQueryReturnsValue);
 }
 
 test "Request - query handles missing query parameters correctly" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    const allocator = gpa.allocator();
-    defer _ = gpa.deinit();
-
-    var server = try test_harness.createTestServer(allocator);
-    defer server.deinit();
-
-    try server.addRoute(.GET, "/search", .{
-        .steps = &.{ 
-            zerver.step("search_query", struct {
-                fn handler(ctx: *zerver.Ctx) !zerver.Decision {
-                    const q = ctx.query("q");
-                    return zerver.done(.{ .body = .{ .complete = q orelse "" } });
-                }
-            }.handler),
-        },
-    });
-
-    const request_text = 
-        GET /search HTTP/1.1
-
-        Host: localhost
-
-        
-    ;
-
-    const response_text = try server.handleRequest(request_text, allocator);
-    try std.testing.expect(std.mem.endsWith(u8, response_text, "")); // Expect empty string if query param is missing
+    try withServer(requestQueryMissing);
 }
 
 test "Request - body returns request body" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    const allocator = gpa.allocator();
-    defer _ = gpa.deinit();
-
-    var server = try test_harness.createTestServer(allocator);
-    defer server.deinit();
-
-    try server.addRoute(.POST, "/submit", .{
-        .steps = &.{ 
-            zerver.step("read_body", struct {
-                fn handler(ctx: *zerver.Ctx) !zerver.Decision {
-                    return zerver.done(.{ .body = .{ .complete = ctx.body } });
-                }
-            }.handler),
-        },
-    });
-
-    const request_text = 
-        POST /submit HTTP/1.1
-
-        Host: localhost
-
-        Content-Length: 11
-
-        
-
-        Hello World
-
-    ;
-
-    const response_text = try server.handleRequest(request_text, allocator);
-    try std.testing.expect(std.mem.endsWith(u8, response_text, "Hello World"));
+    try withServer(requestBodyEchoes);
 }
 
 test "Request - body handles empty bodies correctly" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    const allocator = gpa.allocator();
-    defer _ = gpa.deinit();
-
-    var server = try test_harness.createTestServer(allocator);
-    defer server.deinit();
-
-    try server.addRoute(.POST, "/submit", .{
-        .steps = &.{ 
-            zerver.step("read_body", struct {
-                fn handler(ctx: *zerver.Ctx) !zerver.Decision {
-                    return zerver.done(.{ .body = .{ .complete = ctx.body } });
-                }
-            }.handler),
-        },
-    });
-
-    const request_text = 
-        POST /submit HTTP/1.1
-
-        Host: localhost
-
-        Content-Length: 0
-
-        
-
-        
-
-    ;
-
-    const response_text = try server.handleRequest(request_text, allocator);
-    try std.testing.expect(std.mem.endsWith(u8, response_text, "")); // Expect empty string
+    try withServer(requestBodyEmpty);
 }
 
 test "Request - json parses JSON request body" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    const allocator = gpa.allocator();
-    defer _ = gpa.deinit();
-
-    var server = try test_harness.createTestServer(allocator);
-    defer server.deinit();
-
-    try server.addRoute(.POST, "/json", .{
-        .steps = &.{ 
-            zerver.step("parse_json", struct {
-                fn handler(ctx: *zerver.Ctx) !zerver.Decision {
-                    var json_parser = std.json.Parser.init(ctx.allocator, ctx.body);
-                    defer json_parser.deinit();
-                    const value = try json_parser.parse();
-                    defer value.deinit();
-                    return zerver.done(.{ .body = .{ .complete = try value.object.get("name").?.string } });
-                }
-            }.handler),
-        },
-    });
-
-    const request_text = 
-        POST /json HTTP/1.1
-
-        Host: localhost
-
-        Content-Type: application/json
-
-        Content-Length: 17
-
-        
-
-        {"name": "Zerver"}
-
-    ;
-
-    const response_text = try server.handleRequest(request_text, allocator);
-    try std.testing.expect(std.mem.endsWith(u8, response_text, "Zerver"));
+    try withServer(requestJsonParsesBody);
 }
 
 test "Request - json handles malformed JSON correctly" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    const allocator = gpa.allocator();
-    defer _ = gpa.deinit();
-
-    var server = try test_harness.createTestServer(allocator);
-    defer server.deinit();
-
-    try server.addRoute(.POST, "/json", .{
-        .steps = &.{ 
-            zerver.step("parse_json", struct {
-                fn handler(ctx: *zerver.Ctx) !zerver.Decision {
-                    var json_parser = std.json.Parser.init(ctx.allocator, ctx.body);
-                    defer json_parser.deinit();
-                    _ = try json_parser.parse(); // This should throw an error
-                    return zerver.done(.{ .body = .{ .complete = "Should not reach here" } });
-                }
-            }.handler),
-        },
-    });
-
-    const request_text = 
-        POST /json HTTP/1.1
-
-        Host: localhost
-
-        Content-Type: application/json
-
-        Content-Length: 10
-
-        
-
-        {"name": 
-
-    ;
-
-    const response_text = try server.handleRequest(request_text, allocator);
-    try std.testing.expect(std.mem.startsWith(u8, response_text, "HTTP/1.1 500 Internal Server Error"));
+    try withServer(requestJsonInvalid);
 }

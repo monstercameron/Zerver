@@ -106,6 +106,7 @@ pub const ReqTest = struct {
 
 /// Tests
 pub fn testReqTest() !void {
+    std.debug.print("[reqtest] start\n", .{});
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     defer _ = gpa.deinit();
     const allocator = gpa.allocator();
@@ -124,5 +125,15 @@ pub fn testReqTest() !void {
         return error.ParamNotSet;
     }
 
-    slog.info("ReqTest tests completed successfully", &.{});
+    // Use std.debug.print instead of slog to keep the smoke test fully self-contained.
+    std.debug.print("[reqtest] success\n", .{});
+    std.debug.print("[reqtest] done\n", .{});
+}
+
+pub fn main() !void {
+    try testReqTest();
+}
+
+test "ReqTest smoke" {
+    try testReqTest();
 }

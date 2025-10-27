@@ -11,6 +11,8 @@ const http_status = @import("../core/http_status.zig").HttpStatus;
 const telemetry = @import("../observability/telemetry.zig");
 const net_handler = @import("../runtime/handler.zig");
 
+const default_content_type = "text/plain; charset=utf-8";
+
 pub const Address = struct {
     ip: [4]u8,
     port: u16,
@@ -276,7 +278,16 @@ pub const Server = struct {
                         .status = http_status.bad_request,
                         .body = .{ .complete = "Bad Request: Missing Host header (required for HTTP/1.1)" },
                         .headers = &[_]types.Header{
-                            .{ .name = "Content-Type", .value = "text/plain" },
+                            .{ .name = "Content-Type", .value = default_content_type },
+                        },
+                    }, arena, false, false, "", null) };
+                },
+                error.MultipleHostHeader => {
+                    return ResponseResult{ .complete = try self.httpResponse(.{
+                        .status = http_status.bad_request,
+                        .body = .{ .complete = "Bad Request: Multiple Host headers" },
+                        .headers = &[_]types.Header{
+                            .{ .name = "Content-Type", .value = default_content_type },
                         },
                     }, arena, false, false, "", null) };
                 },
@@ -285,16 +296,88 @@ pub const Server = struct {
                         .status = http_status.bad_request,
                         .body = .{ .complete = "Bad Request" },
                         .headers = &[_]types.Header{
-                            .{ .name = "Content-Type", .value = "text/plain" },
+                            .{ .name = "Content-Type", .value = default_content_type },
                         },
                     }, arena, false, false, "", null) };
                 },
-                error.MultipleContentLength, error.InvalidContentLength, error.ContentLengthMismatch, error.UnexpectedBody, error.ContentLengthRequired, error.InvalidPercentEncoding, error.InvalidChunkedEncoding, error.TransferEncodingConflict, error.TrailerFieldNotDeclared => {
+                error.MultipleContentLength, error.InvalidContentLength, error.ContentLengthMismatch, error.InvalidPercentEncoding, error.InvalidChunkedEncoding, error.TransferEncodingConflict, error.TrailerFieldNotDeclared, error.TrailerHeaderWithoutChunked => {
                     return ResponseResult{ .complete = try self.httpResponse(.{
                         .status = http_status.bad_request,
                         .body = .{ .complete = "Bad Request: Invalid request format" },
                         .headers = &[_]types.Header{
-                            .{ .name = "Content-Type", .value = "text/plain" },
+                            .{ .name = "Content-Type", .value = default_content_type },
+                        },
+                    }, arena, false, false, "", null) };
+                },
+                error.ExpectationFailed => {
+                    return ResponseResult{ .complete = try self.httpResponse(.{
+                        .status = http_status.expectation_failed,
+                        .body = .{ .complete = "Expectation Failed: Unsupported Expect header" },
+                        .headers = &[_]types.Header{
+                            .{ .name = "Content-Type", .value = default_content_type },
+                        },
+                    }, arena, false, false, "", null) };
+                },
+                error.UnexpectedBody => {
+                    return ResponseResult{ .complete = try self.httpResponse(.{
+                        .status = http_status.bad_request,
+                        .body = .{ .complete = "Bad Request: Body not allowed for this method" },
+                        .headers = &[_]types.Header{
+                            .{ .name = "Content-Type", .value = default_content_type },
+                        },
+                    }, arena, false, false, "", null) };
+                },
+                error.ContentLengthRequired => {
+                    return ResponseResult{ .complete = try self.httpResponse(.{
+                        .status = http_status.length_required,
+                        .body = .{ .complete = "Length Required: Content-Length header is required" },
+                        .headers = &[_]types.Header{
+                            .{ .name = "Content-Type", .value = default_content_type },
+                        },
+                    }, arena, false, false, "", null) };
+                },
+                error.UnsupportedContentEncoding => {
+                    return ResponseResult{ .complete = try self.httpResponse(.{
+                        .status = http_status.unsupported_media_type,
+                        .body = .{ .complete = "Unsupported Media Type: Content-Encoding not supported" },
+                        .headers = &[_]types.Header{
+                            .{ .name = "Content-Type", .value = default_content_type },
+                        },
+                    }, arena, false, false, "", null) };
+                },
+                error.UnsupportedContentType => {
+                    return ResponseResult{ .complete = try self.httpResponse(.{
+                        .status = http_status.unsupported_media_type,
+                        .body = .{ .complete = "Unsupported Media Type: Content-Type not supported" },
+                        .headers = &[_]types.Header{
+                            .{ .name = "Content-Type", .value = default_content_type },
+                        },
+                    }, arena, false, false, "", null) };
+                },
+                error.NotAcceptable => {
+                    return ResponseResult{ .complete = try self.httpResponse(.{
+                        .status = http_status.not_acceptable,
+                        .body = .{ .complete = "Not Acceptable: Requested representation not available" },
+                        .headers = &[_]types.Header{
+                            .{ .name = "Content-Type", .value = default_content_type },
+                        },
+                    }, arena, false, false, "", null) };
+                },
+                error.UnsupportedTeValue => {
+                    return ResponseResult{ .complete = try self.httpResponse(.{
+                        .status = http_status.not_implemented,
+                        .body = .{ .complete = "Not Implemented: TE header contains unsupported value" },
+                        .headers = &[_]types.Header{
+                            .{ .name = "Content-Type", .value = default_content_type },
+                        },
+                    }, arena, false, false, "", null) };
+                },
+                error.UpgradeUnsupported => {
+                    return ResponseResult{ .complete = try self.httpResponse(.{
+                        .status = http_status.upgrade_required,
+                        .body = .{ .complete = "Upgrade Required: Protocol upgrade not supported" },
+                        .headers = &[_]types.Header{
+                            .{ .name = "Content-Type", .value = default_content_type },
                         },
                     }, arena, false, false, "", null) };
                 },
@@ -303,7 +386,7 @@ pub const Server = struct {
                         .status = http_status.internal_server_error,
                         .body = .{ .complete = "Internal Server Error" },
                         .headers = &[_]types.Header{
-                            .{ .name = "Content-Type", .value = "text/plain" },
+                            .{ .name = "Content-Type", .value = default_content_type },
                         },
                     }, arena, false, false, "", null) };
                 },
@@ -398,7 +481,38 @@ pub const Server = struct {
             return ResponseResult{ .complete = try self.httpResponse(response, arena, false, keep_alive, trace_header, correlation) };
         }
 
-        if (try self.router.match(parsed.method, parsed.path, arena)) |route_match| {
+        if (parsed.method == .CONNECT or parsed.method == .TRACE) {
+            const response = types.Response{
+                .status = http_status.not_implemented,
+                .body = .{ .complete = if (parsed.method == .CONNECT)
+                    "Not Implemented: CONNECT tunneling unsupported"
+                else
+                    "Not Implemented: TRACE diagnostics disabled" },
+                .headers = &[_]types.Header{
+                    .{ .name = "Content-Type", .value = "text/plain" },
+                },
+            };
+
+            ctx.status_code = response.status;
+            ctx.runExitCallbacks();
+
+            telemetry_ctx.recordResponseMetrics(telemetry.Telemetry.responseMetricsFromResponse(response));
+            const outcome = telemetry.RequestOutcome{
+                .status_code = response.status,
+                .outcome = if (parsed.method == .CONNECT) "ConnectNotImplemented" else "TraceNotImplemented",
+                .error_ctx = null,
+            };
+            const trace_header = telemetry_ctx.finish(outcome, arena) catch "";
+
+            return ResponseResult{ .complete = try self.httpResponse(response, arena, false, keep_alive, trace_header, correlation) };
+        }
+
+        var route_match_opt = try self.router.match(parsed.method, parsed.path, arena);
+        if (route_match_opt == null and parsed.method == .HEAD) {
+            route_match_opt = try self.router.match(.GET, parsed.path, arena);
+        }
+
+        if (route_match_opt) |route_match| {
             telemetry_ctx.stepStart(.system, "route_match");
             var param_iter = route_match.params.iterator();
             while (param_iter.next()) |entry| {
@@ -423,6 +537,34 @@ pub const Server = struct {
             }
 
             return try self.renderResponse(&ctx, &telemetry_ctx, decision, outcome, arena, keep_alive, correlation);
+        }
+
+        if (route_match_opt == null) {
+            const allowed_methods = try self.getAllowedMethods(parsed.path, arena);
+            if (!std.mem.eql(u8, allowed_methods, "OPTIONS")) {
+                const headers = [_]types.Header{
+                    .{ .name = "Allow", .value = allowed_methods },
+                    .{ .name = "Content-Type", .value = "text/plain" },
+                };
+                const response = types.Response{
+                    .status = http_status.method_not_allowed,
+                    .headers = &headers,
+                    .body = .{ .complete = "Method Not Allowed" },
+                };
+
+                ctx.status_code = response.status;
+                ctx.runExitCallbacks();
+
+                telemetry_ctx.recordResponseMetrics(telemetry.Telemetry.responseMetricsFromResponse(response));
+                const outcome = telemetry.RequestOutcome{
+                    .status_code = response.status,
+                    .outcome = "MethodNotAllowed",
+                    .error_ctx = types.ErrorCtx{ .what = "routing", .key = parsed.path },
+                };
+                const trace_header = telemetry_ctx.finish(outcome, arena) catch "";
+
+                return ResponseResult{ .complete = try self.httpResponse(response, arena, false, keep_alive, trace_header, correlation) };
+            }
         }
 
         if (parsed.method == .POST and std.mem.startsWith(u8, parsed.path, "/flow/v1/")) {
@@ -491,16 +633,24 @@ pub const Server = struct {
         const method = try self.parseMethod(method_str);
         const path_with_query = try arena.dupe(u8, path_str);
 
-        // RFC 9110 Section 4.2.3, 4.2.4 - Validate and normalize URI
-        try self.validateAndNormalizeUri(path_with_query);
+        // RFC 9110 Section 4.2.2 - CONNECT uses authority-form targets, others use origin/absolute.
+        const normalized_target = blk: {
+            if (method == .CONNECT) {
+                try self.validateAuthorityForm(path_with_query);
+                break :blk path_with_query;
+            }
+
+            // RFC 9110 Section 4.2.3, 4.2.4 - Validate and normalize URI
+            break :blk try self.validateAndNormalizeUri(path_with_query, arena);
+        };
 
         // Parse path and query string
-        var path = path_with_query;
+        var path = normalized_target;
         var query = std.StringHashMap([]const u8).init(arena);
 
-        if (std.mem.indexOfScalar(u8, path_with_query, '?')) |query_start| {
-            path = path_with_query[0..query_start];
-            const query_str = path_with_query[query_start + 1 ..];
+        if (std.mem.indexOfScalar(u8, normalized_target, '?')) |query_start| {
+            path = normalized_target[0..query_start];
+            const query_str = normalized_target[query_start + 1 ..];
             try self.parseQueryString(query_str, &query, arena);
         }
 
@@ -533,9 +683,10 @@ pub const Server = struct {
             try gop.value_ptr.append(arena, header_value);
         }
 
-        // RFC 9110 Section 7.2 - HTTP/1.1 requires Host header
-        if (headers.get("host") == null) {
-            return error.MissingHostHeader;
+        // RFC 9110 Section 7.2 - HTTP/1.1 requires exactly one Host header
+        const host_values = headers.get("host") orelse return error.MissingHostHeader;
+        if (host_values.items.len != 1) {
+            return error.MultipleHostHeader;
         }
 
         // RFC 9110 Section 6 - Parse message body with proper framing
@@ -545,6 +696,7 @@ pub const Server = struct {
         // Parse Content-Length and Transfer-Encoding
         var content_length: ?usize = null;
         var has_transfer_encoding = false;
+        var unsupported_transfer_encoding = false;
 
         if (headers.get("content-length")) |cl_values| {
             if (cl_values.items.len > 1) {
@@ -554,13 +706,145 @@ pub const Server = struct {
             content_length = std.fmt.parseInt(usize, cl_str, 10) catch return error.InvalidContentLength;
         }
 
-        if (headers.get("transfer-encoding")) |te_values| {
-            // RFC 9112 Section 6 - Check for chunked encoding
-            for (te_values.items) |value| {
-                if (std.ascii.eqlIgnoreCase(std.mem.trim(u8, value, " \t"), "chunked")) {
-                    has_transfer_encoding = true;
+        if (headers.get("expect")) |expect_values| {
+            // RFC 9110 Section 10.1.1 - Only support the 100-continue expectation; reject all others.
+            for (expect_values.items) |raw_value| {
+                var token_it = std.mem.splitSequence(u8, raw_value, ",");
+                var saw_supported = false;
+                while (token_it.next()) |token| {
+                    const trimmed = std.mem.trim(u8, token, " \t");
+                    if (trimmed.len == 0) continue;
+                    if (std.ascii.eqlIgnoreCase(trimmed, "100-continue")) {
+                        saw_supported = true;
+                        continue;
+                    }
+                    return error.ExpectationFailed;
+                }
+
+                if (!saw_supported and raw_value.len > 0) {
+                    return error.ExpectationFailed;
+                }
+            }
+        }
+
+        if (headers.get("content-encoding")) |encoding_values| {
+            var unsupported = false;
+            for (encoding_values.items) |raw_value| {
+                var token_it = std.mem.splitSequence(u8, raw_value, ",");
+                while (token_it.next()) |token| {
+                    const trimmed = std.mem.trim(u8, token, " \t");
+                    if (trimmed.len == 0) continue;
+                    if (std.ascii.eqlIgnoreCase(trimmed, "identity")) continue;
+                    unsupported = true;
                     break;
                 }
+                if (unsupported) break;
+            }
+
+            if (unsupported) {
+                return error.UnsupportedContentEncoding;
+            }
+        }
+
+        if (headers.get("accept")) |accept_values| {
+            if (!self.acceptsTextPlain(accept_values.items)) {
+                return error.NotAcceptable;
+            }
+        }
+
+        if (headers.get("accept-language")) |accept_language_values| {
+            if (!self.acceptLanguageAllowsEnglish(accept_language_values.items)) {
+                return error.NotAcceptable;
+            }
+        }
+
+        if (headers.get("accept-charset")) |accept_charset_values| {
+            if (!self.acceptCharsetAllowsUtf8(accept_charset_values.items)) {
+                return error.NotAcceptable;
+            }
+        }
+
+        if (headers.get("accept-encoding")) |accept_encoding_values| {
+            if (!self.acceptEncodingAllowsIdentity(accept_encoding_values.items)) {
+                return error.NotAcceptable;
+            }
+        }
+
+        if (headers.get("te")) |te_values| {
+            var unsupported_te = false;
+            var token_buffer = std.ArrayList(u8).initCapacity(self.allocator, 0) catch return error.UnsupportedTeValue;
+            defer token_buffer.deinit(self.allocator);
+
+            for (te_values.items) |raw_value| {
+                var token_it = std.mem.splitSequence(u8, raw_value, ",");
+                while (token_it.next()) |token| {
+                    const trimmed = std.mem.trim(u8, token, " \t");
+                    if (trimmed.len == 0) continue;
+
+                    const sanitized_raw = sanitizeHeaderSegment(trimmed, &token_buffer, self.allocator) catch return error.UnsupportedTeValue;
+                    const sanitized = std.mem.trim(u8, sanitized_raw, " \t");
+                    if (sanitized.len == 0) continue;
+
+                    const semicolon_idx = std.mem.indexOfScalar(u8, sanitized, ';');
+                    const coding = std.mem.trim(u8, if (semicolon_idx) |idx| sanitized[0..idx] else sanitized, " \t");
+                    const params = if (semicolon_idx) |idx| sanitized[idx + 1 ..] else "";
+
+                    if (coding.len == 0) continue;
+
+                    if (std.ascii.eqlIgnoreCase(coding, "trailers") or std.ascii.eqlIgnoreCase(coding, "chunked")) {
+                        if (!self.qAllowsSelection(params)) {
+                            unsupported_te = true;
+                            break;
+                        }
+                    } else {
+                        unsupported_te = true;
+                        break;
+                    }
+                }
+                if (unsupported_te) break;
+            }
+
+            if (unsupported_te) {
+                return error.UnsupportedTeValue;
+            }
+        }
+
+        var connection_requests_upgrade = false;
+        if (headers.get("connection")) |connection_values| {
+            for (connection_values.items) |value| {
+                var token_it = std.mem.splitSequence(u8, value, ",");
+                while (token_it.next()) |token| {
+                    const trimmed = std.mem.trim(u8, token, " \t");
+                    if (trimmed.len == 0) continue;
+                    if (std.ascii.eqlIgnoreCase(trimmed, "upgrade")) {
+                        connection_requests_upgrade = true;
+                        break;
+                    }
+                }
+                if (connection_requests_upgrade) break;
+            }
+        }
+
+        if (connection_requests_upgrade and headers.contains("upgrade")) {
+            return error.UpgradeUnsupported;
+        }
+
+        if (headers.get("transfer-encoding")) |te_values| {
+            for (te_values.items) |raw_value| {
+                var token_it = std.mem.splitSequence(u8, raw_value, ",");
+                while (token_it.next()) |token| {
+                    const trimmed = std.mem.trim(u8, token, " \t");
+                    if (trimmed.len == 0) continue;
+                    if (std.ascii.eqlIgnoreCase(trimmed, "chunked")) {
+                        has_transfer_encoding = true;
+                    } else {
+                        unsupported_transfer_encoding = true;
+                    }
+                }
+            }
+
+            if (unsupported_transfer_encoding) {
+                return error.InvalidChunkedEncoding;
             }
         }
 
@@ -570,8 +854,10 @@ pub const Server = struct {
 
         var allowed_trailer_storage: std.StringHashMap(void) = undefined;
         var allowed_trailers: ?*std.StringHashMap(void) = null;
+        var has_trailer_header = false;
 
         if (headers.get("trailer")) |trailer_values| {
+            has_trailer_header = true;
             allowed_trailer_storage = std.StringHashMap(void).init(arena);
 
             for (trailer_values.items) |raw_value| {
@@ -588,6 +874,10 @@ pub const Server = struct {
             if (allowed_trailer_storage.count() != 0) {
                 allowed_trailers = &allowed_trailer_storage;
             }
+        }
+
+        if (has_trailer_header and !has_transfer_encoding) {
+            return error.TrailerHeaderWithoutChunked;
         }
 
         // RFC 9110 Section 6.4 - Validate message body framing
@@ -615,7 +905,7 @@ pub const Server = struct {
         } else {
             // No Content-Length or Transfer-Encoding
             // RFC 9110 Section 6.3 - For methods that typically don't have bodies
-            if (method == .GET or method == .HEAD or method == .DELETE or method == .OPTIONS or method == .TRACE) {
+            if (method == .GET or method == .HEAD or method == .DELETE or method == .OPTIONS or method == .TRACE or method == .CONNECT) {
                 // These methods should not have bodies
                 if (raw_body.len > 0) {
                     return error.UnexpectedBody;
@@ -623,6 +913,16 @@ pub const Server = struct {
             } else {
                 // For other methods (POST, PUT, PATCH), require Content-Length
                 return error.ContentLengthRequired;
+            }
+        }
+
+        if (!self.methodAllowsPayload(method) and body.len > 0) {
+            return error.UnexpectedBody;
+        }
+
+        if (headers.get("content-type")) |content_type_values| {
+            if (!self.contentTypeAllowsTextPlain(content_type_values.items)) {
+                return error.UnsupportedContentType;
             }
         }
 
@@ -648,6 +948,441 @@ pub const Server = struct {
         if (std.mem.eql(u8, text, "TRACE")) return .TRACE;
         if (std.mem.eql(u8, text, "PATCH")) return .PATCH;
         return error.InvalidMethod;
+    }
+
+    fn methodAllowsPayload(self: *Server, method: types.Method) bool {
+        _ = self;
+        return switch (method) {
+            .POST, .PUT, .PATCH => true,
+            else => false,
+        };
+    }
+
+    fn charIsEscaped(segment: []const u8, index: usize) bool {
+        var count: usize = 0;
+        var i = index;
+
+        while (i > 0) {
+            i -= 1;
+            if (segment[i] == '\\') {
+                count += 1;
+            } else {
+                break;
+            }
+        }
+
+        return count % 2 == 1;
+    }
+
+    fn sanitizeHeaderSegment(segment: []const u8, buffer: *std.ArrayList(u8), allocator: std.mem.Allocator) ![]const u8 {
+        buffer.clearRetainingCapacity();
+        try buffer.ensureTotalCapacity(allocator, segment.len);
+
+        var i: usize = 0;
+        var in_quotes = false;
+        var comment_depth: usize = 0;
+
+        while (i < segment.len) {
+            const c = segment[i];
+            const escaped = charIsEscaped(segment, i);
+
+            if (comment_depth > 0) {
+                if (!escaped and c == '(') {
+                    comment_depth += 1;
+                } else if (!escaped and c == ')') {
+                    comment_depth -= 1;
+                    if (comment_depth == 0) {
+                        i += 1;
+                        continue;
+                    }
+                } else if (c == '\\' and i + 1 < segment.len) {
+                    i += 2;
+                    continue;
+                }
+
+                i += 1;
+                continue;
+            }
+
+            if (!escaped and !in_quotes and c == '(') {
+                comment_depth = 1;
+                i += 1;
+                continue;
+            }
+
+            if (!escaped and c == '"') {
+                in_quotes = !in_quotes;
+            }
+
+            try buffer.append(allocator, c);
+            i += 1;
+        }
+
+        return buffer.items;
+    }
+
+    fn normalizeQuotedString(value: []const u8, buffer: *std.ArrayList(u8), allocator: std.mem.Allocator) ![]const u8 {
+        if (value.len >= 2 and value[0] == '"' and value[value.len - 1] == '"') {
+            buffer.clearRetainingCapacity();
+            try buffer.ensureTotalCapacity(allocator, value.len - 2);
+
+            var i: usize = 1;
+            while (i < value.len - 1) {
+                const c = value[i];
+                if (c == '\\' and i + 1 < value.len - 1) {
+                    try buffer.append(allocator, value[i + 1]);
+                    i += 2;
+                    continue;
+                }
+
+                try buffer.append(allocator, c);
+                i += 1;
+            }
+
+            return buffer.items;
+        }
+
+        return value;
+    }
+
+    fn acceptsTextPlain(self: *Server, values: []const []const u8) bool {
+        var token_buffer = std.ArrayList(u8).initCapacity(self.allocator, 0) catch return false;
+        defer token_buffer.deinit(self.allocator);
+
+        var saw_media = false;
+
+        for (values) |raw_value| {
+            var token_it = std.mem.splitSequence(u8, raw_value, ",");
+            while (token_it.next()) |token| {
+                const trimmed = std.mem.trim(u8, token, " \t");
+                if (trimmed.len == 0) continue;
+
+                const sanitized_raw = sanitizeHeaderSegment(trimmed, &token_buffer, self.allocator) catch return false;
+                const sanitized = std.mem.trim(u8, sanitized_raw, " \t");
+                if (sanitized.len == 0) continue;
+
+                saw_media = true;
+
+                const semicolon_idx = std.mem.indexOfScalar(u8, sanitized, ';');
+                const media = if (semicolon_idx) |idx| std.mem.trim(u8, sanitized[0..idx], " \t") else sanitized;
+                const params = if (semicolon_idx) |idx| sanitized[idx + 1 ..] else "";
+
+                if (self.qAllowsSelection(params) and mediaMatchesTextPlain(media)) {
+                    return true;
+                }
+            }
+        }
+
+        return !saw_media;
+    }
+
+    fn mediaMatchesTextPlain(media: []const u8) bool {
+        if (std.ascii.eqlIgnoreCase(media, "*/*")) {
+            return true;
+        }
+
+        const slash_idx = std.mem.indexOfScalar(u8, media, '/') orelse return false;
+        const type_part = media[0..slash_idx];
+        const subtype_part = media[slash_idx + 1 ..];
+
+        if (!std.ascii.eqlIgnoreCase(type_part, "text")) {
+            return false;
+        }
+
+        if (std.ascii.eqlIgnoreCase(subtype_part, "plain") or std.ascii.eqlIgnoreCase(subtype_part, "*")) {
+            return true;
+        }
+
+        return false;
+    }
+
+    fn qAllowsSelection(self: *Server, params: []const u8) bool {
+        if (params.len == 0) return true;
+
+        var allows = true;
+        var token_buffer = std.ArrayList(u8).initCapacity(self.allocator, 0) catch return false;
+        defer token_buffer.deinit(self.allocator);
+
+        var param_it = std.mem.splitSequence(u8, params, ";");
+        while (param_it.next()) |param| {
+            const trimmed = std.mem.trim(u8, param, " \t");
+            if (trimmed.len == 0) continue;
+
+            const sanitized_raw = sanitizeHeaderSegment(trimmed, &token_buffer, self.allocator) catch return false;
+            const sanitized = std.mem.trim(u8, sanitized_raw, " \t");
+            if (sanitized.len == 0) continue;
+
+            const eq_idx = std.mem.indexOfScalar(u8, sanitized, '=') orelse continue;
+            const name = std.mem.trim(u8, sanitized[0..eq_idx], " \t");
+            if (!std.ascii.eqlIgnoreCase(name, "q")) continue;
+
+            const raw_value = std.mem.trim(u8, sanitized[eq_idx + 1 ..], " \t");
+            if (raw_value.len == 0) {
+                allows = false;
+                break;
+            }
+
+            if (std.mem.indexOfScalar(u8, raw_value, '"') != null) {
+                allows = false;
+                break;
+            }
+
+            const parsed_q = parseQValue(raw_value) orelse {
+                allows = false;
+                break;
+            };
+
+            if (parsed_q == 0) {
+                allows = false;
+                break;
+            }
+        }
+
+        return allows;
+    }
+
+    fn parseQValue(raw: []const u8) ?u16 {
+        if (raw.len == 0) return null;
+        const first = raw[0];
+        if (first != '0' and first != '1') return null;
+
+        if (raw.len == 1) {
+            return if (first == '1') 1000 else 0;
+        }
+
+        if (raw[1] != '.') return null;
+
+        var idx: usize = 2;
+        var decimals: usize = 0;
+        var decimal_value: u16 = 0;
+
+        while (idx < raw.len) : (idx += 1) {
+            const c = raw[idx];
+            if (c < '0' or c > '9') return null;
+            if (decimals == 3) return null;
+            const digit = @as(u16, c) - @as(u16, '0');
+            decimal_value = decimal_value * 10 + digit;
+            decimals += 1;
+        }
+
+        if (first == '1' and decimal_value != 0) return null;
+
+        while (decimals < 3) : (decimals += 1) {
+            decimal_value *= 10;
+        }
+
+        if (first == '1') {
+            return 1000;
+        }
+
+        return decimal_value;
+    }
+
+    fn acceptLanguageAllowsEnglish(self: *Server, values: []const []const u8) bool {
+        var token_buffer = std.ArrayList(u8).initCapacity(self.allocator, 0) catch return false;
+        defer token_buffer.deinit(self.allocator);
+
+        var saw_language = false;
+
+        for (values) |raw_value| {
+            var token_it = std.mem.splitSequence(u8, raw_value, ",");
+            while (token_it.next()) |token| {
+                const trimmed = std.mem.trim(u8, token, " \t");
+                if (trimmed.len == 0) continue;
+
+                const sanitized_raw = sanitizeHeaderSegment(trimmed, &token_buffer, self.allocator) catch return false;
+                const sanitized = std.mem.trim(u8, sanitized_raw, " \t");
+                if (sanitized.len == 0) continue;
+
+                saw_language = true;
+
+                const semicolon_idx = std.mem.indexOfScalar(u8, sanitized, ';');
+                const language_range = std.mem.trim(u8, if (semicolon_idx) |idx| sanitized[0..idx] else sanitized, " \t");
+                const params = if (semicolon_idx) |idx| sanitized[idx + 1 ..] else "";
+
+                if (language_range.len == 0) continue;
+
+                if (self.qAllowsSelection(params) and languageMatchesEnglish(language_range)) {
+                    return true;
+                }
+            }
+        }
+
+        return !saw_language;
+    }
+    fn contentTypeAllowsTextPlain(self: *Server, values: []const []const u8) bool {
+        var saw_token = false;
+        var token_buffer = std.ArrayList(u8).initCapacity(self.allocator, 0) catch return false;
+        defer token_buffer.deinit(self.allocator);
+        var quoted_buffer = std.ArrayList(u8).initCapacity(self.allocator, 0) catch return false;
+        defer quoted_buffer.deinit(self.allocator);
+
+        for (values) |raw_value| {
+            var token_it = std.mem.splitSequence(u8, raw_value, ",");
+            while (token_it.next()) |token| {
+                const trimmed = std.mem.trim(u8, token, " \t");
+                if (trimmed.len == 0) continue;
+
+                if (saw_token) {
+                    // Content-Type is not a list header; multiple values indicate unsupported usage.
+                    return false;
+                }
+
+                const sanitized_raw = sanitizeHeaderSegment(trimmed, &token_buffer, self.allocator) catch return false;
+                const sanitized = std.mem.trim(u8, sanitized_raw, " \t");
+                if (sanitized.len == 0) continue;
+
+                saw_token = true;
+                if (!contentTypeMatchesTextPlain(sanitized, &quoted_buffer, self.allocator)) {
+                    return false;
+                }
+            }
+        }
+
+        return saw_token;
+    }
+
+    fn contentTypeMatchesTextPlain(value: []const u8, quoted_buffer: *std.ArrayList(u8), allocator: std.mem.Allocator) bool {
+        const semicolon_idx = std.mem.indexOfScalar(u8, value, ';');
+        const media_token = if (semicolon_idx) |idx| std.mem.trim(u8, value[0..idx], " \t") else std.mem.trim(u8, value, " \t");
+
+        if (!std.ascii.eqlIgnoreCase(media_token, "text/plain")) {
+            return false;
+        }
+
+        if (semicolon_idx == null) {
+            return true;
+        }
+
+        const params = value[semicolon_idx.? + 1 ..];
+        var charset_allowed: ?bool = null;
+
+        var param_it = std.mem.splitSequence(u8, params, ";");
+        while (param_it.next()) |param_segment| {
+            const trimmed = std.mem.trim(u8, param_segment, " \t");
+            if (trimmed.len == 0) continue;
+
+            const eq_idx = std.mem.indexOfScalar(u8, trimmed, '=') orelse continue;
+            const name = std.mem.trim(u8, trimmed[0..eq_idx], " \t");
+            const raw_value = std.mem.trim(u8, trimmed[eq_idx + 1 ..], " \t");
+
+            if (std.ascii.eqlIgnoreCase(name, "charset")) {
+                const normalized = normalizeQuotedString(raw_value, quoted_buffer, allocator) catch return false;
+                if (!std.ascii.eqlIgnoreCase(normalized, "utf-8")) {
+                    return false;
+                }
+                charset_allowed = true;
+            }
+        }
+
+        if (charset_allowed) |allowed| {
+            return allowed;
+        }
+
+        return true;
+    }
+
+    fn acceptCharsetAllowsUtf8(self: *Server, values: []const []const u8) bool {
+        var token_buffer = std.ArrayList(u8).initCapacity(self.allocator, 0) catch return false;
+        defer token_buffer.deinit(self.allocator);
+
+        var saw_charset = false;
+        var utf8_allowed: ?bool = null;
+        var wildcard_allowed: ?bool = null;
+
+        for (values) |raw_value| {
+            var token_it = std.mem.splitSequence(u8, raw_value, ",");
+            while (token_it.next()) |token| {
+                const trimmed = std.mem.trim(u8, token, " \t");
+                if (trimmed.len == 0) continue;
+
+                const sanitized_raw = sanitizeHeaderSegment(trimmed, &token_buffer, self.allocator) catch return false;
+                const sanitized = std.mem.trim(u8, sanitized_raw, " \t");
+                if (sanitized.len == 0) continue;
+
+                saw_charset = true;
+
+                const semicolon_idx = std.mem.indexOfScalar(u8, sanitized, ';');
+                const charset = std.mem.trim(u8, if (semicolon_idx) |idx| sanitized[0..idx] else sanitized, " \t");
+                const params = if (semicolon_idx) |idx| sanitized[idx + 1 ..] else "";
+                const q_ok = self.qAllowsSelection(params);
+
+                if (charset.len == 0) continue;
+
+                if (std.ascii.eqlIgnoreCase(charset, "utf-8")) {
+                    utf8_allowed = q_ok;
+                } else if (std.ascii.eqlIgnoreCase(charset, "*")) {
+                    wildcard_allowed = q_ok;
+                }
+            }
+        }
+
+        if (utf8_allowed) |allowed| {
+            return allowed;
+        }
+
+        if (wildcard_allowed) |allowed| {
+            return allowed;
+        }
+
+        return !saw_charset;
+    }
+
+    fn languageMatchesEnglish(language_range: []const u8) bool {
+        if (std.ascii.eqlIgnoreCase(language_range, "*")) {
+            return true;
+        }
+
+        if (std.mem.indexOfScalar(u8, language_range, '-')) |idx| {
+            const primary = language_range[0..idx];
+            return std.ascii.eqlIgnoreCase(primary, "en");
+        }
+
+        return std.ascii.eqlIgnoreCase(language_range, "en");
+    }
+
+    fn acceptEncodingAllowsIdentity(self: *Server, values: []const []const u8) bool {
+        var token_buffer = std.ArrayList(u8).initCapacity(self.allocator, 0) catch return false;
+        defer token_buffer.deinit(self.allocator);
+
+        var identity_allowed_explicit: ?bool = null;
+        var wildcard_allowed: ?bool = null;
+
+        for (values) |raw_value| {
+            var token_it = std.mem.splitSequence(u8, raw_value, ",");
+            while (token_it.next()) |token| {
+                const trimmed = std.mem.trim(u8, token, " \t");
+                if (trimmed.len == 0) continue;
+
+                const sanitized_raw = sanitizeHeaderSegment(trimmed, &token_buffer, self.allocator) catch return false;
+                const sanitized = std.mem.trim(u8, sanitized_raw, " \t");
+                if (sanitized.len == 0) continue;
+
+                const semicolon_idx = std.mem.indexOfScalar(u8, sanitized, ';');
+                const encoding = std.mem.trim(u8, if (semicolon_idx) |idx| sanitized[0..idx] else sanitized, " \t");
+                const params = if (semicolon_idx) |idx| sanitized[idx + 1 ..] else "";
+                const q_ok = self.qAllowsSelection(params);
+
+                if (encoding.len == 0) continue;
+
+                if (std.ascii.eqlIgnoreCase(encoding, "identity")) {
+                    identity_allowed_explicit = q_ok;
+                } else if (std.ascii.eqlIgnoreCase(encoding, "*")) {
+                    wildcard_allowed = q_ok;
+                }
+            }
+        }
+
+        if (identity_allowed_explicit) |allowed| {
+            return allowed;
+        }
+
+        if (wildcard_allowed) |allowed| {
+            return allowed;
+        }
+
+        // RFC 9110 Section 12.5.3: identity is acceptable by default if not explicitly refused.
+        return true;
     }
 
     fn methodToString(self: *Server, method: types.Method, arena: std.mem.Allocator) ![]const u8 {
@@ -724,10 +1459,8 @@ pub const Server = struct {
     }
 
     /// Validate and normalize URI per RFC 9110 Section 4.2.3, 4.2.4
-    fn validateAndNormalizeUri(self: *Server, uri: []const u8) !void {
+    fn validateAndNormalizeUri(self: *Server, uri: []const u8, arena: std.mem.Allocator) ![]const u8 {
         _ = self;
-        // TODO: RFC 9110 Section 4.2.3 - Implement comprehensive URI normalization (e.g., resolving '.' and '..' segments, case normalization for scheme/host, default port omission).
-
         // RFC 9110 Section 4.2.3 - Reject userinfo in URI
         // Check for userinfo pattern: scheme://user:pass@host/path
         if (std.mem.indexOf(u8, uri, "://")) |scheme_end| {
@@ -748,9 +1481,17 @@ pub const Server = struct {
             return error.InvalidUri;
         }
 
+        if (std.mem.indexOfScalar(u8, uri, '#') != null) {
+            return error.InvalidUri;
+        }
+
+        if (uri.len >= 2 and uri[0] == '/' and uri[1] == '/') {
+            return error.InvalidUri;
+        }
+
         // Allow asterisk-form for OPTIONS
         if (std.mem.eql(u8, uri, "*")) {
-            return;
+            return uri;
         }
 
         // For origin-form and absolute-form, path should be absolute
@@ -760,6 +1501,131 @@ pub const Server = struct {
                 return error.InvalidUri;
             }
         }
+
+        var normalized = uri;
+
+        if (std.mem.indexOf(u8, uri, "://")) |scheme_idx| {
+            const scheme = uri[0..scheme_idx];
+            if (!std.ascii.eqlIgnoreCase(scheme, "http")) {
+                return error.InvalidUri;
+            }
+
+            const after_scheme = uri[scheme_idx + 3 ..];
+            if (after_scheme.len == 0) {
+                return error.InvalidUri;
+            }
+
+            var suffix_start = after_scheme.len;
+
+            if (std.mem.indexOfScalar(u8, after_scheme, '/')) |slash_idx| {
+                suffix_start = slash_idx;
+            }
+
+            if (std.mem.indexOfScalar(u8, after_scheme, '?')) |query_idx| {
+                if (query_idx < suffix_start) {
+                    suffix_start = query_idx;
+                }
+            }
+
+            const authority = after_scheme[0..suffix_start];
+            if (authority.len == 0) {
+                return error.InvalidUri;
+            }
+
+            const suffix = if (suffix_start < after_scheme.len) after_scheme[suffix_start..] else "";
+            const needs_leading_slash = !(suffix.len > 0 and suffix[0] == '/');
+
+            const normalized_len = suffix.len + (if (needs_leading_slash) @as(usize, 1) else 0);
+            var buffer = try arena.alloc(u8, normalized_len);
+
+            if (needs_leading_slash) {
+                buffer[0] = '/';
+            }
+
+            if (suffix.len > 0) {
+                const copy_start: usize = if (needs_leading_slash) 1 else 0;
+                const dest = buffer[copy_start .. copy_start + suffix.len];
+                @memcpy(dest, suffix);
+            }
+
+            normalized = buffer;
+        }
+
+        if (!std.mem.startsWith(u8, normalized, "/")) {
+            return error.InvalidUri;
+        }
+
+        var i: usize = 0;
+        while (i < normalized.len) : (i += 1) {
+            if (normalized[i] == '%') {
+                if (i + 2 >= normalized.len) {
+                    return error.InvalidPercentEncoding;
+                }
+
+                const h1 = normalized[i + 1];
+                const h2 = normalized[i + 2];
+                _ = std.fmt.charToDigit(h1, 16) catch return error.InvalidPercentEncoding;
+                _ = std.fmt.charToDigit(h2, 16) catch return error.InvalidPercentEncoding;
+
+                i += 2;
+            }
+        }
+
+        return normalized;
+    }
+
+    fn validateAuthorityForm(self: *Server, authority: []const u8) !void {
+        _ = self;
+
+        if (authority.len == 0) {
+            return error.InvalidUri;
+        }
+
+        if (std.mem.indexOfScalar(u8, authority, '#') != null or std.mem.indexOfScalar(u8, authority, '?') != null) {
+            return error.InvalidUri;
+        }
+
+        for (authority) |ch| {
+            if (ch <= 0x20 or ch == 0x7f) {
+                return error.InvalidUri;
+            }
+        }
+
+        var host_slice: []const u8 = undefined;
+        var port_slice: []const u8 = undefined;
+
+        if (authority[0] == '[') {
+            const closing = std.mem.indexOfScalar(u8, authority, ']') orelse return error.InvalidUri;
+            if (closing == 1) {
+                return error.InvalidUri;
+            }
+
+            host_slice = authority[1..closing];
+
+            if (closing + 1 >= authority.len or authority[closing + 1] != ':') {
+                return error.InvalidUri;
+            }
+
+            port_slice = authority[closing + 2 ..];
+        } else {
+            const colon = std.mem.lastIndexOfScalar(u8, authority, ':') orelse return error.InvalidUri;
+            if (colon == 0) {
+                return error.InvalidUri;
+            }
+
+            host_slice = authority[0..colon];
+            port_slice = authority[colon + 1 ..];
+        }
+
+        if (port_slice.len == 0) {
+            return error.InvalidUri;
+        }
+
+        if (host_slice.len == 0) {
+            return error.InvalidUri;
+        }
+
+        _ = std.fmt.parseInt(u16, port_slice, 10) catch return error.InvalidUri;
     }
 
     fn validateHeaderFieldName(name: []const u8) !void {
@@ -849,8 +1715,20 @@ pub const Server = struct {
             },
         }
 
+        const is_head = std.mem.eql(u8, ctx.method_str, "HEAD");
+
         switch (response.body) {
             .streaming => |streaming| {
+                if (is_head) {
+                    const headers_only = try self.httpResponse(.{
+                        .status = response.status,
+                        .headers = response.headers,
+                        .body = .{ .complete = "" },
+                    }, arena, true, keep_alive, trace_header, correlation);
+
+                    return ResponseResult{ .complete = headers_only };
+                }
+
                 const headers_only = try self.httpResponse(.{
                     .status = response.status,
                     .headers = response.headers,
@@ -866,7 +1744,7 @@ pub const Server = struct {
                 };
             },
             .complete => {
-                const formatted = try self.httpResponse(response, arena, false, keep_alive, trace_header, correlation);
+                const formatted = try self.httpResponse(response, arena, is_head, keep_alive, trace_header, correlation);
                 return ResponseResult{ .complete = formatted };
             },
         }
@@ -918,6 +1796,7 @@ pub const Server = struct {
 
         var result = try std.ArrayList(u8).initCapacity(arena, 0);
         var pos: usize = 0;
+        var saw_final_chunk = false;
 
         while (pos < raw_body.len) {
             const line_end = std.mem.indexOfPos(u8, raw_body, pos, "\r\n") orelse return error.InvalidChunkedEncoding;
@@ -935,14 +1814,18 @@ pub const Server = struct {
             pos = line_end + 2;
 
             if (chunk_size == 0) {
-                while (pos < raw_body.len) {
+                var saw_final_blank = false;
+
+                while (true) {
                     const trailer_end = std.mem.indexOfPos(u8, raw_body, pos, "\r\n") orelse return error.InvalidChunkedEncoding;
-                    if (trailer_end == pos) {
-                        pos = trailer_end + 2;
+                    const trailer_line = raw_body[pos..trailer_end];
+                    pos = trailer_end + 2;
+
+                    if (trailer_line.len == 0) {
+                        saw_final_blank = true;
                         break;
                     }
 
-                    const trailer_line = raw_body[pos..trailer_end];
                     const colon_idx = std.mem.indexOfScalar(u8, trailer_line, ':') orelse return error.InvalidChunkedEncoding;
 
                     const name_raw = trailer_line[0..colon_idx];
@@ -968,9 +1851,11 @@ pub const Server = struct {
                         gop.value_ptr.* = try std.ArrayList([]const u8).initCapacity(arena, 1);
                     }
                     try gop.value_ptr.append(arena, value_dup);
-
-                    pos = trailer_end + 2;
                 }
+
+                if (!saw_final_blank) return error.InvalidChunkedEncoding;
+                if (pos != raw_body.len) return error.InvalidChunkedEncoding;
+                saw_final_chunk = true;
                 break;
             }
 
@@ -988,33 +1873,34 @@ pub const Server = struct {
             pos += chunk_size + 2;
         }
 
+        if (!saw_final_chunk or pos != raw_body.len) {
+            return error.InvalidChunkedEncoding;
+        }
+
         return result.items;
     }
 
     /// Format timestamp as HTTP date (IMF-fixdate format per RFC 9110 Section 5.6.7)
     fn formatHttpDate(arena: std.mem.Allocator, timestamp: i64) ![]const u8 {
-        // Convert Unix timestamp to seconds
-        const epoch_seconds = @as(u64, @intCast(timestamp));
-        const epoch_time = std.time.epoch.EpochSeconds{ .secs = epoch_seconds };
+        std.debug.assert(timestamp >= 0);
 
-        // Get the civil time (broken down time)
-        const year_and_day = epoch_time.getEpochDay().calculateYearDay();
-        const civil_time = year_and_day.calculateMonthDay();
-        const day_seconds = epoch_time.getDaySeconds();
-
-        // Day names and month names
         const day_names = [_][]const u8{ "Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat" };
         const month_names = [_][]const u8{ "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec" };
 
-        // Calculate day of week using epoch day
-        const epoch_day = epoch_time.getEpochDay();
-        const day_of_week = @as(usize, @intCast(@mod(epoch_day.day, 7)));
+        const epoch_seconds = std.time.epoch.EpochSeconds{ .secs = @as(u64, @intCast(timestamp)) };
+        const epoch_day = epoch_seconds.getEpochDay();
+        const year_day = epoch_day.calculateYearDay();
+        const calendar = year_day.calculateMonthDay();
+        const day_seconds = epoch_seconds.getDaySeconds();
 
-        return std.fmt.allocPrint(arena, "{s}, {d:0>2} {s} {d} {d:0>2}:{d:0>2}:{d:0>2} GMT", .{
-            day_names[day_of_week],
-            civil_time.day_index + 1, // day_index is 0-based, we need 1-based
-            month_names[@intFromEnum(civil_time.month)],
-            year_and_day.year,
+        const weekday_index = @as(usize, @intCast(@mod(epoch_day.day + 4, 7)));
+        const month_index = @as(usize, @intCast(@intFromEnum(calendar.month)));
+
+        return std.fmt.allocPrint(arena, "{s}, {d:0>2} {s} {d:0>4} {d:0>2}:{d:0>2}:{d:0>2} GMT", .{
+            day_names[weekday_index],
+            calendar.day_index + 1,
+            month_names[month_index],
+            year_day.year,
             day_seconds.getHoursIntoDay(),
             day_seconds.getMinutesIntoHour(),
             day_seconds.getSecondsIntoMinute(),
@@ -1113,13 +1999,19 @@ pub const Server = struct {
 
         try w.print("HTTP/1.1 {} {s}\r\n", .{ response.status, status_text });
 
-        // RFC 9110 Section 5.6.7 - Include Date header in IMF-fixdate format
-        const now = std.time.timestamp();
-        const date_str = try formatHttpDate(arena, now);
-        try w.print("Date: {s}\r\n", .{date_str});
+        const status = response.status;
+        const send_date = !((status >= 100 and status < 200) or status == 204 or status == 304);
+        if (send_date and !headerExists(response.headers, "Date")) {
+            const now_raw = std.time.timestamp();
+            const now = @as(i64, @intCast(now_raw));
+            const date_str = try formatHttpDate(arena, now);
+            try w.print("Date: {s}\r\n", .{date_str});
+        }
 
-        // RFC 9110 Section 10.2.4 - Include Server header
-        try w.print("Server: Zerver/1.0\r\n", .{});
+        // RFC 9110 Section 10.2.4 - Include Server header if not already present
+        if (!headerExists(response.headers, "Server")) {
+            try w.print("Server: Zerver/1.0\r\n", .{});
+        }
 
         // RFC 9112 Section 9 - Include Connection header
         if (keep_alive) {
@@ -1140,8 +2032,17 @@ pub const Server = struct {
             }
         }
 
+        if (!headerExists(response.headers, "Content-Language")) {
+            try w.print("Content-Language: en\r\n", .{});
+        }
+
+        if (!headerExists(response.headers, "Vary")) {
+            try w.print("Vary: Accept, Accept-Encoding, Accept-Charset, Accept-Language\r\n", .{});
+        }
+
         // Add custom headers from the response
         for (response.headers) |header| {
+            if (!send_date and std.ascii.eqlIgnoreCase(header.name, "date")) continue;
             try w.print("{s}: {s}\r\n", .{ header.name, header.value });
         }
 
@@ -1162,7 +2063,10 @@ pub const Server = struct {
                     };
 
                 if (!is_sse) {
-                    try w.print("Content-Length: {d}\r\n", .{body.len});
+                    const has_custom_content_length = headerExists(response.headers, "Content-Length");
+                    if (!has_custom_content_length) {
+                        try w.print("Content-Length: {d}\r\n", .{body.len});
+                    }
                 }
 
                 try w.print("\r\n", .{});
@@ -1182,7 +2086,7 @@ pub const Server = struct {
             },
         }
 
-        // TODO: RFC 9110 Section 9.3.2 - For HEAD responses, ensure the Content-Length header indicates the length of the content that would have been sent in a corresponding GET response.
+        // RFC 9110 Section 9.3.2 - HEAD responses omit bodies; handlers can supply Content-Length for the corresponding GET representation.
 
         return buf.items;
     }
@@ -1315,11 +2219,16 @@ pub const Server = struct {
 
         // Check each method to see if there's a route for it
         const methods = [_]types.Method{ .GET, .HEAD, .POST, .PUT, .DELETE, .PATCH, .OPTIONS };
-        // TODO: Logical Error - The 'CONNECT' and 'TRACE' methods have specific behaviors (RFC 9110 Section 9.3.6, 9.3.8) that are not typically handled by generic routing. If supported, they require dedicated handlers beyond just being listed in the 'Allow' header.
+        // CONNECT and TRACE (RFC 9110 Sections 9.3.6, 9.3.8) demand bespoke behaviors, so we intentionally omit them from the generic Allow synthesis.
 
-        for (methods, 0..) |method, i| {
-            if (self.router.match(method, path, arena) catch null) |_| {
-                if (i > 0) try allowed.appendSlice(arena, ", ");
+        for (methods) |method| {
+            var match_found = self.router.match(method, path, arena) catch null;
+            if (match_found == null and method == .HEAD) {
+                match_found = self.router.match(.GET, path, arena) catch null;
+            }
+
+            if (match_found != null) {
+                if (allowed.items.len > 0) try allowed.appendSlice(arena, ", ");
                 const method_str = switch (method) {
                     .GET => "GET",
                     .HEAD => "HEAD",

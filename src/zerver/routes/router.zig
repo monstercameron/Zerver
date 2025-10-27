@@ -12,6 +12,7 @@ pub const CompiledRoute = struct {
     method: types.Method,
     pattern: Pattern,
     spec: types.RouteSpec,
+    order: usize,
 };
 
 /// A route pattern broken into segments.
@@ -25,6 +26,7 @@ pub const Pattern = struct {
 pub const Segment = union(enum) {
     literal: []const u8,
     param: []const u8, // parameter name
+    wildcard: []const u8, // greedy parameter name
 };
 
 /// RouteMatch represents a successful match with extracted params.
@@ -37,6 +39,7 @@ pub const RouteMatch = struct {
 pub const Router = struct {
     allocator: std.mem.Allocator,
     routes: std.ArrayList(CompiledRoute),
+    next_order: usize,
 
     // TODO: RFC 9110 - Consider implementing URI normalization (Section 4.2.3) and defining consistent behavior for trailing slashes in paths.
 
@@ -44,20 +47,19 @@ pub const Router = struct {
         return .{
             .allocator = allocator,
             .routes = try std.ArrayList(CompiledRoute).initCapacity(allocator, 32),
+            .next_order = 0,
         };
     }
 
     pub fn deinit(self: *Router) void {
         for (self.routes.items) |route| {
-            // Free individual segment strings and param names
+            // Free individual segment strings; param names reuse the same slices
             for (route.pattern.segments) |seg| {
                 switch (seg) {
                     .literal => |lit| self.allocator.free(lit),
                     .param => |param| self.allocator.free(param),
+                    .wildcard => |param| self.allocator.free(param),
                 }
-            }
-            for (route.pattern.param_names) |param_name| {
-                self.allocator.free(param_name);
             }
             self.allocator.free(route.pattern.segments);
             self.allocator.free(route.pattern.param_names);
@@ -80,7 +82,9 @@ pub const Router = struct {
             .method = method,
             .pattern = pattern,
             .spec = spec,
+            .order = self.next_order,
         });
+        self.next_order += 1;
 
         // Re-sort routes by priority: longest-literal first, then fewer params, then order
         self.sortRoutes();
@@ -97,36 +101,80 @@ pub const Router = struct {
         const path_segments = try self.splitPath(path, arena);
         defer arena.free(path_segments);
 
+        var best_match: ?RouteMatch = null;
+        var best_literal_count: usize = 0;
+        var best_param_count: usize = std.math.maxInt(usize);
+        var best_order: usize = std.math.maxInt(usize);
+
         for (self.routes.items) |route| {
             if (route.method != method) continue;
-            if (route.pattern.segments.len != path_segments.len) continue;
 
             var params = std.StringHashMap([]const u8).init(arena);
-
             var matched = true;
-            for (route.pattern.segments, path_segments) |segment, path_seg| {
+            var path_index: usize = 0;
+
+            segments_loop: for (route.pattern.segments, 0..) |segment, seg_index| {
                 switch (segment) {
                     .literal => |lit| {
-                        if (!std.mem.eql(u8, lit, path_seg)) {
+                        if (path_index >= path_segments.len or !std.mem.eql(u8, lit, path_segments[path_index])) {
                             matched = false;
-                            break;
+                            break :segments_loop;
                         }
+                        path_index += 1;
                     },
                     .param => |param_name| {
-                        try params.put(param_name, path_seg);
+                        if (path_index >= path_segments.len) {
+                            matched = false;
+                            break :segments_loop;
+                        }
+                        try params.put(param_name, path_segments[path_index]);
+                        path_index += 1;
+                    },
+                    .wildcard => |param_name| {
+                        const remaining = path_segments[path_index..];
+                        const joined = try joinSegments(arena, remaining);
+                        try params.put(param_name, joined);
+                        path_index = path_segments.len;
+                        if (seg_index != route.pattern.segments.len - 1) {
+                            matched = false;
+                        }
+                        break :segments_loop;
                     },
                 }
             }
 
-            if (matched) {
-                return RouteMatch{
+            if (!matched) continue;
+            if (path_index != path_segments.len) continue;
+
+            const literal_count = route.pattern.literal_count;
+            const param_count = route.pattern.segments.len - route.pattern.literal_count;
+            const order = route.order;
+
+            var take_match = false;
+            if (best_match == null) {
+                take_match = true;
+            } else if (literal_count > best_literal_count) {
+                take_match = true;
+            } else if (literal_count == best_literal_count) {
+                if (param_count < best_param_count) {
+                    take_match = true;
+                } else if (param_count == best_param_count and order < best_order) {
+                    take_match = true;
+                }
+            }
+
+            if (take_match) {
+                best_match = RouteMatch{
                     .spec = route.spec,
                     .params = params,
                 };
+                best_literal_count = literal_count;
+                best_param_count = param_count;
+                best_order = order;
             }
         }
 
-        return null;
+        return best_match;
     }
 
     /// Compile a path pattern into segments.
@@ -140,9 +188,11 @@ pub const Router = struct {
 
         var literal_count: usize = 0;
 
+        var wildcard_seen = false;
         var it = std.mem.splitSequence(u8, path, "/");
         while (it.next()) |seg| {
             if (seg.len == 0) continue; // skip empty segments from leading/trailing /
+            if (wildcard_seen) return error.InvalidRoutePattern;
 
             if (std.mem.startsWith(u8, seg, ":")) {
                 const param_name = seg[1..];
@@ -150,6 +200,13 @@ pub const Router = struct {
                 const param_dup = try self.allocator.dupe(u8, param_name);
                 try segments.append(self.allocator, .{ .param = param_dup });
                 try param_names.append(self.allocator, param_dup);
+            } else if (std.mem.startsWith(u8, seg, "*")) {
+                const param_name = seg[1..];
+                if (param_name.len == 0) return error.InvalidRoutePattern;
+                const param_dup = try self.allocator.dupe(u8, param_name);
+                try segments.append(self.allocator, .{ .wildcard = param_dup });
+                try param_names.append(self.allocator, param_dup);
+                wildcard_seen = true;
             } else {
                 // Duplicate literal segments to ensure they survive beyond the original path slice
                 const lit_dup = try self.allocator.dupe(u8, seg);
@@ -183,6 +240,30 @@ pub const Router = struct {
         return arena.dupe([]const u8, segments.items);
     }
 
+    fn joinSegments(arena: std.mem.Allocator, segments: [][]const u8) ![]const u8 {
+        if (segments.len == 0) {
+            return "";
+        }
+
+        var total: usize = segments.len - 1;
+        for (segments) |seg| {
+            total += seg.len;
+        }
+
+        var buffer = try arena.alloc(u8, total);
+        var index: usize = 0;
+        for (segments, 0..) |seg, i| {
+            if (i != 0) {
+                buffer[index] = '/';
+                index += 1;
+            }
+            std.mem.copyForwards(u8, buffer[index .. index + seg.len], seg);
+            index += seg.len;
+        }
+
+        return buffer;
+    }
+
     /// Sort routes by priority: longest-literal first, then fewer params, then order.
     fn sortRoutes(self: *Router) void {
         const routes = self.routes.items;
@@ -202,8 +283,8 @@ pub const Router = struct {
             return a_params < b_params;
         }
 
-        // Declaration order (this sort is stable, so original order is preserved)
-        return false;
+        // Preserve declaration order for ties.
+        return a.order < b.order;
     }
 };
 
@@ -253,4 +334,3 @@ pub fn testRouter() !void {
 
     slog.info("Router tests completed successfully", &.{});
 }
-

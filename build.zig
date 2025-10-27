@@ -67,6 +67,22 @@ fn addLibuv(b: *std.Build, artifact: *std.Build.Step.Compile) void {
     }
 }
 
+fn addTimedTestRun(
+    b: *std.Build,
+    timeout_runner: *std.Build.Step.Compile,
+    artifact: *std.Build.Step.Compile,
+    parents: []const *std.Build.Step,
+) *std.Build.Step.Run {
+    const run = b.addRunArtifact(timeout_runner);
+    run.has_side_effects = true;
+    run.stdio = .inherit;
+    run.addArtifactArg(artifact);
+    for (parents) |parent| {
+        parent.dependOn(&run.step);
+    }
+    return run;
+}
+
 pub fn build(b: *std.Build) void {
     // Check Zig version compatibility (build-time check)
     comptime {
@@ -119,8 +135,18 @@ pub fn build(b: *std.Build) void {
     zerver_mod.addCMacro("_WIN32_WINNT", "0x0A00");
     zerver_mod.addCMacro("_CRT_DECLARE_NONSTDC_NAMES", "0");
 
+    const timeout_runner = b.addExecutable(.{
+        .name = "test_timeout_runner",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("tools/test_timeout_runner.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+
     // Development helper steps
     const test_step = b.step("test", "Run all tests");
+    const integration_step = b.step("integration_tests", "Run integration test suite");
     const reqtest_suite = b.addTest(.{
         .root_module = b.createModule(.{
             .root_source_file = b.path("tests/reqtest_runner.zig"),
@@ -129,8 +155,7 @@ pub fn build(b: *std.Build) void {
         }),
     });
     reqtest_suite.root_module.addImport("zerver", zerver_mod);
-    const reqtest_run = b.addRunArtifact(reqtest_suite);
-    test_step.dependOn(&reqtest_run.step);
+    _ = addTimedTestRun(b, timeout_runner, reqtest_suite, &.{test_step});
 
     const libuv_smoke = b.addExecutable(.{
         .name = "libuv_smoke",
@@ -142,10 +167,10 @@ pub fn build(b: *std.Build) void {
     });
     libuv_smoke.linkLibC();
     addLibuv(b, libuv_smoke);
-    const libuv_smoke_run = b.addRunArtifact(libuv_smoke);
-    test_step.dependOn(&libuv_smoke_run.step);
     const libuv_smoke_step = b.step("libuv_smoke", "Run the libuv smoke test");
-    libuv_smoke_step.dependOn(&libuv_smoke_run.step);
+    _ = addTimedTestRun(b, timeout_runner, libuv_smoke, &.{ test_step, libuv_smoke_step });
+
+    const reactor_tests_step = b.step("reactor_tests", "Run reactor unit tests");
 
     const join_tests = b.addTest(.{
         .root_module = b.createModule(.{
@@ -155,9 +180,7 @@ pub fn build(b: *std.Build) void {
         }),
     });
     join_tests.root_module.addImport("zerver", zerver_mod);
-    const join_tests_run = b.addRunArtifact(join_tests);
-    const reactor_tests_step = b.step("reactor_tests", "Run reactor unit tests");
-    reactor_tests_step.dependOn(&join_tests_run.step);
+    _ = addTimedTestRun(b, timeout_runner, join_tests, &.{reactor_tests_step});
 
     const job_tests = b.addTest(.{
         .root_module = b.createModule(.{
@@ -167,8 +190,7 @@ pub fn build(b: *std.Build) void {
         }),
     });
     job_tests.root_module.addImport("zerver", zerver_mod);
-    const job_tests_run = b.addRunArtifact(job_tests);
-    reactor_tests_step.dependOn(&job_tests_run.step);
+    _ = addTimedTestRun(b, timeout_runner, job_tests, &.{reactor_tests_step});
 
     const effectors_tests = b.addTest(.{
         .root_module = b.createModule(.{
@@ -180,8 +202,7 @@ pub fn build(b: *std.Build) void {
     effectors_tests.root_module.addImport("zerver", zerver_mod);
     effectors_tests.linkLibC();
     addLibuv(b, effectors_tests);
-    const effectors_tests_run = b.addRunArtifact(effectors_tests);
-    reactor_tests_step.dependOn(&effectors_tests_run.step);
+    _ = addTimedTestRun(b, timeout_runner, effectors_tests, &.{reactor_tests_step});
 
     const saga_tests = b.addTest(.{
         .root_module = b.createModule(.{
@@ -191,8 +212,7 @@ pub fn build(b: *std.Build) void {
         }),
     });
     saga_tests.root_module.addImport("zerver", zerver_mod);
-    const saga_tests_run = b.addRunArtifact(saga_tests);
-    reactor_tests_step.dependOn(&saga_tests_run.step);
+    _ = addTimedTestRun(b, timeout_runner, saga_tests, &.{reactor_tests_step});
 
     const task_system_tests = b.addTest(.{
         .root_module = b.createModule(.{
@@ -202,8 +222,7 @@ pub fn build(b: *std.Build) void {
         }),
     });
     task_system_tests.root_module.addImport("zerver", zerver_mod);
-    const task_system_tests_run = b.addRunArtifact(task_system_tests);
-    reactor_tests_step.dependOn(&task_system_tests_run.step);
+    _ = addTimedTestRun(b, timeout_runner, task_system_tests, &.{reactor_tests_step});
 
     const fmt_step = b.step("fmt", "Format all Zig files");
     const fmt_cmd = b.addSystemCommand(&[_][]const u8{ "zig", "fmt", "." });
@@ -255,10 +274,45 @@ pub fn build(b: *std.Build) void {
         }),
     });
     reqtest_runner.root_module.addImport("zerver", zerver_mod);
-    test_step.dependOn(&b.addRunArtifact(reqtest_runner).step);
+    _ = addTimedTestRun(b, timeout_runner, reqtest_runner, &.{test_step});
+
+    const rfc9110_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("tests/integration/rfc9110_semantics_test.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    rfc9110_tests.root_module.addImport("zerver", zerver_mod);
+    rfc9110_tests.linkLibC();
+    addLibuv(b, rfc9110_tests);
+    _ = addTimedTestRun(b, timeout_runner, rfc9110_tests, &.{ test_step, integration_step });
+
+    const rfc9112_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("tests/integration/rfc9112_message_format_test.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    rfc9112_tests.root_module.addImport("zerver", zerver_mod);
+    rfc9112_tests.linkLibC();
+    addLibuv(b, rfc9112_tests);
+    _ = addTimedTestRun(b, timeout_runner, rfc9112_tests, &.{ test_step, integration_step });
+
+    const router_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("tests/integration/router_functionality_test.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    router_tests.root_module.addImport("zerver", zerver_mod);
+    router_tests.linkLibC();
+    addLibuv(b, router_tests);
+    _ = addTimedTestRun(b, timeout_runner, router_tests, &.{ test_step, integration_step });
     // teams_run_cmd.step.dependOn(b.getInstallStep());
 
     // const teams_run_step = b.step("run_teams", "Run the teams example on port 8081");
     // teams_run_step.dependOn(&teams_run_cmd.step);
 }
-

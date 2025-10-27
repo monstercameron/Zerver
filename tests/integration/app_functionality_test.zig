@@ -1,285 +1,195 @@
 // tests/integration/app_functionality_test.zig
 const std = @import("std");
 const zerver = @import("../../src/zerver/root.zig");
-const test_harness = @import("test_harness.zig");
+const common = @import("common.zig");
+
+const TestServer = common.TestServer;
+const withServer = common.withServer;
+const addRouteStep = common.addRouteStep;
+const expectStartsWith = common.expectStartsWith;
+const expectContains = common.expectContains;
+const expectEndsWith = common.expectEndsWith;
+
+fn appListenStartsServer(server: *TestServer, allocator: std.mem.Allocator) !void {
+    const response = try server.handle(
+        allocator,
+        "GET / HTTP/1.1\r\n" ++ "Host: localhost\r\n" ++ "\r\n",
+    );
+    defer allocator.free(response);
+    try expectStartsWith(response, "HTTP/1.1 404 Not Found");
+}
+
+fn appHandleBasicRequest(server: *TestServer, allocator: std.mem.Allocator) !void {
+    try addRouteStep(server, .GET, "/hello", "hello", struct {
+        fn handler(ctx: *zerver.CtxBase) !zerver.Decision {
+            _ = ctx;
+            return zerver.done(.{ .body = .{ .complete = "Hello, Zerver!" } });
+        }
+    }.handler);
+
+    const response = try server.handle(
+        allocator,
+        "GET /hello HTTP/1.1\r\n" ++ "Host: localhost\r\n" ++ "\r\n",
+    );
+    defer allocator.free(response);
+
+    try expectStartsWith(response, "HTTP/1.1 200 OK");
+    try expectContains(response, "Hello, Zerver!");
+}
+
+fn appHandlesErrorsGracefully(server: *TestServer, allocator: std.mem.Allocator) !void {
+    try addRouteStep(server, .GET, "/error", "error_step", struct {
+        fn handler(ctx: *zerver.CtxBase) !zerver.Decision {
+            _ = ctx;
+            return error.SimulatedError;
+        }
+    }.handler);
+
+    const response = try server.handle(
+        allocator,
+        "GET /error HTTP/1.1\r\n" ++ "Host: localhost\r\n" ++ "\r\n",
+    );
+    defer allocator.free(response);
+    try expectStartsWith(response, "HTTP/1.1 500 Internal Server Error");
+}
+
+fn appRegistersGlobalMiddleware(server: *TestServer, allocator: std.mem.Allocator) !void {
+    try server.useStep("middleware", struct {
+        fn handler(ctx: *zerver.CtxBase) !zerver.Decision {
+            try ctx.slotPutString(0, "middleware");
+            return zerver.next();
+        }
+    }.handler);
+
+    try addRouteStep(server, .GET, "/test", "test", struct {
+        fn handler(ctx: *zerver.CtxBase) !zerver.Decision {
+            const marker = ctx.slotGetString(0) orelse "missing";
+            return zerver.done(.{ .body = .{ .complete = marker } });
+        }
+    }.handler);
+
+    const response = try server.handle(
+        allocator,
+        "GET /test HTTP/1.1\r\n" ++ "Host: localhost\r\n" ++ "\r\n",
+    );
+    defer allocator.free(response);
+
+    try expectStartsWith(response, "HTTP/1.1 200 OK");
+    try expectEndsWith(response, "middleware");
+}
+
+fn appMiddlewareOrder(server: *TestServer, allocator: std.mem.Allocator) !void {
+    try server.useStep("first", struct {
+        fn handler(ctx: *zerver.CtxBase) !zerver.Decision {
+            try ctx.slotPutString(0, "1");
+            return zerver.next();
+        }
+    }.handler);
+
+    try server.useStep("second", struct {
+        fn handler(ctx: *zerver.CtxBase) !zerver.Decision {
+            const prev = ctx.slotGetString(0) orelse "";
+            const combined = try std.fmt.allocPrint(ctx.allocator, "{s}2", .{prev});
+            try ctx.slotPutString(0, combined);
+            return zerver.next();
+        }
+    }.handler);
+
+    try addRouteStep(server, .GET, "/test", "handler", struct {
+        fn handler(ctx: *zerver.CtxBase) !zerver.Decision {
+            const prev = ctx.slotGetString(0) orelse "";
+            const combined = try std.fmt.allocPrint(ctx.allocator, "{s}3", .{prev});
+            return zerver.done(.{ .body = .{ .complete = combined } });
+        }
+    }.handler);
+
+    const response = try server.handle(
+        allocator,
+        "GET /test HTTP/1.1\r\n" ++ "Host: localhost\r\n" ++ "\r\n",
+    );
+    defer allocator.free(response);
+
+    try expectStartsWith(response, "HTTP/1.1 200 OK");
+    try expectEndsWith(response, "123");
+}
+
+fn appAddRoutePerMethod(server: *TestServer, allocator: std.mem.Allocator) !void {
+    try addRouteStep(server, .GET, "/specific", "specific_get", struct {
+        fn handler(ctx: *zerver.CtxBase) !zerver.Decision {
+            _ = ctx;
+            return zerver.done(.{ .body = .{ .complete = "GET specific" } });
+        }
+    }.handler);
+
+    try addRouteStep(server, .POST, "/specific", "specific_post", struct {
+        fn handler(ctx: *zerver.CtxBase) !zerver.Decision {
+            _ = ctx;
+            return zerver.done(.{ .body = .{ .complete = "POST specific" } });
+        }
+    }.handler);
+
+    const get_response = try server.handle(
+        allocator,
+        "GET /specific HTTP/1.1\r\n" ++ "Host: localhost\r\n" ++ "\r\n",
+    );
+    defer allocator.free(get_response);
+    try expectContains(get_response, "GET specific");
+
+    const post_response = try server.handle(
+        allocator,
+        "POST /specific HTTP/1.1\r\n" ++ "Host: localhost\r\n" ++ "Content-Length: 0\r\n" ++ "\r\n",
+    );
+    defer allocator.free(post_response);
+    try expectContains(post_response, "POST specific");
+}
+
+fn appDuplicateRoute(server: *TestServer, allocator: std.mem.Allocator) !void {
+    try addRouteStep(server, .GET, "/duplicate", "first_handler", struct {
+        fn handler(ctx: *zerver.CtxBase) !zerver.Decision {
+            _ = ctx;
+            return zerver.done(.{ .body = .{ .complete = "first" } });
+        }
+    }.handler);
+
+    try addRouteStep(server, .GET, "/duplicate", "second_handler", struct {
+        fn handler(ctx: *zerver.CtxBase) !zerver.Decision {
+            _ = ctx;
+            return zerver.done(.{ .body = .{ .complete = "second" } });
+        }
+    }.handler);
+
+    const response = try server.handle(
+        allocator,
+        "GET /duplicate HTTP/1.1\r\n" ++ "Host: localhost\r\n" ++ "\r\n",
+    );
+    defer allocator.free(response);
+    try expectContains(response, "second");
+}
 
 test "App - listen starts server" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    const allocator = gpa.allocator();
-    defer _ = gpa.deinit();
-
-    var server = try test_harness.createTestServer(allocator);
-    defer server.deinit();
-
-    // This test primarily checks that listen doesn't throw an error and can be deinitialized.
-    // Actual network listening would require a more complex setup with a client.
-    // For now, we assume if it starts and stops without error, it's working.
-    try server.listen();
-    // No explicit expect here, as the lack of an error is the success condition.
+    try withServer(appListenStartsServer);
 }
 
 test "App - handle basic request and response" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    const allocator = gpa.allocator();
-    defer _ = gpa.deinit();
-
-    var server = try test_harness.createTestServer(allocator);
-    defer server.deinit();
-
-    try server.addRoute(.GET, "/hello", .{
-        .steps = &.{ 
-            zerver.step("hello", struct {
-                fn handler(ctx: *zerver.Ctx) !zerver.Decision {
-                    _ = ctx;
-                    return zerver.done(.{ .body = .{ .complete = "Hello, Zerver!" } });
-                }
-            }.handler),
-        },
-    });
-
-    const request_text = 
-        GET /hello HTTP/1.1
-
-        Host: localhost
-
-        
-
-    ;
-
-    const response_text = try server.handleRequest(request_text, allocator);
-    try std.testing.expect(std.mem.startsWith(u8, response_text, "HTTP/1.1 200 OK"));
-    try std.testing.expect(std.mem.contains(u8, response_text, "Hello, Zerver!"));
+    try withServer(appHandleBasicRequest);
 }
 
 test "App - handle errors gracefully" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    const allocator = gpa.allocator();
-    defer _ = gpa.deinit();
-
-    var server = try test_harness.createTestServer(allocator);
-    defer server.deinit();
-
-    try server.addRoute(.GET, "/error", .{
-        .steps = &.{ 
-            zerver.step("error_step", struct {
-                fn handler(ctx: *zerver.Ctx) !zerver.Decision {
-                    _ = ctx;
-                    return error.SimulatedError;
-                }
-            }.handler),
-        },
-    });
-
-    const request_text = 
-        GET /error HTTP/1.1
-
-        Host: localhost
-
-        
-
-    ;
-
-    const response_text = try server.handleRequest(request_text, allocator);
-    try std.testing.expect(std.mem.startsWith(u8, response_text, "HTTP/1.1 500 Internal Server Error"));
+    try withServer(appHandlesErrorsGracefully);
 }
 
 test "App - use registers global middleware" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    const allocator = gpa.allocator();
-    defer _ = gpa.deinit();
-
-    var server = try test_harness.createTestServer(allocator);
-    defer server.deinit();
-
-    var middleware_ran: bool = false;
-    try server.use(struct {
-        fn handler(ctx: *zerver.Ctx) !zerver.Decision {
-            _ = ctx;
-            middleware_ran = true;
-            return zerver.next();
-        }
-    }.handler);
-
-    try server.addRoute(.GET, "/test", .{
-        .steps = &.{ 
-            zerver.step("test", struct {
-                fn handler(ctx: *zerver.Ctx) !zerver.Decision {
-                    _ = ctx;
-                    return zerver.done(.{ .body = .{ .complete = "ok" } });
-                }
-            }.handler),
-        },
-    });
-
-    const request_text = 
-        GET /test HTTP/1.1
-
-        Host: localhost
-
-        
-
-    ;
-
-    _ = try server.handleRequest(request_text, allocator);
-    try std.testing.expect(middleware_ran);
+    try withServer(appRegistersGlobalMiddleware);
 }
 
 test "App - use executes middleware in correct order" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    const allocator = gpa.allocator();
-    defer _ = gpa.deinit();
-
-    var server = try test_harness.createTestServer(allocator);
-    defer server.deinit();
-
-    var order: std.ArrayList(u8) = std.ArrayList(u8).init(allocator);
-    defer order.deinit();
-
-    try server.use(struct {
-        fn handler(ctx: *zerver.Ctx) !zerver.Decision {
-            _ = ctx;
-            try order.append('1');
-            return zerver.next();
-        }
-    }.handler);
-
-    try server.use(struct {
-        fn handler(ctx: *zerver.Ctx) !zerver.Decision {
-            _ = ctx;
-            try order.append('2');
-            return zerver.next();
-        }
-    }.handler);
-
-    try server.addRoute(.GET, "/test", .{
-        .steps = &.{ 
-            zerver.step("test", struct {
-                fn handler(ctx: *zerver.Ctx) !zerver.Decision {
-                    _ = ctx;
-                    try order.append('3');
-                    return zerver.done(.{ .body = .{ .complete = "ok" } });
-                }
-            }.handler),
-        },
-    });
-
-    const request_text = 
-        GET /test HTTP/1.1
-
-        Host: localhost
-
-        
-
-    ;
-
-    _ = try server.handleRequest(request_text, allocator);
-    try std.testing.expectEqualStrings("123", order.items);
+    try withServer(appMiddlewareOrder);
 }
 
 test "App - addRoute registers route for specific method and path" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    const allocator = gpa.allocator();
-    defer _ = gpa.deinit();
-
-    var server = try test_harness.createTestServer(allocator);
-    defer server.deinit();
-
-    try server.addRoute(.GET, "/specific", .{
-        .steps = &.{ 
-            zerver.step("specific_get", struct {
-                fn handler(ctx: *zerver.Ctx) !zerver.Decision {
-                    _ = ctx;
-                    return zerver.done(.{ .body = .{ .complete = "GET specific" } });
-                }
-            }.handler),
-        },
-    });
-
-    try server.addRoute(.POST, "/specific", .{
-        .steps = &.{ 
-            zerver.step("specific_post", struct {
-                fn handler(ctx: *zerver.Ctx) !zerver.Decision {
-                    _ = ctx;
-                    return zerver.done(.{ .body = .{ .complete = "POST specific" } });
-                }
-            }.handler),
-        },
-    });
-
-    // Test GET
-    var request_text_get = 
-        GET /specific HTTP/1.1
-
-        Host: localhost
-
-        
-
-    ;
-
-    var response_text_get = try server.handleRequest(request_text_get, allocator);
-    try std.testing.expect(std.mem.contains(u8, response_text_get, "GET specific"));
-
-    // Test POST
-    var request_text_post = 
-        POST /specific HTTP/1.1
-
-        Host: localhost
-
-        Content-Length: 0
-
-        
-
-    ;
-
-    var response_text_post = try server.handleRequest(request_text_post, allocator);
-    try std.testing.expect(std.mem.contains(u8, response_text_post, "POST specific"));
+    try withServer(appAddRoutePerMethod);
 }
 
 test "App - addRoute handles duplicate routes correctly" {
-    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    const allocator = gpa.allocator();
-    defer _ = gpa.deinit();
-
-    var server = try test_harness.createTestServer(allocator);
-    defer server.deinit();
-
-    try server.addRoute(.GET, "/duplicate", .{
-        .steps = &.{ 
-            zerver.step("first_handler", struct {
-                fn handler(ctx: *zerver.Ctx) !zerver.Decision {
-                    _ = ctx;
-                    return zerver.done(.{ .body = .{ .complete = "first" } });
-                }
-            }.handler),
-        },
-    });
-
-    // Adding a duplicate route should ideally overwrite or error, depending on design.
-    // For now, we expect the first one to be hit, or a graceful error.
-    // Assuming the framework allows overwriting or the first one takes precedence.
-    try server.addRoute(.GET, "/duplicate", .{
-        .steps = &.{ 
-            zerver.step("second_handler", struct {
-                fn handler(ctx: *zerver.Ctx) !zerver.Decision {
-                    _ = ctx;
-                    return zerver.done(.{ .body = .{ .complete = "second" } });
-                }
-            }.handler),
-        },
-    });
-
-    const request_text = 
-        GET /duplicate HTTP/1.1
-
-        Host: localhost
-
-        
-
-    ;
-
-    const response_text = try server.handleRequest(request_text, allocator);
-    // Depending on Zerver's routing implementation, this might be 'first' or 'second'.
-    // Assuming 'first' takes precedence or it's an error.
-    // For now, let's expect 'first' if it's a simple first-match wins.
-    try std.testing.expect(std.mem.contains(u8, response_text, "first"));
+    try withServer(appDuplicateRoute);
 }
