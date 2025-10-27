@@ -11,12 +11,6 @@ jobs:
     strategy:
       matrix:
         include:
-          - os: ubuntu-latest
-            artifact_name: zerver-example-linux
-            artifact_path: zig-out/bin/zerver_example
-          - os: macos-latest
-            artifact_name: zerver-example-macos
-            artifact_path: zig-out/bin/zerver_example
           - os: windows-latest
             artifact_name: zerver-example-windows
             artifact_path: zig-out/bin/zerver_example.exe
@@ -38,9 +32,43 @@ jobs:
             ${{ runner.os }}-zig-
 
       - name: Install Zig
-        uses: ziglang/setup-zig@v1
+        uses: mlugg/setup-zig@v1
         with:
-          zig-version: 0.15.2
+          version: 0.15.2
+
+      # - name: Check Semantic Version Bump
+      #   id: check_semver
+      #   run: |
+      #     # Determine base commit for comparison
+      #     $baseCommit = ""
+      #     if ("${{ github.event_name }}" -eq "push") {
+      #       $baseCommit = "HEAD^"
+      #     } else {
+      #       $baseCommit = "origin/${{ github.base_ref }}"
+      #     }
+
+      #     # Get previous version from config.json in base commit
+      #     $previousConfig = git show "$baseCommit`:config.json"
+      #     $previousVersion = (ConvertFrom-Json $previousConfig).project.version
+
+      #     # Get current version from config.json
+      #     $currentConfig = Get-Content config.json | Out-String
+      #     $currentVersion = (ConvertFrom-Json $currentConfig).project.version
+
+      #     Write-Host "Previous version: $previousVersion" -ForegroundColor Yellow
+      #     Write-Host "Current version: $currentVersion" -ForegroundColor Yellow
+
+      #     # Compare versions using PowerShell's [version] type
+      #     if ($currentVersion -eq $previousVersion) {
+      #       Write-Host "Error: Version has not been bumped!" -ForegroundColor Red
+      #       exit 1
+      #     } elseif ([version]$currentVersion -lt [version]$previousVersion) {
+      #       Write-Host "Error: Current version is less than previous version!" -ForegroundColor Red
+      #       exit 1
+      #     } else {
+      #       Write-Host "Version successfully bumped." -ForegroundColor Green
+      #     }
+      #   shell: pwsh
 
       - name: Build (ReleaseSafe)
         run: zig build -Doptimize=ReleaseSafe
@@ -57,3 +85,38 @@ jobs:
           name: ${{ matrix.artifact_name }}
           path: ${{ matrix.artifact_path }}
           if-no-files-found: error
+
+  release:
+    needs: build # This job depends on the 'build' job
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main' # Only run on push to main
+    runs-on: ubuntu-latest # Use ubuntu for release job, as it's common for release actions
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Get version from config.json
+        id: get_version
+        run: |
+          VERSION=$(jq -r '.project.version' config.json)
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+        shell: bash
+
+      - name: Download executable artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: zerver-example-windows # Name of the artifact uploaded by the build job
+          path: ./release_assets # Directory to download the artifact to
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: v${{ env.VERSION }}
+          name: Release v${{ env.VERSION }}
+          body: |
+            Automated release for version ${{ env.VERSION }}.
+            See the [CHANGELOG](CHANGELOG.md) for details.
+          draft: false
+          prerelease: false
+          files: ./release_assets/* # Upload all files in the release_assets directory
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # This token is automatically provided by GitHub

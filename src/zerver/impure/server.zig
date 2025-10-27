@@ -280,7 +280,7 @@ pub const Server = struct {
                         },
                     }, arena, false, false, "", null) };
                 },
-                error.InvalidRequest, error.InvalidMethod, error.UnsupportedVersion, error.InvalidUri, error.UserinfoNotAllowed => {
+                error.InvalidRequest, error.InvalidMethod, error.UnsupportedVersion, error.InvalidUri, error.UserinfoNotAllowed, error.InvalidHeaderFieldName => {
                     return ResponseResult{ .complete = try self.httpResponse(.{
                         .status = http_status.bad_request,
                         .body = .{ .complete = "Bad Request" },
@@ -289,7 +289,7 @@ pub const Server = struct {
                         },
                     }, arena, false, false, "", null) };
                 },
-                error.MultipleContentLength, error.InvalidContentLength, error.ContentLengthMismatch, error.UnexpectedBody, error.ContentLengthRequired, error.InvalidPercentEncoding => {
+                error.MultipleContentLength, error.InvalidContentLength, error.ContentLengthMismatch, error.UnexpectedBody, error.ContentLengthRequired, error.InvalidPercentEncoding, error.InvalidChunkedEncoding, error.TransferEncodingConflict, error.TrailerFieldNotDeclared => {
                     return ResponseResult{ .complete = try self.httpResponse(.{
                         .status = http_status.bad_request,
                         .body = .{ .complete = "Bad Request: Invalid request format" },
@@ -473,11 +473,15 @@ pub const Server = struct {
 
         // Parse request line: "GET /path HTTP/1.1"
         const request_line = lines.next() orelse return error.InvalidRequest;
-        var request_parts = std.mem.splitSequence(u8, request_line, " ");
+        var request_parts = std.mem.tokenizeScalar(u8, request_line, ' ');
 
         const method_str = request_parts.next() orelse return error.InvalidRequest;
         const path_str = request_parts.next() orelse return error.InvalidRequest;
         const version_str = request_parts.next() orelse return error.InvalidRequest;
+
+        if (request_parts.next() != null) {
+            return error.InvalidRequest;
+        }
 
         // RFC 9110 Section 2.5 - Parse and validate HTTP version
         if (!std.mem.eql(u8, version_str, "HTTP/1.1")) {
@@ -508,25 +512,25 @@ pub const Server = struct {
         while (lines.next()) |line| {
             if (line.len == 0) break; // Empty line = end of headers
 
-            if (std.mem.indexOfScalar(u8, line, ':')) |colon_idx| {
-                // RFC 9110 Section 5.1 - Field names are case-insensitive
-                const header_name_raw = line[0..colon_idx];
-                const header_name = try std.ascii.allocLowerString(arena, header_name_raw);
-                // TODO: Perf - Lower-casing each header allocates per field; normalize in-place over the request buffer when possible.
+            const colon_idx = std.mem.indexOfScalar(u8, line, ':') orelse return error.InvalidHeaderFieldName;
 
-                // RFC 9110 Section 5.6.3 - Trim OWS (optional whitespace) around field value
-                const header_value_raw = line[colon_idx + 1 ..];
-                const header_value = std.mem.trim(u8, header_value_raw, " \t");
-                // TODO: RFC 9110 Section 5.5, 5.6 - Implement full parsing of HTTP header field values, including quoted strings, comments, and specific ABNF rules for various header types.
-
-                // RFC 9110 Section 5.3 - Multiple header fields with same name
-                // Get or create the list for this header name
-                const gop = try headers.getOrPut(header_name);
-                if (!gop.found_existing) {
-                    gop.value_ptr.* = try std.ArrayList([]const u8).initCapacity(arena, 1);
-                }
-                try gop.value_ptr.append(arena, header_value);
+            const header_name_raw = line[0..colon_idx];
+            const header_name_trimmed = std.mem.trim(u8, header_name_raw, " \t");
+            if (header_name_trimmed.len == 0 or header_name_trimmed.len != header_name_raw.len) {
+                return error.InvalidHeaderFieldName;
             }
+            try validateHeaderFieldName(header_name_trimmed);
+            const header_name = try std.ascii.allocLowerString(arena, header_name_trimmed);
+
+            const header_value_raw = line[colon_idx + 1 ..];
+            const header_value_trimmed = std.mem.trim(u8, header_value_raw, " \t");
+            const header_value = try arena.dupe(u8, header_value_trimmed);
+
+            const gop = try headers.getOrPut(header_name);
+            if (!gop.found_existing) {
+                gop.value_ptr.* = try std.ArrayList([]const u8).initCapacity(arena, 1);
+            }
+            try gop.value_ptr.append(arena, header_value);
         }
 
         // RFC 9110 Section 7.2 - HTTP/1.1 requires Host header
@@ -560,12 +564,38 @@ pub const Server = struct {
             }
         }
 
+        if (has_transfer_encoding and content_length != null) {
+            return error.TransferEncodingConflict;
+        }
+
+        var allowed_trailer_storage: std.StringHashMap(void) = undefined;
+        var allowed_trailers: ?*std.StringHashMap(void) = null;
+
+        if (headers.get("trailer")) |trailer_values| {
+            allowed_trailer_storage = std.StringHashMap(void).init(arena);
+
+            for (trailer_values.items) |raw_value| {
+                var name_it = std.mem.splitSequence(u8, raw_value, ",");
+                while (name_it.next()) |segment| {
+                    const trimmed = std.mem.trim(u8, segment, " \t");
+                    if (trimmed.len == 0) continue;
+                    try validateHeaderFieldName(trimmed);
+                    const lower = try std.ascii.allocLowerString(arena, trimmed);
+                    try allowed_trailer_storage.put(lower, {});
+                }
+            }
+
+            if (allowed_trailer_storage.count() != 0) {
+                allowed_trailers = &allowed_trailer_storage;
+            }
+        }
+
         // RFC 9110 Section 6.4 - Validate message body framing
         var body: []const u8 = "";
 
         if (has_transfer_encoding) {
             // RFC 9112 Section 6 - Parse chunked encoding
-            body = try self.parseChunkedBody(raw_body, arena);
+            body = try self.parseChunkedBody(raw_body, arena, &headers, allowed_trailers);
         } else if (content_length) |cl| {
             // Content-Length specified - body must be exactly this length
             if (raw_body.len != cl) {
@@ -732,6 +762,22 @@ pub const Server = struct {
         }
     }
 
+    fn validateHeaderFieldName(name: []const u8) !void {
+        if (name.len == 0) return error.InvalidHeaderFieldName;
+        for (name) |ch| {
+            if (!isTchar(ch)) {
+                return error.InvalidHeaderFieldName;
+            }
+        }
+    }
+
+    fn isTchar(ch: u8) bool {
+        return switch (ch) {
+            '0'...'9', 'A'...'Z', 'a'...'z', '!', '#', '$', '%', '&', '\'', '*', '+', '-', '.', '^', '_', '`', '|', '~' => true,
+            else => false,
+        };
+    }
+
     /// Determine if connection should be kept alive per RFC 9112 Section 9
     fn shouldKeepAlive(self: *Server, headers: std.StringHashMap(std.ArrayList([]const u8))) bool {
         _ = self;
@@ -861,52 +907,73 @@ pub const Server = struct {
     }
 
     /// Parse chunked transfer encoding per RFC 9112 Section 6
-    fn parseChunkedBody(self: *Server, raw_body: []const u8, arena: std.mem.Allocator) ![]const u8 {
+    fn parseChunkedBody(
+        self: *Server,
+        raw_body: []const u8,
+        arena: std.mem.Allocator,
+        headers: *std.StringHashMap(std.ArrayList([]const u8)),
+        allowed_trailers: ?*std.StringHashMap(void),
+    ) ![]const u8 {
         _ = self;
 
         var result = try std.ArrayList(u8).initCapacity(arena, 0);
         var pos: usize = 0;
 
         while (pos < raw_body.len) {
-            // Find the end of the chunk size line (CRLF)
             const line_end = std.mem.indexOfPos(u8, raw_body, pos, "\r\n") orelse return error.InvalidChunkedEncoding;
             const chunk_size_line = raw_body[pos..line_end];
 
-            // Parse chunk size (hexadecimal)
-            var chunk_size: usize = 0;
-            var size_end: usize = 0;
-
-            // Skip chunk extensions if present
+            var size_section = chunk_size_line;
             if (std.mem.indexOfScalar(u8, chunk_size_line, ';')) |semicolon_pos| {
-                size_end = semicolon_pos;
-            } else {
-                size_end = chunk_size_line.len;
+                size_section = chunk_size_line[0..semicolon_pos];
             }
 
-            const size_str = std.mem.trim(u8, chunk_size_line[0..size_end], " \t");
-            chunk_size = std.fmt.parseInt(usize, size_str, 16) catch return error.InvalidChunkedEncoding;
+            const size_str = std.mem.trim(u8, size_section, " \t");
+            if (size_str.len == 0) return error.InvalidChunkedEncoding;
+            const chunk_size = std.fmt.parseInt(usize, size_str, 16) catch return error.InvalidChunkedEncoding;
 
-            // Move past the chunk size line
             pos = line_end + 2;
 
-            // If chunk size is 0, this is the last chunk
             if (chunk_size == 0) {
-                // Skip trailer headers (field-line CRLF until empty line)
-                // TODO: RFC 9110 Section 6.5, RFC 9112 Section 6.5 - Implement parsing and processing of Trailer Fields.
                 while (pos < raw_body.len) {
                     const trailer_end = std.mem.indexOfPos(u8, raw_body, pos, "\r\n") orelse return error.InvalidChunkedEncoding;
                     if (trailer_end == pos) {
-                        // Empty line after trailers
                         pos = trailer_end + 2;
                         break;
                     }
-                    // Skip trailer header line
+
+                    const trailer_line = raw_body[pos..trailer_end];
+                    const colon_idx = std.mem.indexOfScalar(u8, trailer_line, ':') orelse return error.InvalidChunkedEncoding;
+
+                    const name_raw = trailer_line[0..colon_idx];
+                    const name_trimmed = std.mem.trim(u8, name_raw, " \t");
+                    if (name_trimmed.len == 0 or name_trimmed.len != name_raw.len) {
+                        return error.InvalidChunkedEncoding;
+                    }
+                    try validateHeaderFieldName(name_trimmed);
+                    const name_lower = try std.ascii.allocLowerString(arena, name_trimmed);
+
+                    if (allowed_trailers) |allowed| {
+                        if (!allowed.contains(name_lower)) {
+                            return error.TrailerFieldNotDeclared;
+                        }
+                    }
+
+                    const value_raw = trailer_line[colon_idx + 1 ..];
+                    const value_trimmed = std.mem.trim(u8, value_raw, " \t");
+                    const value_dup = try arena.dupe(u8, value_trimmed);
+
+                    const gop = try headers.getOrPut(name_lower);
+                    if (!gop.found_existing) {
+                        gop.value_ptr.* = try std.ArrayList([]const u8).initCapacity(arena, 1);
+                    }
+                    try gop.value_ptr.append(arena, value_dup);
+
                     pos = trailer_end + 2;
                 }
                 break;
             }
 
-            // Read chunk data
             if (pos + chunk_size + 2 > raw_body.len) {
                 return error.InvalidChunkedEncoding;
             }
@@ -914,7 +981,10 @@ pub const Server = struct {
             const chunk_data = raw_body[pos .. pos + chunk_size];
             try result.appendSlice(arena, chunk_data);
 
-            // Skip the trailing CRLF after chunk data
+            if (pos + chunk_size + 2 > raw_body.len or !std.mem.eql(u8, raw_body[pos + chunk_size .. pos + chunk_size + 2], "\r\n")) {
+                return error.InvalidChunkedEncoding;
+            }
+
             pos += chunk_size + 2;
         }
 
@@ -1402,4 +1472,3 @@ pub const Server = struct {
         }
     }
 };
-

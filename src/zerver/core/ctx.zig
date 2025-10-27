@@ -97,7 +97,25 @@ pub const CtxBase = struct {
     }
 
     pub fn header(self: *CtxBase, name: []const u8) ?[]const u8 {
-        return self.headers.get(name);
+        if (name.len == 0) return null;
+
+        var stack_buf: [64]u8 = undefined;
+
+        if (name.len <= stack_buf.len) {
+            for (name, 0..) |ch, idx| {
+                stack_buf[idx] = std.ascii.toLower(ch);
+            }
+            return self.headers.get(stack_buf[0..name.len]);
+        }
+
+        const tmp = self.allocator.alloc(u8, name.len) catch return null;
+        defer self.allocator.free(tmp);
+
+        for (name, 0..) |ch, idx| {
+            tmp[idx] = std.ascii.toLower(ch);
+        }
+
+        return self.headers.get(tmp);
     }
     // TODO(perf): Normalize header names during parse so lookups avoid hashing multiple casings per request.
 
@@ -431,4 +449,3 @@ pub fn CtxView(comptime spec: anytype) type {
         }
     };
 }
-

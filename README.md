@@ -1,5 +1,8 @@
 # Zerver
 
+![Build Status](https://github.com/monstercameron/Zerver/workflows/Build/badge.svg)
+![GitHub release (latest SemVer)](https://img.shields.io/github/v/release/monstercameron/Zerver?sort=semver)
+
 **Zerver is a backend framework for Zig that gives you X-ray vision into your API. It's built on the idea that observability isn't a feature you add later—it's the architecture.**
 
 ---

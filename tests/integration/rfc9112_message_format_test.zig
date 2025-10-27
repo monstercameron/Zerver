@@ -1,20 +1,81 @@
 // tests/integration/rfc9112_message_format_test.zig
 const std = @import("std");
 const zerver = @import("../../src/zerver/root.zig");
-const test_harness = @import("test_harness.zig");
+
+const HarnessError = error{ UnexpectedStreamingResponse };
+
+const TestServer = struct {
+    allocator: std.mem.Allocator,
+    server: zerver.Server,
+
+    pub fn init(allocator: std.mem.Allocator) !TestServer {
+        const default_effect_handler = struct {
+            fn handle(_: *const zerver.Effect, _: u32) anyerror!zerver.types.EffectResult {
+                const empty = [_]u8{};
+                return .{ .success = .{ .bytes = @constCast(empty[0..]), .allocator = null } };
+            }
+        }.handle;
+
+        const default_error_renderer = struct {
+            fn render(ctx: *zerver.CtxBase) anyerror!zerver.Decision {
+                _ = ctx;
+                return zerver.done(.{ .status = 500, .body = .{ .complete = "Internal Server Error" } });
+            }
+        }.render;
+
+        const config = zerver.Config{
+            .addr = .{ .ip = .{ 127, 0, 0, 1 }, .port = 8080 },
+            .on_error = default_error_renderer,
+        };
+
+        var server = try zerver.Server.init(allocator, config, default_effect_handler);
+
+        return TestServer{
+            .allocator = allocator,
+            .server = server,
+        };
+    }
+
+    pub fn deinit(self: *TestServer) void {
+        self.server.deinit();
+    }
+
+    pub fn addRoute(self: *TestServer, method: zerver.Method, path: []const u8, spec: zerver.RouteSpec) !void {
+        try self.server.addRoute(method, path, spec);
+    }
+
+    pub fn handle(self: *TestServer, allocator: std.mem.Allocator, request_text: []const u8) ![]u8 {
+        var arena = std.heap.ArenaAllocator.init(allocator);
+        defer arena.deinit();
+
+        const result = try self.server.handleRequest(request_text, arena.allocator());
+        return switch (result) {
+            .complete => |bytes| try allocator.dupe(u8, bytes),
+            .streaming => HarnessError.UnexpectedStreamingResponse,
+        };
+    }
+};
+
+fn expectStartsWith(response: []const u8, prefix: []const u8) !void {
+    try std.testing.expect(std.mem.startsWith(u8, response, prefix));
+}
+
+fn expectEndsWith(response: []const u8, suffix: []const u8) !void {
+    try std.testing.expect(std.mem.endsWith(u8, response, suffix));
+}
 
 test "Request Line - Valid" {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    const allocator = gpa.allocator();
     defer _ = gpa.deinit();
+    const allocator = gpa.allocator();
 
-    var server = try test_harness.createTestServer(allocator);
+    var server = try TestServer.init(allocator);
     defer server.deinit();
 
     try server.addRoute(.GET, "/test", .{
-        .steps = &.{ 
+        .steps = &.{
             zerver.step("test", struct {
-                fn handler(ctx: *zerver.Ctx) !zerver.Decision {
+                fn handler(ctx: *zerver.CtxBase) !zerver.Decision {
                     _ = ctx;
                     return zerver.done(.{ .body = .{ .complete = "ok" } });
                 }
@@ -22,90 +83,82 @@ test "Request Line - Valid" {
         },
     });
 
-    const request_text = 
-        GET /test HTTP/1.1
+    const request_text =
+        "GET /test HTTP/1.1\r\n"
+        ++ "Host: localhost\r\n"
+        ++ "\r\n";
 
-        Host: localhost
-
-        
-    ;
-
-    const response_text = try server.handleRequest(request_text, allocator);
-    try std.testing.expect(std.mem.startsWith(u8, response_text, "HTTP/1.1 200 OK"));
+    const response_text = try server.handle(allocator, request_text);
+    defer allocator.free(response_text);
+    try expectStartsWith(response_text, "HTTP/1.1 200 OK");
 }
 
 test "Request Line - Invalid Method" {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    const allocator = gpa.allocator();
     defer _ = gpa.deinit();
+    const allocator = gpa.allocator();
 
-    var server = try test_harness.createTestServer(allocator);
+    var server = try TestServer.init(allocator);
     defer server.deinit();
 
-    const request_text = 
-        INVALID /test HTTP/1.1
+    const request_text =
+        "INVALID /test HTTP/1.1\r\n"
+        ++ "Host: localhost\r\n"
+        ++ "\r\n";
 
-        Host: localhost
-
-        
-    ;
-
-    const response_text = try server.handleRequest(request_text, allocator);
+    const response_text = try server.handle(allocator, request_text);
+    defer allocator.free(response_text);
     try std.testing.expect(std.mem.startsWith(u8, response_text, "HTTP/1.1 400 Bad Request"));
 }
 
 test "Request Line - Missing Path" {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    const allocator = gpa.allocator();
     defer _ = gpa.deinit();
+    const allocator = gpa.allocator();
 
-    var server = try test_harness.createTestServer(allocator);
+    var server = try TestServer.init(allocator);
     defer server.deinit();
 
-    const request_text = 
-        GET HTTP/1.1
+    const request_text =
+        "GET HTTP/1.1\r\n"
+        ++ "Host: localhost\r\n"
+        ++ "\r\n";
 
-        Host: localhost
-
-        
-    ;
-
-    const response_text = try server.handleRequest(request_text, allocator);
+    const response_text = try server.handle(allocator, request_text);
+    defer allocator.free(response_text);
     try std.testing.expect(std.mem.startsWith(u8, response_text, "HTTP/1.1 400 Bad Request"));
 }
 
 test "Request Line - Missing Version" {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    const allocator = gpa.allocator();
     defer _ = gpa.deinit();
+    const allocator = gpa.allocator();
 
-    var server = try test_harness.createTestServer(allocator);
+    var server = try TestServer.init(allocator);
     defer server.deinit();
 
-    const request_text = 
-        GET /test
+    const request_text =
+        "GET /test\r\n"
+        ++ "Host: localhost\r\n"
+        ++ "\r\n";
 
-        Host: localhost
-
-        
-    ;
-
-    const response_text = try server.handleRequest(request_text, allocator);
+    const response_text = try server.handle(allocator, request_text);
+    defer allocator.free(response_text);
     try std.testing.expect(std.mem.startsWith(u8, response_text, "HTTP/1.1 400 Bad Request"));
 }
 
 test "Request Line - Extra Whitespace" {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-    const allocator = gpa.allocator();
     defer _ = gpa.deinit();
+    const allocator = gpa.allocator();
 
-    var server = try test_harness.createTestServer(allocator);
+    var server = try TestServer.init(allocator);
     defer server.deinit();
 
     try server.addRoute(.GET, "/test", .{
-        .steps = &.{ 
+        .steps = &.{
             zerver.step("test", struct {
-                fn handler(ctx: *zerver.Ctx) !zerver.Decision {
+                fn handler(ctx: *zerver.CtxBase) !zerver.Decision {
                     _ = ctx;
                     return zerver.done(.{ .body = .{ .complete = "ok" } });
                 }
@@ -113,15 +166,13 @@ test "Request Line - Extra Whitespace" {
         },
     });
 
-    const request_text = 
-        GET    /test   HTTP/1.1
+    const request_text =
+        "GET    /test   HTTP/1.1\r\n"
+        ++ "Host: localhost\r\n"
+        ++ "\r\n";
 
-        Host: localhost
-
-        
-    ;
-
-    const response_text = try server.handleRequest(request_text, allocator);
+    const response_text = try server.handle(allocator, request_text);
+    defer allocator.free(response_text);
     try std.testing.expect(std.mem.startsWith(u8, response_text, "HTTP/1.1 200 OK"));
 }
 
