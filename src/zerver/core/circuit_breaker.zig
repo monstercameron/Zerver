@@ -57,6 +57,7 @@ pub const CircuitBreaker = struct {
     /// Check if a request should be allowed
     pub fn canExecute(self: *@This()) bool {
         const now = std.time.milliTimestamp();
+        // TODO: Perf - Fetch monotonic time once per loop iteration and pass it in to avoid repeated syscalls for every canExecute call.
 
         return switch (self.stats.state) {
             .Closed => true,
@@ -68,6 +69,7 @@ pub const CircuitBreaker = struct {
     /// Record a successful execution
     pub fn recordSuccess(self: *@This()) void {
         const now = std.time.milliTimestamp();
+        // TODO: Perf - Consider batching consecutive successes/failures instead of touching atomics/maps on every call.
 
         switch (self.stats.state) {
             .Closed => {
@@ -91,6 +93,7 @@ pub const CircuitBreaker = struct {
     /// Record a failed execution
     pub fn recordFailure(self: *@This()) void {
         const now = std.time.milliTimestamp();
+        // TODO: Perf - Replace std.time.milliTimestamp with a cached monotonic timestamp to cut syscall overhead in hot failure paths.
         self.stats.last_failure_time = now;
 
         switch (self.stats.state) {
@@ -201,7 +204,9 @@ pub const CircuitBreakerPool = struct {
             timeout_ms,
         );
 
+        // TODO: Leak - circuit breaker pool stores the key slice by reference. Duplicate service_name when inserting so callers can pass temporary strings safely.
         try self.breakers.put(service_name, new_breaker);
+        // TODO: Leak - if put fails, new_breaker.name is never freed; add errdefer before insert.
         return self.breakers.getPtr(service_name).?;
     }
 

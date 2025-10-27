@@ -97,13 +97,18 @@ const ReactorNeedRunner = struct {
         });
 
         if (self.outstanding == 0) {
-            if (self.telemetry_ctx) |t| {
-                t.stepResume(self.need_sequence, @intFromPtr(self.need.continuation), self.need.mode, self.need.join);
+            if (self.need.continuation) |continuation| {
+                if (self.telemetry_ctx) |t| {
+                    t.stepResume(self.need_sequence, @intFromPtr(continuation), self.need.mode, self.need.join);
+                }
+                slog.debug("reactor_need_immediate_resume", &.{
+                    slog.Attr.uint("need_seq", @as(u64, @intCast(self.need_sequence))),
+                });
+                return self.executor.executeStepInternal(self.ctx_base, continuation, self.depth + 1);
+            } else {
+                // No continuation - proceed to next step in pipeline
+                return .Continue;
             }
-            slog.debug("reactor_need_immediate_resume", &.{
-                slog.Attr.uint("need_seq", @as(u64, @intCast(self.need_sequence))),
-            });
-            return self.executor.executeStepInternal(self.ctx_base, self.need.continuation, self.depth + 1);
         }
 
         var index: usize = 0;
@@ -161,14 +166,19 @@ const ReactorNeedRunner = struct {
 
         slog.debug("reactor_need_resume_ready", &.{
             slog.Attr.uint("need_seq", @as(u64, @intCast(self.need_sequence))),
-            slog.Attr.uint("step_ptr", @as(u64, @intCast(@intFromPtr(self.need.continuation)))),
+            slog.Attr.uint("step_ptr", if (self.need.continuation) |c| @intFromPtr(c) else 0),
         });
 
         if (self.task_system) |ts| {
             return try self.resumeStepViaTaskSystem(ts);
         }
 
-        return self.executor.executeStepInternal(self.ctx_base, self.need.continuation, self.depth + 1);
+        if (self.need.continuation) |continuation| {
+            return self.executor.executeStepInternal(self.ctx_base, continuation, self.depth + 1);
+        } else {
+            // No continuation - proceed to next step in pipeline
+            return .Continue;
+        }
     }
 
     fn scheduleEffect(self: *ReactorNeedRunner, effect_ptr: *const types.Effect) !void {
@@ -610,25 +620,28 @@ fn stepJobCallback(ctx_ptr: *anyopaque) void {
         });
     }
 
-    const decision = runner.executor.executeStepInternal(runner.ctx_base, runner.need.continuation, runner.depth + 1) catch |err| {
-        const failure = failFromCrash(runner.executor, runner.ctx_base, "step", err, runner.depth + 1);
-        slog.err("reactor_step_job_crash", &.{
-            slog.Attr.uint("need_seq", @as(u64, @intCast(runner.need_sequence))),
-            slog.Attr.string("error", @errorName(err)),
-        });
-        runner.markStepJobComplete(job_ctx);
-        if (runner.telemetry_ctx) |t| {
-            t.stepJobCompleted(.{
-                .need_sequence = runner.need_sequence,
-                .job_ctx = @intFromPtr(job_ctx),
-                .queue = queue_label,
-                .worker_index = worker_index_value,
-                .decision = @tagName(failure),
+    const decision = if (runner.need.continuation) |continuation|
+        runner.executor.executeStepInternal(runner.ctx_base, continuation, runner.depth + 1) catch |err| {
+            const failure = failFromCrash(runner.executor, runner.ctx_base, "step", err, runner.depth + 1);
+            slog.err("reactor_step_job_crash", &.{
+                slog.Attr.uint("need_seq", @as(u64, @intCast(runner.need_sequence))),
+                slog.Attr.string("error", @errorName(err)),
             });
+            runner.markStepJobComplete(job_ctx);
+            if (runner.telemetry_ctx) |t| {
+                t.stepJobCompleted(.{
+                    .need_sequence = runner.need_sequence,
+                    .job_ctx = @intFromPtr(job_ctx),
+                    .queue = queue_label,
+                    .worker_index = worker_index_value,
+                    .decision = @tagName(failure),
+                });
+            }
+            runner.finishStep(failure);
+            return;
         }
-        runner.finishStep(failure);
-        return;
-    };
+    else
+        types.Decision.Continue;
 
     runner.markStepJobComplete(job_ctx);
     if (runner.telemetry_ctx) |t| {
@@ -935,12 +948,16 @@ pub const Executor = struct {
             }
         }
 
-        // Call the continuation function
-        if (self.telemetry_ctx) |t| {
-            t.stepResume(need_sequence, @intFromPtr(need.continuation), need.mode, need.join);
+        // Call the continuation function if present
+        if (need.continuation) |continuation| {
+            if (self.telemetry_ctx) |t| {
+                t.stepResume(need_sequence, @intFromPtr(continuation), need.mode, need.join);
+            }
+            return self.executeStepInternal(ctx_base, continuation, depth + 1);
+        } else {
+            // No continuation - proceed to next step in pipeline
+            return .Continue;
         }
-
-        return self.executeStepInternal(ctx_base, need.continuation, depth + 1);
     }
 
     fn maybeExecuteNeedViaReactor(

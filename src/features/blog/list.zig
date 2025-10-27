@@ -194,7 +194,11 @@ pub fn step_load_blog_posts(ctx: *zerver.CtxBase) !zerver.Decision {
     const effects = try util.singleEffect(ctx, .{
         .db_get = .{ .key = "posts", .token = slotId(.PostList), .required = true },
     });
-    return .{ .need = .{ .effects = effects, .mode = .Sequential, .join = .all, .continuation = continuation_render_blog_list_page } };
+    return .{ .need = .{ .effects = effects, .mode = .Sequential, .join = .all } };
+}
+
+pub fn step_render_blog_list_page(ctx: *zerver.CtxBase) !zerver.Decision {
+    return continuation_render_blog_list_page(ctx);
 }
 
 fn continuation_render_blog_list_page(ctx: *zerver.CtxBase) !zerver.Decision {
@@ -249,7 +253,11 @@ pub fn step_load_blog_post_cards(ctx: *zerver.CtxBase) !zerver.Decision {
     const effects = try util.singleEffect(ctx, .{
         .db_get = .{ .key = "posts", .token = slotId(.PostList), .required = true },
     });
-    return .{ .need = .{ .effects = effects, .mode = .Sequential, .join = .all, .continuation = continuation_render_blog_post_cards } };
+    return .{ .need = .{ .effects = effects, .mode = .Sequential, .join = .all } };
+}
+
+pub fn step_render_blog_post_cards(ctx: *zerver.CtxBase) !zerver.Decision {
+    return continuation_render_blog_post_cards(ctx);
 }
 
 fn continuation_render_blog_post_cards(ctx: *zerver.CtxBase) !zerver.Decision {
@@ -280,7 +288,11 @@ pub fn step_load_single_blog_post_card(ctx: *zerver.CtxBase) !zerver.Decision {
     const effects = try util.singleEffect(ctx, .{
         .db_get = .{ .key = effect_key, .token = slotId(.PostJson), .required = true },
     });
-    return .{ .need = .{ .effects = effects, .mode = .Sequential, .join = .all, .continuation = continuation_render_single_blog_post_card } };
+    return .{ .need = .{ .effects = effects, .mode = .Sequential, .join = .all } };
+}
+
+pub fn step_render_single_blog_post_card(ctx: *zerver.CtxBase) !zerver.Decision {
+    return continuation_render_single_blog_post_card(ctx);
 }
 
 fn continuation_render_single_blog_post_card(ctx: *zerver.CtxBase) !zerver.Decision {
@@ -349,7 +361,11 @@ pub fn step_load_blog_post_page(ctx: *zerver.CtxBase) !zerver.Decision {
     const effects = try util.singleEffect(ctx, .{
         .db_get = .{ .key = effect_key, .token = slotId(.PostJson), .required = true },
     });
-    return .{ .need = .{ .effects = effects, .mode = .Sequential, .join = .all, .continuation = continuation_render_blog_post_page } };
+    return .{ .need = .{ .effects = effects, .mode = .Sequential, .join = .all } };
+}
+
+pub fn step_render_blog_post_page(ctx: *zerver.CtxBase) !zerver.Decision {
+    return continuation_render_blog_post_page(ctx);
 }
 
 fn continuation_render_blog_post_page(ctx: *zerver.CtxBase) !zerver.Decision {

@@ -5,6 +5,8 @@ const JSON_HEADERS = [_]zerver.types.Header{
     .{ .name = "Cache-Control", .value = "no-store" },
 };
 
+// TODO: The shared headers are not flexible. Consider allowing modification of headers on a per-response basis.
+
 const HTML_HEADERS = [_]zerver.types.Header{
     .{ .name = "Content-Type", .value = "text/html; charset=utf-8" },
     .{ .name = "Cache-Control", .value = "no-store" },

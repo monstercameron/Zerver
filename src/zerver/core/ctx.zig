@@ -21,7 +21,8 @@ pub const CtxBase = struct {
     // Request data
     method_str: []const u8,
     path_str: []const u8,
-    headers: std.StringHashMap([]const u8), // TODO: RFC 9110 - Ensure robust parsing of headers (Section 5) in server.zig, including handling of multiple header fields and quoted strings.
+    headers: std.StringHashMap([]const u8), // TODO: RFC 9110 Section 5.2 - The 'headers' field should support multiple values for the same field name. The current implementation uses a StringHashMap which only allows one value per field. // TODO: RFC 9110 - Ensure robust parsing of headers (Section 5) in server.zig, including handling of multiple header fields and quoted strings.
+    // TODO: RFC 9110 Section 5.5 - Field values can contain characters other than ASCII. The current implementation assumes ASCII. This should be updated to handle other character sets, for example by using UTF-8.
     // TODO: Logical Error - The 'headers' field in CtxBase is 'std.StringHashMap([]const u8)', but ParsedRequest.headers (and server.zig's parsing) uses 'std.StringHashMap(std.ArrayList([]const u8))'. This type mismatch needs to be resolved for consistency.
     params: std.StringHashMap([]const u8), // path parameters like /todos/:id
     query: std.StringHashMap([]const u8),
@@ -65,6 +66,7 @@ pub const CtxBase = struct {
     }
 
     pub fn deinit(self: *CtxBase) void {
+        // TODO: Leak - request_id/user_sub may point to duped allocations (ensureRequestId) and never get freed; clean them up here.
         self.slots.deinit();
         self.exit_cbs.deinit(self.allocator);
         self.trace_events.deinit(self.allocator);
@@ -84,6 +86,7 @@ pub const CtxBase = struct {
     pub fn header(self: *CtxBase, name: []const u8) ?[]const u8 {
         return self.headers.get(name);
     }
+    // TODO: Perf - Normalize header names once during parse so lookups avoid hashing multiple casings per request.
 
     pub fn param(self: *CtxBase, name: []const u8) ?[]const u8 {
         return self.params.get(name);
@@ -102,6 +105,7 @@ pub const CtxBase = struct {
 
         var buf: [32]u8 = undefined;
         const generated = std.fmt.bufPrint(&buf, "{d}", .{std.time.nanoTimestamp()}) catch return;
+        // TODO: Perf - Switch to a cheaper ID source (e.g. incrementing counter + base36) to avoid formatting overhead on hot paths.
         self.request_id = self.allocator.dupe(u8, generated) catch return;
     }
 
@@ -134,6 +138,10 @@ pub const CtxBase = struct {
         // Format the message using the provided format string and args
         var buf: [1024]u8 = undefined;
         // TODO: Safety/Memory - The fixed-size buffer in logDebug might lead to truncation or errors for very long log messages. Consider using an allocator for dynamic sizing or a larger buffer.
+        // TODO: Safety/Memory - The fixed-size buffer in logDebug might lead to truncation or errors for very long log messages. Consider using an allocator for dynamic sizing or a larger buffer.
+        // TODO: Safety/Memory - The fixed-size buffer in logDebug might lead to truncation or errors for very long log messages. Consider using an allocator for dynamic sizing or a larger buffer.
+        // TODO: Safety/Memory - The fixed-size buffer in logDebug might lead to truncation or errors for very long log messages. Consider using an allocator for dynamic sizing or a larger buffer.
+        // TODO: Perf - Cache a scratch buffer per-thread to avoid repeatedly zeroing 1KB on every debug log.
         const message = std.fmt.bufPrint(&buf, fmt, args) catch fmt;
 
         // Create attributes for structured logging
@@ -182,6 +190,8 @@ pub const CtxBase = struct {
     /// Format a string using arena allocator (result valid for request lifetime)
     pub fn bufFmt(self: *CtxBase, comptime fmt: []const u8, args: anytype) []const u8 {
         var buf: [4096]u8 = undefined;
+        // TODO: Safety/Memory - The fixed-size buffer in bufFmt might lead to truncation or errors for very long log messages. Consider using a resizing buffer or checking the formatted length before printing.
+        // TODO: Safety/Memory - The fixed-size buffer in bufFmt might lead to truncation or errors for very long log messages. Consider using a resizing buffer or checking the formatted length before printing.
         const formatted = std.fmt.bufPrint(&buf, fmt, args) catch return "";
         return self.allocator.dupe(u8, formatted) catch return "";
     }
@@ -189,6 +199,9 @@ pub const CtxBase = struct {
     /// Generate a new unique ID (simple timestamp-based for now)
     pub fn newId(self: *CtxBase) []const u8 {
         var buf: [32]u8 = undefined;
+        // TODO: Safety/Memory - The fixed-size buffer in newId is not guaranteed to be large enough for the timestamp. This could lead to buffer overflows if the timestamp string is larger than 32 bytes.
+        // TODO: Safety/Memory - The fixed-size buffer in newId is not guaranteed to be large enough for the timestamp. This could lead to buffer overflows if the timestamp string is larger than 32 bytes.
+        // TODO: Logical Error - The 'newId' function's fixed-size buffer and 'catch "0"' fallback can lead to non-unique IDs if the timestamp string overflows the buffer. This needs to be handled more robustly to ensure ID uniqueness.
         // TODO: Logical Error - The 'newId' function's fixed-size buffer and 'catch "0"' fallback can lead to non-unique IDs if the timestamp string overflows the buffer. This needs to be handled more robustly to ensure ID uniqueness.
         const id = std.fmt.bufPrint(&buf, "{d}", .{std.time.nanoTimestamp()}) catch "0";
         return self.allocator.dupe(u8, id) catch "0";
@@ -288,6 +301,7 @@ pub const CtxBase = struct {
 
     /// Parse request body as JSON into the given type
     pub fn json(self: *CtxBase, comptime T: type) !T {
+        // TODO: Safety - std.json.parseFromSlice returns a value that owns allocations and needs parsed.deinit(); right now we leak the tree on every call.
         const parsed = try std.json.parseFromSlice(T, self.allocator, self.body, .{});
         return parsed.value;
     }

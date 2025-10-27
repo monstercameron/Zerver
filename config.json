@@ -1,4 +1,10 @@
 {
+  "project": {
+    "name": "Zerver",
+    "version": "0.1.0",
+    "description": "Zerver is a backend framework for Zig that gives you X-ray vision into your API. It's built on the idea that observability isn't a feature you add later—it's the architecture.",
+    "repository": "https://github.com/monstercameron/Zerver"
+  },
   "database": {
     "driver": "sqlite",
     "path": "resources/blog.db",

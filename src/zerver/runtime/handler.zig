@@ -28,13 +28,17 @@ pub fn readRequestWithTimeout(
     timeout_ms: u32,
 ) ![]u8 {
     var req_buf = std.ArrayList(u8).initCapacity(allocator, 4096) catch unreachable;
+    // TODO: Leak - add errdefer req_buf.deinit(allocator) so early error paths don't orphan the buffer allocations.
     // TODO: Safety - Replace 'catch unreachable' with proper error propagation or handling for allocation failures in readRequestWithTimeout to prevent crashes.
+    // TODO: Safety - Replace 'catch unreachable' with proper error propagation or handling for allocation failures in readRequestWithTimeout to prevent crashes.
+    // TODO: RFC 9110 Section 5.4 - The 'max_size' (4096 bytes) in readRequestWithTimeout is an arbitrary limit for headers. If headers exceed this, it should result in a 413 "Content Too Large" or 431 "Request Header Fields Too Large" error.
     // TODO: Logical Error - The 'max_size' (4096 bytes) in readRequestWithTimeout is an arbitrary limit for headers. If headers exceed this, it results in 'error.InvalidRequest'. Consider handling this as a '413 Payload Too Large' or a more specific error, and ensure this limit is configurable or documented.
 
     var read_buf: [256]u8 = undefined;
     const max_size = 4096;
     const start_time = std.time.milliTimestamp();
 
+    // TODO: RFC 9110 Section 5.5 - The parser should reject messages containing CTL characters like CR, LF, or NUL within field values to prevent request smuggling attacks.
     // Phase 1: Read headers until \r\n\r\n
     var headers_complete = false;
     while (req_buf.items.len < max_size and !headers_complete) {
@@ -218,6 +222,7 @@ fn readChunkedBody(
 
         if (chunk_size == 0) {
             // Last chunk - read until we have the final \r\n\r\n (trailers + final CRLF)
+            // TODO: RFC 9112 Section 7.1.2 - Implement parsing of trailer fields. The current implementation reads until the final CRLF but does not process the trailers.
             while (!std.mem.endsWith(u8, req_buf.items, "\r\n\r\n")) {
                 const bytes_read = try readWithTimeout(connection, &read_buf, timeout_ms, start_time);
                 if (bytes_read == 0) return error.ConnectionClosed;
@@ -246,6 +251,7 @@ fn readChunkedBody(
 
         // TODO: Bug - After consuming this chunk we never advance body_start/req_buf to the next chunk,
         // so multi-chunk payloads keep reprocessing the same data and will spin or time out.
+        // TODO: RFC 9112 Section 7.1 - A malformed chunk size line (e.g., empty) should be treated as an error rather than causing a potential infinite loop.
     }
 }
 
@@ -324,6 +330,7 @@ pub fn sendResponse(
     response: []const u8,
 ) !void {
     // TODO: RFC 9110/9112 - Ensure proper HTTP/1.1 message framing for responses, including support for Transfer-Encoding (e.g., chunked encoding) if applicable (RFC 9112 Section 6).
+    // TODO: RFC 9112 Section 6 - This function should automatically handle response framing by adding Content-Length or Transfer-Encoding: chunked headers based on the response body.
     // TODO: SSE - Implement a mechanism for streaming responses, allowing incremental writing of data for Server-Sent Events (HTML Living Standard).
     const preview_len = @min(response.len, 120);
     slog.debug("Sending HTTP response", &.{
@@ -335,6 +342,7 @@ pub fn sendResponse(
         slog.err("Response write error", &.{
             slog.Attr.string("error", @errorName(err)),
         });
+        // TODO: Bug - We swallow the write failure and still report success to callers, leaving them unaware that the response never went out.
         // TODO: Bug - We swallow the write failure and still report success to callers, leaving them unaware that the response never went out.
     };
 }
@@ -365,6 +373,8 @@ pub fn sendErrorResponse(
     status: []const u8,
     message: []const u8,
 ) !void {
+    // TODO: Safety/Memory - The fixed-size buffer in sendErrorResponse might lead to truncation or errors for long status/message strings. Consider using an allocator for dynamic sizing.
+    // TODO: Safety/Memory - The fixed-size buffer in sendErrorResponse might lead to truncation or errors for long status/message strings. Consider using an allocator for dynamic sizing.
     // TODO: Safety/Memory - The fixed-size buffer in sendErrorResponse might lead to truncation or errors for long status/message strings. Consider using an allocator for dynamic sizing.
     var buf: [512]u8 = undefined;
     const response = try std.fmt.bufPrint(&buf, "HTTP/1.1 {s}\r\nContent-Type: text/plain\r\nContent-Length: {d}\r\n\r\n{s}", .{
