@@ -173,7 +173,6 @@ pub const CtxBase = struct {
         // TODO: Safety/Memory - The fixed-size buffer in logDebug might lead to truncation or errors for very long log messages. Consider using an allocator for dynamic sizing or a larger buffer.
         // TODO: Safety/Memory - The fixed-size buffer in logDebug might lead to truncation or errors for very long log messages. Consider using an allocator for dynamic sizing or a larger buffer.
         // TODO: Safety/Memory - The fixed-size buffer in logDebug might lead to truncation or errors for very long log messages. Consider using an allocator for dynamic sizing or a larger buffer.
-        // TODO: Perf - Cache a scratch buffer per-thread to avoid repeatedly zeroing 1KB on every debug log.
         const message = std.fmt.bufPrint(&buf, fmt, args) catch fmt;
 
         // Create attributes for structured logging
@@ -306,9 +305,52 @@ pub const CtxBase = struct {
 
     /// Store a value in a slot (internal use; typed access via CtxView)
     pub fn _put(self: *CtxBase, comptime slot_id: u32, value: anytype) !void {
+        // Normalize string-like values so reads using []const u8 see the expected slice.
+        if (comptime isStringLike(@TypeOf(value))) {
+            const slice = toConstSlice(value);
+            const duped = try self.allocator.dupe(u8, slice);
+            const slice_ptr = try self.allocator.create([]const u8);
+            slice_ptr.* = duped;
+            try self.slots.put(slot_id, @ptrCast(slice_ptr));
+            return;
+        }
+
         const value_ptr = try self.allocator.create(@TypeOf(value));
         value_ptr.* = value;
         try self.slots.put(slot_id, @ptrCast(value_ptr));
+    }
+
+    fn isStringLike(comptime T: type) bool {
+        const info = @typeInfo(T);
+        switch (info) {
+            .pointer => |ptr_info| {
+                const child_info = @typeInfo(ptr_info.child);
+                if (child_info == .array) {
+                    return child_info.array.child == u8;
+                }
+                return false;
+            },
+            .array => |array_info| {
+                return array_info.child == u8;
+            },
+            else => return false,
+        }
+    }
+
+    fn toConstSlice(value: anytype) []const u8 {
+        const info = @typeInfo(@TypeOf(value));
+        switch (info) {
+            .pointer => |ptr_info| {
+                const child_info = @typeInfo(ptr_info.child);
+                if (child_info == .array) {
+                    const array_info = child_info.array;
+                    return value.*[0..array_info.len];
+                }
+                unreachable;
+            },
+            .array => |array_info| return value[0..array_info.len],
+            else => unreachable,
+        }
     }
 
     /// Retrieve a value from a slot (internal use; typed access via CtxView)

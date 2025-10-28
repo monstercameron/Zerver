@@ -34,14 +34,16 @@ pub const ErrorRenderer = struct {
             // TODO: Bug - Fallback path omits Content-Type headers so clients see a 500 with no indication of payload format.
         };
         // TODO: Perf - Pool reusable buffers for error rendering instead of allocating a fresh ArrayList each time.
-        defer buf.deinit();
+        defer buf.deinit(allocator);
 
-        const writer = buf.writer();
-        try writer.print("{{\"error\":{{\"code\":{},\"what\":", .{error_val.kind});
-        try escapeJsonString(&writer, error_val.ctx.what);
+        const writer = buf.writer(allocator);
+        try writer.writeAll("{\"error\":{\"code\":");
+        try writer.print("{}", .{error_val.kind});
+        try writer.writeAll(",\"what\":");
+        try escapeJsonString(writer, error_val.ctx.what);
         try writer.writeAll(",\"key\":");
-        try escapeJsonString(&writer, error_val.ctx.key);
-        try writer.writeAll("}}}");
+        try escapeJsonString(writer, error_val.ctx.key);
+        try writer.writeAll("}}");
 
         const body = try allocator.dupe(u8, buf.items);
 
@@ -114,4 +116,3 @@ pub fn testErrorRenderer() !void {
         slog.Attr.string("body", response.body),
     });
 }
-

@@ -51,3 +51,4 @@ pub fn errmsgSlice(db: *sqlite3) []const u8 {
     return std.mem.sliceTo(sqlite3_errmsg(db), 0);
 }
 
+// No direct unit test found in tests/unit/

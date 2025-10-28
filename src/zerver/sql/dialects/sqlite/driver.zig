@@ -320,4 +320,4 @@ fn connectionFromHandle(handle: db.ConnectionHandle) *ConnectionState {
 fn statementFromHandle(handle: db.StatementHandle) *StatementState {
     return @ptrCast(@alignCast(handle));
 }
-
+// No direct unit test found in tests/unit/

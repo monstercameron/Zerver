@@ -17,3 +17,4 @@ pub const Dialect = struct {
     features: FeatureFlags,
 };
 
+// No direct unit test found in tests/unit/

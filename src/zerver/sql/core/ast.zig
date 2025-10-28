@@ -43,3 +43,4 @@ pub const Query = union(enum) {
     select: SelectQuery,
 };
 
+// No direct unit test found in tests/unit/

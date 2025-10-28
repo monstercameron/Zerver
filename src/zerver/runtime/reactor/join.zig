@@ -114,3 +114,4 @@ pub const JoinState = struct {
     }
 };
 
+// Covered by unit test: tests/unit/reactor_join.zig

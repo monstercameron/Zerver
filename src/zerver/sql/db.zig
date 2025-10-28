@@ -359,3 +359,4 @@ pub fn openWithDriver(driver: *const Driver, allocator: std.mem.Allocator, optio
     };
 }
 
+// No direct unit test found in tests/unit/

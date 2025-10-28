@@ -135,6 +135,17 @@ pub fn build(b: *std.Build) void {
     zerver_mod.addCMacro("_WIN32_WINNT", "0x0A00");
     zerver_mod.addCMacro("_CRT_DECLARE_NONSTDC_NAMES", "0");
 
+    const runtime_config_mod = b.createModule(.{
+        .root_source_file = b.path("src/zerver/runtime/config.zig"),
+    });
+
+    zerver_mod.addImport("runtime_config", runtime_config_mod);
+
+    const bootstrap_helpers_mod = b.createModule(.{
+        .root_source_file = b.path("src/zerver/bootstrap_helpers.zig"),
+    });
+    bootstrap_helpers_mod.addImport("runtime_config", runtime_config_mod);
+
     const timeout_runner = b.addExecutable(.{
         .name = "test_timeout_runner",
         .root_module = b.createModule(.{
@@ -203,6 +214,179 @@ pub fn build(b: *std.Build) void {
     effectors_tests.linkLibC();
     addLibuv(b, effectors_tests);
     _ = addTimedTestRun(b, timeout_runner, effectors_tests, &.{reactor_tests_step});
+
+    const util_helper_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("tests/unit/util_helpers_test.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    util_helper_tests.root_module.addImport("zerver", zerver_mod);
+    _ = addTimedTestRun(b, timeout_runner, util_helper_tests, &.{test_step});
+
+    const root_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("tests/unit/root_test.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    root_tests.root_module.addImport("zerver", zerver_mod);
+    _ = addTimedTestRun(b, timeout_runner, root_tests, &.{test_step});
+
+    const circuit_breaker_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("tests/unit/circuit_breaker_test.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    circuit_breaker_tests.root_module.addImport("zerver", zerver_mod);
+    _ = addTimedTestRun(b, timeout_runner, circuit_breaker_tests, &.{test_step});
+
+    const core_core_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("tests/unit/core_core_test.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    core_core_tests.root_module.addImport("zerver", zerver_mod);
+    _ = addTimedTestRun(b, timeout_runner, core_core_tests, &.{test_step});
+
+    const ctx_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("tests/unit/ctx_test.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    ctx_tests.root_module.addImport("zerver", zerver_mod);
+    _ = addTimedTestRun(b, timeout_runner, ctx_tests, &.{test_step});
+
+    const reqtest_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("tests/unit/reqtest_test.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    reqtest_tests.root_module.addImport("zerver", zerver_mod);
+    _ = addTimedTestRun(b, timeout_runner, reqtest_tests, &.{test_step});
+
+    const http_status_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("tests/unit/http_status_test.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    http_status_tests.root_module.addImport("zerver", zerver_mod);
+    _ = addTimedTestRun(b, timeout_runner, http_status_tests, &.{test_step});
+
+    const router_unit_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("tests/unit/router_test.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    router_unit_tests.root_module.addImport("zerver", zerver_mod);
+    _ = addTimedTestRun(b, timeout_runner, router_unit_tests, &.{test_step});
+
+    const libuv_async_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("tests/unit/libuv_unit_test.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    libuv_async_tests.root_module.addImport("zerver", zerver_mod);
+    libuv_async_tests.linkLibC();
+    addLibuv(b, libuv_async_tests);
+    _ = addTimedTestRun(b, timeout_runner, libuv_async_tests, &.{reactor_tests_step});
+
+    const sql_ast_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("tests/unit/sql_ast_test.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    sql_ast_tests.root_module.addImport("zerver", zerver_mod);
+    _ = addTimedTestRun(b, timeout_runner, sql_ast_tests, &.{test_step});
+
+    const sql_builder_renderer_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("tests/unit/sql_builder_renderer_test.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    sql_builder_renderer_tests.root_module.addImport("zerver", zerver_mod);
+    _ = addTimedTestRun(b, timeout_runner, sql_builder_renderer_tests, &.{test_step});
+
+    const sql_db_driver_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("tests/unit/sql_db_driver_test.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    sql_db_driver_tests.root_module.addImport("zerver", zerver_mod);
+    sql_db_driver_tests.addCSourceFile(.{
+        .file = b.path("src/zerver/sql/dialects/sqlite/c/sqlite3.c"),
+        .flags = &[_][]const u8{
+            "-DSQLITE_ENABLE_JSON1",
+            "-DSQLITE_THREADSAFE=1",
+        },
+    });
+    sql_db_driver_tests.linkLibC();
+    _ = addTimedTestRun(b, timeout_runner, sql_db_driver_tests, &.{test_step});
+
+    const sql_modules_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("tests/unit/sql_modules_test.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    sql_modules_tests.root_module.addImport("zerver", zerver_mod);
+    sql_modules_tests.linkLibC();
+    _ = addTimedTestRun(b, timeout_runner, sql_modules_tests, &.{test_step});
+
+    const types_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("tests/unit/types_test.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    types_tests.root_module.addImport("zerver", zerver_mod);
+    _ = addTimedTestRun(b, timeout_runner, types_tests, &.{test_step});
+
+    const error_renderer_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("tests/unit/error_renderer_test.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    error_renderer_tests.root_module.addImport("zerver", zerver_mod);
+    _ = addTimedTestRun(b, timeout_runner, error_renderer_tests, &.{test_step});
+
+    const bootstrap_init_tests = b.addTest(.{
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("tests/unit/bootstrap_init_test.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+    bootstrap_init_tests.root_module.addImport("zerver", zerver_mod);
+    bootstrap_init_tests.root_module.addImport("bootstrap_helpers", bootstrap_helpers_mod);
+    bootstrap_init_tests.root_module.addImport("runtime_config", runtime_config_mod);
+    _ = addTimedTestRun(b, timeout_runner, bootstrap_init_tests, &.{test_step});
 
     const saga_tests = b.addTest(.{
         .root_module = b.createModule(.{

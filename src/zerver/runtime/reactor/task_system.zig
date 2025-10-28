@@ -44,7 +44,8 @@ pub const TaskSystem = struct {
             .dedicated => {
                 if (config.compute_workers == 0) {
                     self.compute_kind = .disabled;
-                } else {
+                }
+                else {
                     try self.compute.init(.{
                         .allocator = config.allocator,
                         .worker_count = config.compute_workers,
@@ -145,3 +146,4 @@ pub const TaskSystem = struct {
     }
 };
 
+// Covered by unit test: tests/unit/reactor_task_system.zig

@@ -10,6 +10,7 @@ const runtime_config = @import("../runtime/config.zig");
 const runtime_resources = @import("../runtime/resources.zig");
 const runtime_global = @import("../runtime/global.zig");
 const http_status = root.HttpStatus;
+const helpers = @import("helpers.zig");
 
 // Import features
 const todos = @import("../../features/todos/routes.zig");
@@ -74,7 +75,7 @@ pub fn initializeServer(allocator: std.mem.Allocator) !Initialization {
     var app_config = try runtime_config.load(allocator, "config.json");
     const server_host = app_config.server.host;
     const server_port = app_config.server.port;
-    const server_ip = try parseIpv4Host(server_host);
+    const server_ip = try helpers.parseIpv4Host(server_host);
 
     slog.info("Zerver MVP Server Starting", &[_]slog.Attr{
         slog.Attr.string("version", "mvp"),
@@ -95,7 +96,7 @@ pub fn initializeServer(allocator: std.mem.Allocator) !Initialization {
     });
 
     if (app_config.observability.otlp_endpoint.len == 0) {
-        if (try detectTempoEndpoint(allocator, &app_config.observability)) |detected_endpoint| {
+        if (try helpers.detectTempoEndpoint(allocator, &app_config.observability)) |detected_endpoint| {
             slog.info("tempo_auto_configured", &.{
                 slog.Attr.string("endpoint", detected_endpoint),
             });
@@ -209,103 +210,4 @@ pub fn printDemoInfo(app_config: *const runtime_config.AppConfig) void {
         slog.Attr.string("features", "slot system, middleware, routing, steps, effects, continuations, error handling, CRUD"),
     });
 }
-
-fn parseIpv4Host(host: []const u8) ![4]u8 {
-    var parts = std.mem.splitScalar(u8, host, '.');
-    var result: [4]u8 = undefined;
-    var index: usize = 0;
-
-    while (parts.next()) |segment| {
-        if (index >= 4) return error.InvalidServerHost;
-        if (segment.len == 0) return error.InvalidServerHost;
-        const value = std.fmt.parseUnsigned(u8, segment, 10) catch return error.InvalidServerHost;
-        result[index] = value;
-        index += 1;
-    }
-
-    if (index != 4) return error.InvalidServerHost;
-    return result;
-}
-
-fn detectTempoEndpoint(
-    allocator: std.mem.Allocator,
-    observability: *const runtime_config.ObservabilityConfig,
-) !?[]const u8 {
-    if (!observability.autodetect_enabled) {
-        slog.debug("tempo_autodetect_disabled", &.{});
-        return null;
-    }
-
-    if (observability.autodetect_host.len == 0) {
-        slog.debug("tempo_autodetect_host_missing", &.{});
-        return null;
-    }
-
-    if (observability.autodetect_port == 0) {
-        slog.warn("tempo_autodetect_invalid_port", &.{
-            slog.Attr.string("host", observability.autodetect_host),
-        });
-        return null;
-    }
-
-    const host_ip = parseIpv4Host(observability.autodetect_host) catch |err| {
-        slog.warn("tempo_autodetect_host_parse_failed", &.{
-            slog.Attr.string("host", observability.autodetect_host),
-            slog.Attr.string("error", @errorName(err)),
-        });
-        return null;
-    };
-
-    const address = std.net.Address.initIp4(host_ip, observability.autodetect_port);
-    const max_attempts: u32 = 5;
-
-    var attempt: u32 = 0;
-    while (attempt < max_attempts) : (attempt += 1) {
-        var stream = std.net.tcpConnectToAddress(address) catch |err| {
-            slog.debug("tempo_detect_connection_error", &.{
-                slog.Attr.string("error", @errorName(err)),
-                slog.Attr.uint("attempt", attempt + 1),
-                slog.Attr.string("host", observability.autodetect_host),
-                slog.Attr.int("port", @as(i64, @intCast(observability.autodetect_port))),
-            });
-            std.Thread.sleep(tempoDetectBackoff(attempt));
-            continue;
-        };
-        stream.close();
-
-        const scheme = if (observability.autodetect_scheme.len == 0)
-            "http"
-        else
-            observability.autodetect_scheme;
-        const path = observability.autodetect_path;
-
-        return try std.fmt.allocPrint(allocator, "{s}://{s}:{d}{s}{s}", .{
-            scheme,
-            observability.autodetect_host,
-            observability.autodetect_port,
-            if (path.len != 0 and path[0] != '/') "/" else "",
-            path,
-        });
-    }
-    // TODO(memory-safety): Make sure caller frees the allocPrint result when autodetect succeeds; current call sites leak this buffer for the lifetime of the process.
-
-    slog.debug("tempo_autodetect_unreachable", &.{
-        slog.Attr.string("host", observability.autodetect_host),
-        slog.Attr.int("port", @as(i64, @intCast(observability.autodetect_port))),
-        slog.Attr.uint("attempts", max_attempts),
-    });
-    return null;
-}
-
-fn tempoDetectBackoff(attempt: u32) u64 {
-    const capped = if (attempt < 4) attempt else 4;
-    const factor: u64 = switch (capped) {
-        0 => 1,
-        1 => 2,
-        2 => 4,
-        3 => 8,
-        else => 16,
-    };
-    return 100 * factor * std.time.ns_per_ms;
-}
-
+// Covered by unit test: tests/unit/bootstrap_init_test.zig

@@ -345,3 +345,4 @@ const JobQueue = struct {
     }
 };
 
+// Covered by unit test: tests/unit/reactor_job_system.zig

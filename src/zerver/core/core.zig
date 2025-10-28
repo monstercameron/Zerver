@@ -38,7 +38,7 @@ pub fn step(comptime name: []const u8, comptime F: anytype) types.Step {
         };
     }
 
-    if (!isCtxViewType(child_type)) {
+    if (!comptime isCtxViewType(child_type)) {
         @compileError("step function parameter must be *CtxBase or *CtxView(...) type");
     }
 
@@ -55,7 +55,9 @@ pub fn step(comptime name: []const u8, comptime F: anytype) types.Step {
 
 /// Extract reads and writes from a CtxView type by inspecting its public decls.
 fn extractReadsWrites(comptime _CtxViewType: type) struct { reads: []const u32, writes: []const u32 } {
-    if (!@hasDecl(_CtxViewType, "__reads") or !@hasDecl(_CtxViewType, "__writes")) {
+    const has_reads = @hasDecl(_CtxViewType, "__reads");
+    const has_writes = @hasDecl(_CtxViewType, "__writes");
+    if (!has_reads or !has_writes) {
         return .{ .reads = &.{}, .writes = &.{} };
     }
 
@@ -68,10 +70,10 @@ fn extractReadsWrites(comptime _CtxViewType: type) struct { reads: []const u32, 
 /// Create a wrapper function that adapts from *CtxBase to the typed view expected by F.
 fn makeTrampolineFor(comptime F: anytype, comptime CtxViewPtr: type) *const fn (*ctx_module.CtxBase) anyerror!types.Decision {
     const ptr_info = @typeInfo(CtxViewPtr);
-    if (ptr_info != .Pointer) {
+    if (ptr_info != .pointer) {
         @compileError("CtxView trampoline expects a pointer type");
     }
-    const CtxViewType = ptr_info.Pointer.child;
+    const CtxViewType = ptr_info.pointer.child;
 
     return struct {
         pub fn wrapper(base: *ctx_module.CtxBase) anyerror!types.Decision {
@@ -84,36 +86,64 @@ fn makeTrampolineFor(comptime F: anytype, comptime CtxViewPtr: type) *const fn (
 }
 
 fn isCtxViewType(comptime T: type) bool {
-    const info = @typeInfo(T);
-    if (info != .Struct) return false;
+    if (@typeInfo(T) != .@"struct") return false;
 
-    inline for (info.Struct.fields) |field| {
-        if (std.mem.eql(u8, field.name, "base") and field.type == *ctx_module.CtxBase) {
-            return true;
-        }
-    }
+    const maybe_idx = std.meta.fieldIndex(T, "base");
+    if (maybe_idx == null) return false;
 
-    return false;
+    const field = std.meta.fields(T)[maybe_idx.?];
+    const ptr_info = @typeInfo(field.type);
+    if (ptr_info != .pointer) return false;
+    return ptr_info.pointer.child == ctx_module.CtxBase;
 }
 
 fn convertSlotsToIds(comptime slots_ptr: anytype) []const u32 {
     const ptr_info = @typeInfo(@TypeOf(slots_ptr));
-    if (ptr_info != .Pointer) return &.{};
+    if (ptr_info != .pointer) return &.{};
 
-    const child_type = ptr_info.Pointer.child;
+    const pointer = ptr_info.pointer;
+
+    const child_type = pointer.child;
     const child_info = @typeInfo(child_type);
-    if (child_info != .Array) return &.{};
 
-    const slots_array = slots_ptr.*;
-    if (slots_array.len == 0) return &.{};
+    if (child_info == .array) {
+        const slots_array = slots_ptr.*;
+        if (slots_array.len == 0) return &.{};
 
-    const ids_array = comptime buildIdArray(slots_array);
-    return ids_array[0..];
+        const ids_array = comptime buildIdArray(slots_array);
+        const Holder = struct {
+            const value = ids_array;
+        };
+        return Holder.value[0..];
+    }
+
+    if (child_info == .@"struct") {
+        const slots_struct = slots_ptr.*;
+        if (std.meta.fields(child_type).len == 0) return &.{};
+
+        const ids_array = comptime buildStructIdArray(child_type, slots_struct);
+        const Holder = struct {
+            const value = ids_array;
+        };
+        return Holder.value[0..];
+    }
+
+    return &.{};
 }
 
 fn buildIdArray(comptime slots_array: anytype) [slots_array.len]u32 {
     var ids = std.mem.zeroes([slots_array.len]u32);
     inline for (slots_array, 0..) |slot, idx| {
+        ids[idx] = @intFromEnum(slot);
+    }
+    return ids;
+}
+
+fn buildStructIdArray(comptime StructType: type, comptime slots_struct: StructType) [std.meta.fields(StructType).len]u32 {
+    const fields = std.meta.fields(StructType);
+    var ids = std.mem.zeroes([fields.len]u32);
+    inline for (fields, 0..) |field, idx| {
+        const slot = @field(slots_struct, field.name);
         ids[idx] = @intFromEnum(slot);
     }
     return ids;
@@ -140,4 +170,3 @@ pub fn fail(kind: u16, what: []const u8, key: []const u8) types.Decision {
 
 /// Re-export ErrorCode for convenience
 pub const ErrorCode = types.ErrorCode;
-

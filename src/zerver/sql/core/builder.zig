@@ -13,7 +13,6 @@ pub const BuildResult = struct {
     pub fn deinit(self: *BuildResult) void {
         self.allocator.free(self.columns);
         self.allocator.free(self.orderings);
-        self.* = undefined;
     }
 };
 
@@ -45,13 +44,13 @@ pub const SelectBuilder = struct {
     }
 
     pub fn column(self: *SelectBuilder, name: []const u8) !*SelectBuilder {
-        try self.columns.append(ast.Identifier{ .name = name });
+        try self.columns.append(self.allocator, ast.Identifier{ .name = name });
         return self;
     }
 
     pub fn columnsMany(self: *SelectBuilder, names: []const []const u8) !*SelectBuilder {
         for (names) |name| {
-            try self.columns.append(ast.Identifier{ .name = name });
+            try self.columns.append(self.allocator, ast.Identifier{ .name = name });
         }
         return self;
     }
@@ -67,7 +66,7 @@ pub const SelectBuilder = struct {
     }
 
     pub fn orderBy(self: *SelectBuilder, column_name: []const u8, direction: ast.Ordering.Direction) !*SelectBuilder {
-        try self.orderings.append(.{ .expr = ast.Expr{ .column = .{ .name = column_name } }, .direction = direction });
+        try self.orderings.append(self.allocator, .{ .expr = ast.Expr{ .column = .{ .name = column_name } }, .direction = direction });
         return self;
     }
 
@@ -79,10 +78,10 @@ pub const SelectBuilder = struct {
     pub fn build(self: *SelectBuilder) !BuildResult {
         const table_ident = self.table orelse return db.Error.InvalidParameter;
 
-        const owned_columns = try self.columns.toOwnedSlice();
+        const owned_columns = try self.columns.toOwnedSlice(self.allocator);
         errdefer self.allocator.free(owned_columns);
 
-        const owned_orderings = try self.orderings.toOwnedSlice();
+        const owned_orderings = try self.orderings.toOwnedSlice(self.allocator);
         errdefer self.allocator.free(owned_orderings);
 
         const select_query = ast.SelectQuery{
@@ -102,3 +101,4 @@ pub const SelectBuilder = struct {
     }
 };
 
+// No direct unit test found in tests/unit/

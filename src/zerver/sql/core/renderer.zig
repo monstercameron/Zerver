@@ -31,48 +31,48 @@ pub const Renderer = struct {
         errdefer bindings.deinit(allocator);
 
         switch (query) {
-            .raw => |text| try sql_buf.appendSlice(text),
+            .raw => |text| try sql_buf.appendSlice(allocator, text),
             .select => |select_query| try self.renderSelect(&sql_buf, &bindings, allocator, select_query),
         }
 
-        const sql_owned = try sql_buf.toOwnedSlice();
-        const binds_owned = try bindings.toOwnedSlice();
+        const sql_owned = try sql_buf.toOwnedSlice(allocator);
+        const binds_owned = try bindings.toOwnedSlice(allocator);
         return RenderOutput{ .sql = sql_owned, .bindings = binds_owned };
     }
 
     fn renderSelect(self: Renderer, sql_buf: *std.ArrayList(u8), bindings: *std.ArrayList(db.BindValue), allocator: std.mem.Allocator, query: ast.SelectQuery) !void {
-        try sql_buf.appendSlice("SELECT ");
+        try sql_buf.appendSlice(allocator, "SELECT ");
         if (query.columns.len == 0) {
-            try sql_buf.appendSlice("*");
+            try sql_buf.appendSlice(allocator, "*");
         } else {
             for (query.columns, 0..) |identifier, idx| {
-                if (idx != 0) try sql_buf.appendSlice(", ");
+                if (idx != 0) try sql_buf.appendSlice(allocator, ", ");
                 try self.writeIdentifier(sql_buf, allocator, identifier);
             }
         }
 
-        try sql_buf.appendSlice(" FROM ");
+        try sql_buf.appendSlice(allocator, " FROM ");
         try self.writeIdentifier(sql_buf, allocator, query.from);
 
         if (query.predicate) |expr| {
-            try sql_buf.appendSlice(" WHERE ");
+            try sql_buf.appendSlice(allocator, " WHERE ");
             try self.renderExpr(sql_buf, bindings, allocator, expr);
         }
 
         if (query.order_by.len != 0) {
-            try sql_buf.appendSlice(" ORDER BY ");
+            try sql_buf.appendSlice(allocator, " ORDER BY ");
             for (query.order_by, 0..) |ordering, idx| {
-                if (idx != 0) try sql_buf.appendSlice(", ");
+                if (idx != 0) try sql_buf.appendSlice(allocator, ", ");
                 try self.renderExpr(sql_buf, bindings, allocator, ordering.expr);
                 switch (ordering.direction) {
-                    .asc => try sql_buf.appendSlice(" ASC"),
-                    .desc => try sql_buf.appendSlice(" DESC"),
+                    .asc => try sql_buf.appendSlice(allocator, " ASC"),
+                    .desc => try sql_buf.appendSlice(allocator, " DESC"),
                 }
             }
         }
 
         if (query.limit) |limit_value| {
-            var writer = sql_buf.writer();
+            var writer = sql_buf.writer(allocator);
             try writer.print(" LIMIT {d}", .{limit_value});
         }
     }
@@ -83,25 +83,26 @@ pub const Renderer = struct {
             .literal => |bind_value| {
                 const placeholder = try self.dialect.placeholder(allocator, bindings.items.len + 1);
                 defer allocator.free(placeholder);
-                try sql_buf.appendSlice(placeholder);
-                try bindings.append(bind_value);
+                try sql_buf.appendSlice(allocator, placeholder);
+                try bindings.append(allocator, bind_value);
             },
             .equal => |pair| {
                 try self.writeIdentifier(sql_buf, allocator, pair.column);
-                try sql_buf.appendSlice(" = ");
+                try sql_buf.appendSlice(allocator, " = ");
                 const placeholder = try self.dialect.placeholder(allocator, bindings.items.len + 1);
                 defer allocator.free(placeholder);
-                try sql_buf.appendSlice(placeholder);
-                try bindings.append(pair.value);
+                try sql_buf.appendSlice(allocator, placeholder);
+                try bindings.append(allocator, pair.value);
             },
-            .raw => |raw_text| try sql_buf.appendSlice(raw_text),
+            .raw => |raw_text| try sql_buf.appendSlice(allocator, raw_text),
         }
     }
 
     fn writeIdentifier(self: Renderer, sql_buf: *std.ArrayList(u8), allocator: std.mem.Allocator, identifier: ast.Identifier) !void {
         const quoted = try self.dialect.quoteIdentifier(allocator, identifier.name);
         defer allocator.free(quoted);
-        try sql_buf.appendSlice(quoted);
+        try sql_buf.appendSlice(allocator, quoted);
     }
 };
 
+// No direct unit test found in tests/unit/

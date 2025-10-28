@@ -536,10 +536,9 @@ pub const ParsedRequest = struct {
         // Deinit each header's ArrayList
         var header_it = self.headers.valueIterator();
         while (header_it.next()) |header_list| {
-            header_list.deinit();
+            header_list.deinit(self.headers.allocator);
         }
         self.headers.deinit();
         self.query.deinit();
     }
 };
-

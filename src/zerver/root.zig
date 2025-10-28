@@ -3,6 +3,7 @@
 ///
 /// This is the main library root that exports the public API surface.
 pub const core = @import("core/core.zig");
+pub const circuit_breaker = @import("core/circuit_breaker.zig");
 pub const ctx_module = @import("core/ctx.zig");
 pub const types = @import("core/types.zig");
 pub const error_renderer_module = @import("core/error_renderer.zig");
@@ -50,6 +51,7 @@ pub const step = core.step;
 pub const continue_ = core.continue_;
 pub const done = core.done;
 pub const fail = core.fail;
+pub const util_helpers = @import("util/helpers.zig");
 
 // Error handling
 pub const ErrorRenderer = error_renderer_module.ErrorRenderer;
@@ -62,4 +64,3 @@ pub const Router = router.Router;
 pub const Executor = executor.Executor;
 pub const Tracer = tracer_module.Tracer;
 pub const ReqTest = reqtest_module.ReqTest;
-

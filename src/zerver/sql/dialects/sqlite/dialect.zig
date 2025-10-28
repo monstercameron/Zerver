@@ -18,17 +18,17 @@ fn quoteIdentifier(allocator: std.mem.Allocator, identifier: []const u8) anyerro
     var buffer = try std.ArrayList(u8).initCapacity(allocator, identifier.len * 2 + 2);
     errdefer buffer.deinit(allocator);
 
-    try buffer.append('"');
+    try buffer.append(allocator, '"');
     for (identifier) |byte| {
         if (byte == '"') {
-            try buffer.appendSlice("\"\"");
+            try buffer.appendSlice(allocator, "\"\"");
         } else {
-            try buffer.append(byte);
+            try buffer.append(allocator, byte);
         }
     }
-    try buffer.append('"');
+    try buffer.append(allocator, '"');
 
-    return buffer.toOwnedSlice();
+    return buffer.toOwnedSlice(allocator);
 }
 
 fn placeholder(allocator: std.mem.Allocator, position: usize) anyerror![]u8 {
@@ -40,16 +40,17 @@ fn escapeStringLiteral(allocator: std.mem.Allocator, literal: []const u8) anyerr
     var buffer = try std.ArrayList(u8).initCapacity(allocator, literal.len * 2 + 2);
     errdefer buffer.deinit(allocator);
 
-    try buffer.append('\'');
+    try buffer.append(allocator, '"');
     for (literal) |byte| {
-        if (byte == '\'') {
-            try buffer.appendSlice("''");
+        if (byte == '"') {
+            try buffer.appendSlice(allocator, "''");
         } else {
-            try buffer.append(byte);
+            try buffer.append(allocator, byte);
         }
     }
-    try buffer.append('\'');
+    try buffer.append(allocator, '"');
 
-    return buffer.toOwnedSlice();
+    return buffer.toOwnedSlice(allocator);
 }
 
+// No direct unit test found in tests/unit/

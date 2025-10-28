@@ -398,4 +398,3 @@ test "integration: effect lifecycle" {
     try std.testing.expectEqual(effect.db_get.retry.max, 3);
     try std.testing.expectEqual(effect.db_get.timeout_ms, 1000);
 }
-

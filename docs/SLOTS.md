@@ -6,7 +6,7 @@ The Zerver slot system is how applications define and manage per-request state i
 
 A **Slot** is a named, typed cell of per-request state. The slot system enforces:
 
-1. **Type Safety**: Each slot has exactly one type via `SlotType(slot)` 
+1. **Type Safety**: Each slot has exactly one type via `SlotType(slot)`
 2. **Ownership**: Only the requesting step owns the data in its slot
 3. **Lifetime**: Data lives for the entire request (arena-allocated; see the lifetime section below)
 4. **Access Control**: Via `CtxView`, steps declare which slots they can read/write
@@ -43,6 +43,7 @@ A step declares which slots it reads and writes:
 
 ```zig
 const LoadView = zerver.CtxView(.{
+    .slotTypeFn = SlotType, // Explicitly pass the SlotType function
     .reads = &.{ .TodoId },
     .writes = &.{ .TodoItem },
 });
@@ -57,7 +58,7 @@ fn load_todo(ctx: *LoadView) !zerver.Decision {
 
 ## Storage Details
 
-Internally, slots are stored in `CtxBase.slots`:
+Internally, in the current MVP, slots are stored in `CtxBase.slots` as a map from `u32` (the integer representation of the `Slot` enum tag) to opaque pointers:
 
 ```zig
 slots: std.AutoHashMap(u32, *anyopaque) = undefined,
@@ -66,8 +67,9 @@ slots: std.AutoHashMap(u32, *anyopaque) = undefined,
 Values are:
 - Allocated in the request arena
 - Stored as opaque pointers
-- Re-typed when accessed via CtxView
-- Owned by the request and cleaned up automatically when the arena resets
+- Re-typed when accessed via `CtxView`'s `require()`/`optional()` methods.
+
+While `CtxView` provides strong compile-time access control and type inference for `require()`/`optional()`/`put()`, the underlying runtime storage currently uses `*anyopaque`. Future work will evolve this runtime storage to fully leverage `CtxView`'s compile-time guarantees for end-to-end type safety, ensuring that the runtime type of a stored value always matches its declared `SlotType`.
 
 ## Slot Lifetime & Arena Rules
 
@@ -136,15 +138,15 @@ pub const Slot = enum {
     // Identity
     TodoId,
     UserId,
-    
+
     // Data
     TodoItem,
     TodoList,
-    
+
     // Request context
     Authenticated,
     UserPermissions,
-    
+
     // Errors
     ValidationError,
 };

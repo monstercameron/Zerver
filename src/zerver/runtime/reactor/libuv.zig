@@ -231,4 +231,3 @@ fn asyncCloseCallback(handle: [*c]c.uv_handle_t) callconv(.c) void {
 fn timerCloseCallback(handle: [*c]c.uv_handle_t) callconv(.c) void {
     _ = handle;
 }
-

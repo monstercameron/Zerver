@@ -30,3 +30,4 @@ pub const SagaLog = struct {
     pub fn clear(_: *SagaLog) void {}
 };
 
+// Covered by unit test: tests/unit/reactor_saga.zig
