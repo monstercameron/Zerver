@@ -13,8 +13,7 @@ pub const SSEEvent = struct {
 
 /// Format an SSE event according to the HTML Living Standard.
 pub fn formatEvent(arena: std.mem.Allocator, event: SSEEvent) ![]const u8 {
-    var buf = std.ArrayList(u8).initCapacity(arena, 256) catch unreachable;
-    // TODO: Safety - Propagate allocator failure instead of unreachable; a missed OOM here will crash the whole server.
+    var buf = try std.ArrayList(u8).initCapacity(arena, 256);
     // TODO: Perf - Reuse a scratch buffer or stream directly to the client to avoid per-event allocations when broadcasting SSE.
     const w = buf.writer(arena);
 

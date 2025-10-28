@@ -4,6 +4,18 @@ const std = @import("std");
 const windows_sockets = @import("../platform/windows_sockets.zig");
 const slog = @import("../../observability/slog.zig");
 
+/// Check if a string contains CTL characters (control characters 0x00-0x1F, 0x7F).
+/// Per RFC 9110 Section 5.5, these should be rejected in header field values.
+fn containsCtlCharacters(value: []const u8) bool {
+    for (value) |byte| {
+        // CTL = 0x00-0x1F or 0x7F (DEL)
+        if (byte <= 0x1F or byte == 0x7F) {
+            return true;
+        }
+    }
+    return false;
+}
+
 /// Read an HTTP request from a connection with timeout.
 /// Implements robust HTTP/1.1 message framing per RFC 9110/9112.
 pub fn readRequestWithTimeout(
@@ -113,6 +125,14 @@ pub fn readRequestWithTimeout(
         if (std.mem.indexOfScalar(u8, line, ':')) |colon_idx| {
             const header_name = std.mem.trim(u8, line[0..colon_idx], " \t");
             const header_value = std.mem.trim(u8, line[colon_idx + 1 ..], " \t");
+
+            // RFC 9110 Section 5.5: Reject CTL characters in field values to prevent request smuggling
+            if (containsCtlCharacters(header_value)) {
+                slog.warn("Invalid header value contains CTL characters", &.{
+                    slog.Attr.string("header_name", header_name),
+                });
+                return error.InvalidRequest;
+            }
 
             if (std.ascii.eqlIgnoreCase(header_name, "content-length")) {
                 content_length = std.fmt.parseInt(usize, header_value, 10) catch null;

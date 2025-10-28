@@ -46,7 +46,9 @@ test "ErrorRenderer.render falls back on allocation failure" {
     const response = try zerver.ErrorRenderer.render(fail_alloc, err);
 
     try std.testing.expectEqual(zerver.http_status.HttpStatus.internal_server_error, response.status);
-    try std.testing.expectEqual(@as(usize, 0), response.headers.len);
+    try std.testing.expectEqual(@as(usize, 1), response.headers.len);
+    try std.testing.expectEqualStrings("Content-Type", response.headers[0].name);
+    try std.testing.expectEqualStrings("text/plain", response.headers[0].value);
     try std.testing.expect(response.body == .complete);
     try std.testing.expectEqualStrings("Internal Server Error", response.body.complete);
 }

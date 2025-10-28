@@ -28,10 +28,16 @@ pub const ErrorRenderer = struct {
         const status = errorCodeToStatus(error_val.kind);
 
         // Build JSON error response
-        var buf = std.ArrayList(u8).initCapacity(allocator, 256) catch return types.Response{
-            .status = http_status.internal_server_error,
-            .body = .{ .complete = "Internal Server Error" },
-            // TODO: Bug - Fallback path omits Content-Type headers so clients see a 500 with no indication of payload format.
+        var buf = std.ArrayList(u8).initCapacity(allocator, 256) catch {
+            // Fallback error response when allocation fails
+            const fallback_headers = &[_]types.Header{
+                .{ .name = "Content-Type", .value = "text/plain" },
+            };
+            return types.Response{
+                .status = http_status.internal_server_error,
+                .headers = fallback_headers,
+                .body = .{ .complete = "Internal Server Error" },
+            };
         };
         // TODO: Perf - Pool reusable buffers for error rendering instead of allocating a fresh ArrayList each time.
         defer buf.deinit(allocator);
@@ -110,9 +116,12 @@ pub fn testErrorRenderer() !void {
     };
 
     const response = try ErrorRenderer.render(allocator, error_val);
+    const body_str = switch (response.body) {
+        .complete => |body| body,
+        .streaming => "<streaming>",
+    };
     slog.info("Error renderer test completed", &.{
         slog.Attr.uint("status", response.status),
-        // TODO: Bug - `response.body` is a tagged union; logging it as a string without inspecting the tag is undefined behaviour and will crash once the union layout changes.
-        slog.Attr.string("body", response.body),
+        slog.Attr.string("body", body_str),
     });
 }

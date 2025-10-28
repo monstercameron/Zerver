@@ -167,13 +167,8 @@ pub const CtxBase = struct {
     }
 
     pub fn logDebug(self: *CtxBase, comptime fmt: []const u8, args: anytype) void {
-        // Format the message using the provided format string and args
-        var buf: [1024]u8 = undefined;
-        // TODO: Safety/Memory - The fixed-size buffer in logDebug might lead to truncation or errors for very long log messages. Consider using an allocator for dynamic sizing or a larger buffer.
-        // TODO: Safety/Memory - The fixed-size buffer in logDebug might lead to truncation or errors for very long log messages. Consider using an allocator for dynamic sizing or a larger buffer.
-        // TODO: Safety/Memory - The fixed-size buffer in logDebug might lead to truncation or errors for very long log messages. Consider using an allocator for dynamic sizing or a larger buffer.
-        // TODO: Safety/Memory - The fixed-size buffer in logDebug might lead to truncation or errors for very long log messages. Consider using an allocator for dynamic sizing or a larger buffer.
-        const message = std.fmt.bufPrint(&buf, fmt, args) catch fmt;
+        // Use arena allocator to dynamically size message - no truncation
+        const message = std.fmt.allocPrint(self.allocator, fmt, args) catch fmt;
 
         // Create attributes for structured logging
         var attrs = [_]slog.Attr{
@@ -183,6 +178,7 @@ pub const CtxBase = struct {
         };
 
         slog.debug(message, &attrs);
+        // Note: message is allocated from arena, will be freed when request completes
     }
 
     pub fn lastError(self: *CtxBase) ?types.Error {
@@ -221,11 +217,8 @@ pub const CtxBase = struct {
 
     /// Format a string using arena allocator (result valid for request lifetime)
     pub fn bufFmt(self: *CtxBase, comptime fmt: []const u8, args: anytype) []const u8 {
-        var buf: [4096]u8 = undefined;
-        // TODO: Safety/Memory - The fixed-size buffer in bufFmt might lead to truncation or errors for very long log messages. Consider using a resizing buffer or checking the formatted length before printing.
-        // TODO: Safety/Memory - The fixed-size buffer in bufFmt might lead to truncation or errors for very long log messages. Consider using a resizing buffer or checking the formatted length before printing.
-        const formatted = std.fmt.bufPrint(&buf, fmt, args) catch return "";
-        return self.allocator.dupe(u8, formatted) catch return "";
+        // Use allocPrint directly - no intermediate buffer needed, no truncation
+        return std.fmt.allocPrint(self.allocator, fmt, args) catch return "";
     }
 
     /// Generate a new unique ID (simple timestamp-based for now)

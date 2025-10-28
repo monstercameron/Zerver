@@ -195,47 +195,61 @@ pub const AdvancedRetryPolicy = struct {
     pub fn calculateDelay(self: @This(), attempt: u8) u32 {
         if (attempt == 0) return 0;
 
-        // TODO: Safety - Review arithmetic operations in retry/backoff calculations (e.g., calculateExponentialBackoff, calculateFibonacciBackoff) for potential integer overflows and use checked arithmetic (e.g., @add, @mul) or larger integer types if necessary.
-
-        // TODO: Safety - Review arithmetic operations in retry/backoff calculations (e.g., calculateExponentialBackoff, calculateFibonacciBackoff) for potential integer overflows and use checked arithmetic (e.g., @add, @mul) or larger integer types if necessary.
-
-        // TODO: Safety - Review arithmetic operations in retry/backoff calculations (e.g., calculateExponentialBackoff, calculateFibonacciBackoff) for potential integer overflows and use checked arithmetic (e.g., @add, @mul) or larger integer types if necessary.
-
-        // TODO: Safety - Review arithmetic operations in retry/backoff calculations (e.g., calculateExponentialBackoff, calculateFibonacciBackoff) for potential integer overflows and use checked arithmetic (e.g., @add, @mul) or larger integer types if necessary.
-
         return switch (self.backoff_strategy) {
             .NoBackoff => 0,
-            .Linear => if (self.initial_delay_ms * attempt > self.max_delay_ms) self.max_delay_ms else self.initial_delay_ms * attempt,
+            .Linear => blk: {
+                // Use saturating multiplication to prevent overflow
+                const result = @mulWithOverflow(self.initial_delay_ms, @as(u32, attempt));
+                if (result[1] != 0 or result[0] > self.max_delay_ms) {
+                    break :blk self.max_delay_ms;
+                }
+                break :blk result[0];
+            },
             .Exponential => calculateExponentialBackoff(attempt, self.initial_delay_ms, self.max_delay_ms),
             .Fibonacci => calculateFibonacciBackoff(attempt, self.initial_delay_ms, self.max_delay_ms),
         };
     }
 
     fn calculateExponentialBackoff(attempt: u8, initial: u32, max: u32) u32 {
-        var delay: u32 = initial;
+        var delay: u64 = initial;
         var i: u8 = 1;
-        // TODO: Logical Error - The 'calculateExponentialBackoff' function uses f32 for calculations, which can introduce floating-point precision errors. Consider using fixed-point arithmetic or a larger float type (f64) if precision is critical for backoff timing.
-        // TODO: Logical Error - The 'calculateExponentialBackoff' function uses f32 for calculations, which can introduce floating-point precision errors. Consider using fixed-point arithmetic or a larger float type (f64) if precision is critical for backoff timing.
+        // Use f64 for better precision and u64 to avoid overflow
         while (i < attempt) : (i += 1) {
-            delay = @as(u32, @intFromFloat(@as(f32, @floatFromInt(delay)) * 1.5));
+            const float_delay = @as(f64, @floatFromInt(delay)) * 1.5;
+            if (float_delay > @as(f64, @floatFromInt(max))) {
+                return max;
+            }
+            delay = @as(u64, @intFromFloat(float_delay));
             if (delay > max) return max;
         }
-        return delay;
+        return @as(u32, @intCast(@min(delay, max)));
     }
 
     fn calculateFibonacciBackoff(attempt: u8, initial: u32, max: u32) u32 {
-        var fib_prev: u32 = 0;
-        var fib_curr: u32 = 1;
+        var fib_prev: u64 = 0;
+        var fib_curr: u64 = 1;
         var i: u8 = 0;
-        // TODO: Logical Error - The Fibonacci sequence in 'calculateFibonacciBackoff' grows rapidly. For larger 'attempt' values, intermediate 'fib_curr' or 'delay' calculations might overflow u32, leading to incorrect backoff values. Consider using larger integer types or checked arithmetic.
-        // TODO: Logical Error - The Fibonacci sequence in 'calculateFibonacciBackoff' grows rapidly. For larger 'attempt' values, intermediate 'fib_curr' or 'delay' calculations might overflow u32, leading to incorrect backoff values. Consider using larger integer types or checked arithmetic.
+        // Use u64 to prevent overflow in Fibonacci sequence
         while (i < attempt) : (i += 1) {
+            const add_result = @addWithOverflow(fib_prev, fib_curr);
+            if (add_result[1] != 0) {
+                // Overflow occurred, cap at max
+                return max;
+            }
             const temp = fib_curr;
-            fib_curr = fib_prev + fib_curr;
+            fib_curr = add_result[0];
             fib_prev = temp;
+
+            // Early exit if fibonacci value gets too large
+            if (fib_curr > max) return max;
         }
-        const delay = initial * fib_curr;
-        return if (delay > max) max else delay;
+
+        // Use saturating multiplication for delay calculation
+        const mul_result = @mulWithOverflow(@as(u64, initial), fib_curr);
+        if (mul_result[1] != 0 or mul_result[0] > max) {
+            return max;
+        }
+        return @as(u32, @intCast(mul_result[0]));
     }
 };
 

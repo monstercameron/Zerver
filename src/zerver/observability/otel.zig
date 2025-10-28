@@ -37,6 +37,10 @@ pub const OtelConfig = struct {
     headers: []const Header = &.{},
     instrumentation_scope_name: []const u8 = "zerver.telemetry",
     instrumentation_scope_version: []const u8 = "0.1.0",
+    /// Minimum queue wait time (ms) before promoting job to a dedicated span
+    promote_queue_threshold_ms: i64 = 5,
+    /// Minimum park duration (ms) before promoting job to a dedicated span
+    promote_park_threshold_ms: i64 = 5,
 };
 
 /// Status code for exported spans.
@@ -395,8 +399,15 @@ const RequestRecord = struct {
     effect_spans: std.AutoHashMap(usize, *ChildSpan),
     step_stack: std.ArrayList(*ChildSpan),
     job_states: std.AutoHashMap(usize, JobState),
+    promote_queue_threshold_ms: i64,
+    promote_park_threshold_ms: i64,
 
-    fn create(allocator: std.mem.Allocator, event: telemetry.RequestStartEvent) !*RequestRecord {
+    fn create(
+        allocator: std.mem.Allocator,
+        event: telemetry.RequestStartEvent,
+        promote_queue_threshold_ms: i64,
+        promote_park_threshold_ms: i64,
+    ) !*RequestRecord {
         var record = try allocator.create(RequestRecord);
         errdefer allocator.destroy(record);
         record.* = .{
@@ -422,6 +433,8 @@ const RequestRecord = struct {
             .effect_spans = std.AutoHashMap(usize, *ChildSpan).init(allocator),
             .step_stack = try std.ArrayList(*ChildSpan).initCapacity(allocator, 4),
             .job_states = std.AutoHashMap(usize, JobState).init(allocator),
+            .promote_queue_threshold_ms = promote_queue_threshold_ms,
+            .promote_park_threshold_ms = promote_park_threshold_ms,
         };
         errdefer {
             record.deinit();
@@ -841,12 +854,9 @@ const RequestRecord = struct {
             // Compute durations for threshold decision
             const durations = computeJobDurations(state);
 
-            // Threshold-based promotion: create span if queue_wait >= 5ms OR park_wait >= 5ms
-            // TODO: Replace hardcoded thresholds with OtelConfig values
-            const promote_queue_threshold_ms: i64 = 5;
-            const promote_park_threshold_ms: i64 = 5;
-            const should_promote = durations.queue_wait_ms >= promote_queue_threshold_ms or
-                durations.park_wait_ms_total >= promote_park_threshold_ms;
+            // Threshold-based promotion: create span if queue_wait or park_wait exceeds configured thresholds
+            const should_promote = durations.queue_wait_ms >= self.promote_queue_threshold_ms or
+                durations.park_wait_ms_total >= self.promote_park_threshold_ms;
 
             if (should_promote) {
                 // Create job span for promotion
@@ -1004,12 +1014,9 @@ const RequestRecord = struct {
             // Compute durations for threshold decision
             const durations = computeJobDurations(state);
 
-            // Threshold-based promotion: create span if queue_wait >= 5ms OR park_wait >= 5ms
-            // TODO: Replace hardcoded thresholds with OtelConfig values
-            const promote_queue_threshold_ms: i64 = 5;
-            const promote_park_threshold_ms: i64 = 5;
-            const should_promote = durations.queue_wait_ms >= promote_queue_threshold_ms or
-                durations.park_wait_ms_total >= promote_park_threshold_ms;
+            // Threshold-based promotion: create span if queue_wait or park_wait exceeds configured thresholds
+            const should_promote = durations.queue_wait_ms >= self.promote_queue_threshold_ms or
+                durations.park_wait_ms_total >= self.promote_park_threshold_ms;
 
             if (should_promote) {
                 // Create job span for promotion
@@ -1432,6 +1439,8 @@ pub const OtelExporter = struct {
     headers: std.ArrayList(http.Header),
     requests: std.StringHashMap(*RequestRecord),
     mutex: std.Thread.Mutex = .{},
+    promote_queue_threshold_ms: i64,
+    promote_park_threshold_ms: i64,
 
     pub fn create(allocator: std.mem.Allocator, config: OtelConfig) !*OtelExporter {
         if (config.endpoint.len == 0) return error.MissingEndpoint;
@@ -1451,6 +1460,8 @@ pub const OtelExporter = struct {
         self.headers = try std.ArrayList(http.Header).initCapacity(allocator, 0);
         self.requests = std.StringHashMap(*RequestRecord).init(allocator);
         self.mutex = .{};
+        self.promote_queue_threshold_ms = config.promote_queue_threshold_ms;
+        self.promote_park_threshold_ms = config.promote_park_threshold_ms;
 
         try self.addResourceAttribute(Attribute.initString(allocator, "service.name", config.service_name));
         try self.addResourceAttribute(Attribute.initString(allocator, "service.version", config.service_version));
@@ -1551,7 +1562,12 @@ pub const OtelExporter = struct {
                         });
                         break :blk null;
                     }
-                    var record = try RequestRecord.create(self.allocator, start);
+                    var record = try RequestRecord.create(
+                        self.allocator,
+                        start,
+                        self.promote_queue_threshold_ms,
+                        self.promote_park_threshold_ms,
+                    );
                     errdefer {
                         record.deinit();
                         self.allocator.destroy(record);
