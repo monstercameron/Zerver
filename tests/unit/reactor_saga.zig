@@ -23,4 +23,3 @@ test "saga log stub reports unimplemented" {
     try std.testing.expect(log.pop() == null);
     log.clear();
 }
-

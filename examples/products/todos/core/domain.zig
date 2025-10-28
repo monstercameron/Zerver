@@ -101,4 +101,3 @@ pub const OperationLatency = struct {
         return self.min_ms + offset;
     }
 };
-

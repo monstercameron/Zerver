@@ -17,4 +17,3 @@ pub fn commentKey(ctx: *zerver.CtxBase, comment_id: []const u8) ![]const u8 {
 pub fn commentsForPostKey(ctx: *zerver.CtxBase, post_id: []const u8) ![]const u8 {
     return ctx.bufFmt("comments/post/{s}", .{post_id});
 }
-

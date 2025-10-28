@@ -465,4 +465,3 @@ fn continuation_delete_comment(ctx: *zerver.CtxBase) !zerver.Decision {
         .body = .{ .complete = "" },
     });
 }
-

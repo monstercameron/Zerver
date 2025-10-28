@@ -72,4 +72,3 @@ pub fn main() void {
     slog.infof("This file demonstrates CtxView compile-time safety.", .{});
     slog.infof("See the commented examples above to understand what WOULD fail to compile.", .{});
 }
-

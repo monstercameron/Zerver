@@ -7,4 +7,3 @@ pub fn main() void {}
 test {
     _ = @import("tests/html_renderer_tests.zig");
 }
-

@@ -290,4 +290,3 @@ pub fn main() !void {
     slog.infof("║    • main.zig    - Server initialization            ║", .{});
     slog.infof("╚══════════════════════════════════════════════════════╝", .{});
 }
-

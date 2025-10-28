@@ -28,4 +28,3 @@ pub fn htmlResponse(status: u16, body: []const u8) zerver.Decision {
         .headers = &HTML_HEADERS,
     });
 }
-

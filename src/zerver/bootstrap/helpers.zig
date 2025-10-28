@@ -2,7 +2,7 @@
 /// Bootstrap helper utilities extracted for testing
 const std = @import("std");
 const slog = @import("../observability/slog.zig");
-const runtime_config = @import("runtime_config");
+const runtime_config = @import("../runtime/config.zig");
 
 pub fn parseIpv4Host(host: []const u8) ![4]u8 {
     var parts = std.mem.splitScalar(u8, host, '.');

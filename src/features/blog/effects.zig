@@ -536,4 +536,3 @@ fn writeEscapedString(writer: anytype, text: []const u8) !void {
     }
     try writer.writeByte('"');
 }
-

@@ -391,4 +391,3 @@ pub fn sendErrorResponse(
     });
     try sendResponse(connection, response);
 }
-

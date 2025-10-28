@@ -194,4 +194,3 @@ fn shouldKeepConnectionAlive(request_data: []const u8) bool {
     // RFC 9112 Section 9.1: If no Connection header, HTTP/1.1 defaults to keep-alive
     return true;
 }
-

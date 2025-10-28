@@ -16,4 +16,3 @@ pub fn helloStep(ctx: *zerver.CtxBase) !zerver.Decision {
         .body = "Hello from Zerver! Try /todos endpoints with X-User-ID header.",
     });
 }
-

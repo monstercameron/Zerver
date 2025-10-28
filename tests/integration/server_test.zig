@@ -130,4 +130,3 @@ pub fn main() !void {
     slog.infof("║         ✓ SERVER INTEGRATION TESTS COMPLETE       ║", .{});
     slog.infof("╚════════════════════════════════════════════════════╝\n", .{});
 }
-

@@ -71,4 +71,3 @@ fn posixSignalHandler(sig: c_int) callconv(.C) void {
     };
     handleTermination(signal_name);
 }
-

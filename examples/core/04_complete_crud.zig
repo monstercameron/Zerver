@@ -383,4 +383,3 @@ pub fn main() !void {
     std.debug.print("✓ Error handling\n", .{});
     std.debug.print("✓ Complete CRUD workflow\n", .{});
 }
-

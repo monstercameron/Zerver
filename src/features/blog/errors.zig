@@ -66,4 +66,3 @@ pub fn onError(ctx: *zerver.CtxBase) anyerror!zerver.Decision {
         });
     }
 }
-

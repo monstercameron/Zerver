@@ -18,4 +18,3 @@ pub fn TodoSlotType(comptime s: TodoSlot) type {
         .TodoList => []const u8, // JSON string
     };
 }
-

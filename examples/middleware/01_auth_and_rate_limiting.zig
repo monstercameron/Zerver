@@ -208,4 +208,3 @@ pub fn example_protected_route(ctx: *zerver.CtxBase) !zerver.Decision {
 //     .before = &.{ zerver.step("optional_auth", optional_auth) },
 //     .steps = &.{ /* business logic */ },
 // });
-

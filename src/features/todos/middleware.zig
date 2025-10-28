@@ -17,4 +17,3 @@ pub fn middleware_logging(ctx: *zerver.CtxBase) !zerver.Decision {
     });
     return zerver.continue_();
 }
-

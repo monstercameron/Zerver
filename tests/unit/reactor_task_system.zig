@@ -96,4 +96,3 @@ test "task system shared compute uses continuation pool" {
     const shared_jobs = ts.computeJobs() orelse unreachable;
     try std.testing.expectEqual(@intFromPtr(shared_jobs), @intFromPtr(ts.continuationJobs()));
 }
-

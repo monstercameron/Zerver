@@ -19,4 +19,3 @@ pub fn get() *resources_mod.RuntimeResources {
 pub fn clear() void {
     global_resources = null;
 }
-

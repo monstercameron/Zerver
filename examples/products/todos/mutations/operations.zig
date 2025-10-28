@@ -92,4 +92,3 @@ pub fn render_updated(ctx: *zerver.CtxBase) !zerver.Decision {
         .body = "{\"id\":\"updated_id\",\"updated_at\":\"2025-01-01T00:00:00Z\"}",
     });
 }
-

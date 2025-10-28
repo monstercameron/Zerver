@@ -121,4 +121,3 @@ test "html renderer: attributes escape special characters" {
         rendered,
     );
 }
-

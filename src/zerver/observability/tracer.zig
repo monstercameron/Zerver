@@ -502,4 +502,3 @@ pub fn testTracer() !void {
         slog.Attr.string("trace_json", json),
     });
 }
-

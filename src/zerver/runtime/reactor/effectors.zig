@@ -259,4 +259,3 @@ fn defaultKvCacheSetHandler(_: *Context, _: types.KvCacheSet) DispatchError!type
 fn defaultKvCacheDeleteHandler(_: *Context, _: types.KvCacheDelete) DispatchError!types.EffectResult {
     return unsupported("kv_cache_delete");
 }
-

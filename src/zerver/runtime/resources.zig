@@ -355,4 +355,3 @@ pub fn create(allocator: std.mem.Allocator, config: config_mod.AppConfig) !*Runt
     try resources_ptr.init(allocator, config);
     return resources_ptr;
 }
-

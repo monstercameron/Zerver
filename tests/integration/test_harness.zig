@@ -278,4 +278,3 @@ pub fn main() !void {
     slog.infof("║              ✓ ALL TESTS PASSED (6/6)             ║", .{});
     slog.infof("╚════════════════════════════════════════════════════╝\n", .{});
 }
-

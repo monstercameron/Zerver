@@ -58,4 +58,3 @@ pub fn BlogSlotType(comptime s: BlogSlot) type {
         .CommentDeleteAck => []const u8,
     };
 }
-

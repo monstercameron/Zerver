@@ -358,4 +358,3 @@ pub fn main() !void {
     std.debug.print("✓ Pagination support\n", .{});
     std.debug.print("✓ Custom headers for streaming metadata\n", .{});
 }
-

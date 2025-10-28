@@ -80,4 +80,3 @@ pub fn main() void {
     slog.infof("This file demonstrates the slot pattern.", .{});
     slog.infof("To use: Import slots_example.zig and define steps using the Slot enum.", .{});
 }
-

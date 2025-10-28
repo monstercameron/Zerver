@@ -508,4 +508,3 @@ fn fileExists(dir: std.fs.Dir, path: []const u8) bool {
     dir.access(path, .{}) catch return false;
     return true;
 }
-

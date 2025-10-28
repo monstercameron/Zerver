@@ -164,4 +164,3 @@ pub fn homepageStep(ctx: *zerver.CtxBase) !zerver.Decision {
         },
     };
 }
-

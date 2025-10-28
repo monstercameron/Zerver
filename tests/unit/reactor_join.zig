@@ -80,4 +80,3 @@ test "join all_required fails on required failure" {
     try std.testing.expect(resolution == .Resume);
     try std.testing.expectEqual(join.Status.failure, resolution.Resume.status);
 }
-

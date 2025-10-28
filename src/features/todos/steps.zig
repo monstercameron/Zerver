@@ -251,4 +251,3 @@ fn continuation_delete(ctx: *zerver.CtxBase) !zerver.Decision {
         .body = "",
     });
 }
-

@@ -55,4 +55,3 @@ pub fn main() !void {
     std.debug.print("✓ Exports complete trace as JSON\n", .{});
     std.debug.print("✓ Enables observability for debugging\n", .{});
 }
-

@@ -1239,4 +1239,3 @@ pub const HomepageDocumentDynamic = struct {
         try document.render(writer);
     }
 };
-

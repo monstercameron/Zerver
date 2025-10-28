@@ -49,4 +49,3 @@ pub fn logFallbackSuccess(post: blog_types.PostInput) void {
         slog.Attr.uint("content_len", post.content.len),
     });
 }
-

@@ -46,4 +46,3 @@ pub fn effectHandler(effect: *const zerver.Effect, _timeout_ms: u32) anyerror!ze
         },
     }
 }
-

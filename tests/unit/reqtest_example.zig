@@ -138,4 +138,3 @@ pub fn main() !void {
     slog.infof("✓ Assert on decision outcomes\n", .{});
     slog.infof("✓ Unit test in milliseconds (no network)\n", .{});
 }
-

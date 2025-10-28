@@ -157,4 +157,3 @@ pub fn sendAll(handle: std.net.Stream.Handle, data: []const u8) SendError!void {
 pub inline fn isWindows() bool {
     return builtin.os.tag == .windows;
 }
-

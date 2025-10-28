@@ -562,4 +562,3 @@ fn mockEffectHandler(_effect: *const zerver.Effect, _timeout_ms: u32) anyerror!z
     const empty_ptr = @constCast(&[_]u8{});
     return .{ .success = .{ .bytes = empty_ptr[0..], .allocator = null } };
 }
-

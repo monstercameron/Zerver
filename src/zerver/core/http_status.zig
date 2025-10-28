@@ -80,4 +80,3 @@ pub const HttpStatus = struct {
     }
     // TODO: Perf - Consider switching to an enum-backed lookup so branch prediction can short-circuit common status classes.
 };
-

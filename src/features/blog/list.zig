@@ -433,4 +433,3 @@ fn continuation_render_blog_post_page(ctx: *zerver.CtxBase) !zerver.Decision {
 
     return http_util.htmlResponse(http_status.ok, html);
 }
-

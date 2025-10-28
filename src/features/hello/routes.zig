@@ -21,4 +21,3 @@ pub fn registerRoutes(server: *zerver.Server) !void {
         makeStep("hello", steps.helloStep),
     } });
 }
-

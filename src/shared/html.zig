@@ -518,4 +518,3 @@ pub const u = tags.u;
 pub const ul = tags.ul;
 pub const video = tags.video;
 pub const wbr = tags.wbr;
-

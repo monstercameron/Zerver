@@ -248,7 +248,7 @@ pub const Server = struct {
         for (main_steps) |main_step| {
             telemetry_ctx.stepStart(.main, main_step.name);
             const ptr = @intFromPtr(main_step.call);
-            slog.debug("Executing step", &.{ 
+            slog.debug("Executing step", &.{
                 slog.Attr.string("step", main_step.name),
                 slog.Attr.int("ptr", @as(i64, @intCast(ptr))),
             });
@@ -274,7 +274,7 @@ pub const Server = struct {
         const parsed = self.parseRequest(request_text, arena) catch |err| {
             switch (err) {
                 error.MissingHostHeader => {
-                    return ResponseResult{ .complete = try self.httpResponse(.{ 
+                    return ResponseResult{ .complete = try self.httpResponse(.{
                         .status = http_status.bad_request,
                         .body = .{ .complete = "Bad Request: Missing Host header (required for HTTP/1.1)" },
                         .headers = &[_]types.Header{
@@ -283,7 +283,7 @@ pub const Server = struct {
                     }, arena, false, false, "", null) };
                 },
                 error.MultipleHostHeader => {
-                    return ResponseResult{ .complete = try self.httpResponse(.{ 
+                    return ResponseResult{ .complete = try self.httpResponse(.{
                         .status = http_status.bad_request,
                         .body = .{ .complete = "Bad Request: Multiple Host headers" },
                         .headers = &[_]types.Header{
@@ -292,7 +292,7 @@ pub const Server = struct {
                     }, arena, false, false, "", null) };
                 },
                 error.InvalidRequest, error.InvalidMethod, error.UnsupportedVersion, error.InvalidUri, error.UserinfoNotAllowed, error.InvalidHeaderFieldName => {
-                    return ResponseResult{ .complete = try self.httpResponse(.{ 
+                    return ResponseResult{ .complete = try self.httpResponse(.{
                         .status = http_status.bad_request,
                         .body = .{ .complete = "Bad Request" },
                         .headers = &[_]types.Header{
@@ -301,7 +301,7 @@ pub const Server = struct {
                     }, arena, false, false, "", null) };
                 },
                 error.MultipleContentLength, error.InvalidContentLength, error.ContentLengthMismatch, error.InvalidPercentEncoding, error.InvalidChunkedEncoding, error.TransferEncodingConflict, error.TrailerFieldNotDeclared, error.TrailerHeaderWithoutChunked => {
-                    return ResponseResult{ .complete = try self.httpResponse(.{ 
+                    return ResponseResult{ .complete = try self.httpResponse(.{
                         .status = http_status.bad_request,
                         .body = .{ .complete = "Bad Request: Invalid request format" },
                         .headers = &[_]types.Header{
@@ -310,7 +310,7 @@ pub const Server = struct {
                     }, arena, false, false, "", null) };
                 },
                 error.ExpectationFailed => {
-                    return ResponseResult{ .complete = try self.httpResponse(.{ 
+                    return ResponseResult{ .complete = try self.httpResponse(.{
                         .status = http_status.expectation_failed,
                         .body = .{ .complete = "Expectation Failed: Unsupported Expect header" },
                         .headers = &[_]types.Header{
@@ -319,7 +319,7 @@ pub const Server = struct {
                     }, arena, false, false, "", null) };
                 },
                 error.UnexpectedBody => {
-                    return ResponseResult{ .complete = try self.httpResponse(.{ 
+                    return ResponseResult{ .complete = try self.httpResponse(.{
                         .status = http_status.bad_request,
                         .body = .{ .complete = "Bad Request: Body not allowed for this method" },
                         .headers = &[_]types.Header{
@@ -328,7 +328,7 @@ pub const Server = struct {
                     }, arena, false, false, "", null) };
                 },
                 error.ContentLengthRequired => {
-                    return ResponseResult{ .complete = try self.httpResponse(.{ 
+                    return ResponseResult{ .complete = try self.httpResponse(.{
                         .status = http_status.length_required,
                         .body = .{ .complete = "Length Required: Content-Length header is required" },
                         .headers = &[_]types.Header{
@@ -337,7 +337,7 @@ pub const Server = struct {
                     }, arena, false, false, "", null) };
                 },
                 error.UnsupportedContentEncoding => {
-                    return ResponseResult{ .complete = try self.httpResponse(.{ 
+                    return ResponseResult{ .complete = try self.httpResponse(.{
                         .status = http_status.unsupported_media_type,
                         .body = .{ .complete = "Unsupported Media Type: Content-Encoding not supported" },
                         .headers = &[_]types.Header{
@@ -346,7 +346,7 @@ pub const Server = struct {
                     }, arena, false, false, "", null) };
                 },
                 error.UnsupportedContentType => {
-                    return ResponseResult{ .complete = try self.httpResponse(.{ 
+                    return ResponseResult{ .complete = try self.httpResponse(.{
                         .status = http_status.unsupported_media_type,
                         .body = .{ .complete = "Unsupported Media Type: Content-Type not supported" },
                         .headers = &[_]types.Header{
@@ -355,7 +355,7 @@ pub const Server = struct {
                     }, arena, false, false, "", null) };
                 },
                 error.NotAcceptable => {
-                    return ResponseResult{ .complete = try self.httpResponse(.{ 
+                    return ResponseResult{ .complete = try self.httpResponse(.{
                         .status = http_status.not_acceptable,
                         .body = .{ .complete = "Not Acceptable: Requested representation not available" },
                         .headers = &[_]types.Header{
@@ -364,7 +364,7 @@ pub const Server = struct {
                     }, arena, false, false, "", null) };
                 },
                 error.UnsupportedTeValue => {
-                    return ResponseResult{ .complete = try self.httpResponse(.{ 
+                    return ResponseResult{ .complete = try self.httpResponse(.{
                         .status = http_status.not_implemented,
                         .body = .{ .complete = "Not Implemented: TE header contains unsupported value" },
                         .headers = &[_]types.Header{
@@ -373,7 +373,7 @@ pub const Server = struct {
                     }, arena, false, false, "", null) };
                 },
                 error.UpgradeUnsupported => {
-                    return ResponseResult{ .complete = try self.httpResponse(.{ 
+                    return ResponseResult{ .complete = try self.httpResponse(.{
                         .status = http_status.upgrade_required,
                         .body = .{ .complete = "Upgrade Required: Protocol upgrade not supported" },
                         .headers = &[_]types.Header{
@@ -382,7 +382,7 @@ pub const Server = struct {
                     }, arena, false, false, "", null) };
                 },
                 else => {
-                    return ResponseResult{ .complete = try self.httpResponse(.{ 
+                    return ResponseResult{ .complete = try self.httpResponse(.{
                         .status = http_status.internal_server_error,
                         .body = .{ .complete = "Internal Server Error" },
                         .headers = &[_]types.Header{
@@ -401,7 +401,7 @@ pub const Server = struct {
         ctx.body = parsed.body;
         ctx.request_bytes = request_text.len;
 
-        slog.debug("HTTP request parsed", &.{ 
+        slog.debug("HTTP request parsed", &.{
             slog.Attr.string("method", ctx.method_str),
             slog.Attr.string("path", ctx.path_str),
             slog.Attr.uint("body_len", parsed.body.len),
@@ -429,7 +429,7 @@ pub const Server = struct {
         const correlation = try self.resolveCorrelation(parsed.headers, arena);
         ctx.setRequestId(correlation.id);
 
-        slog.debug("Correlation resolved", &.{ 
+        slog.debug("Correlation resolved", &.{
             slog.Attr.string("correlation_id", correlation.id),
             slog.Attr.string("correlation_source", @tagName(correlation.source)),
         });
@@ -439,7 +439,7 @@ pub const Server = struct {
                 ctx.headers.put(correlation.header_name, correlation.header_value) catch {};
             } else {
                 const header_name_owned = ctx.allocator.dupe(u8, correlation.header_name) catch null;
-                const header_name_slice: []const u8 = if (header_name_owned) |owned| 
+                const header_name_slice: []const u8 = if (header_name_owned) |owned|
                     @as([]const u8, owned)
                 else
                     correlation.header_name;
@@ -889,14 +889,14 @@ pub const Server = struct {
         } else if (content_length) |cl| {
             // Content-Length specified - body must be exactly this length
             if (raw_body.len != cl) {
-                slog.err("Content-Length mismatch", &.{ 
+                slog.err("Content-Length mismatch", &.{
                     slog.Attr.uint("declared_len", cl),
                     slog.Attr.uint("actual_len", raw_body.len),
                     slog.Attr.string("path", path),
                 });
                 return error.ContentLengthMismatch;
             }
-            slog.debug("Content-Length verified", &.{ 
+            slog.debug("Content-Length verified", &.{
                 slog.Attr.uint("content_length", cl),
                 slog.Attr.uint("raw_body_len", raw_body.len),
                 slog.Attr.string("path", path),
@@ -1682,7 +1682,7 @@ pub const Server = struct {
             .Continue => types.Response{ .status = http_status.ok, .body = .{ .complete = "OK" } },
             .Done => |resp| resp,
             .Fail => |err| {
-                slog.debug("Decision failed", &.{ 
+                slog.debug("Decision failed", &.{
                     slog.Attr.int("status", @intCast(err.kind)),
                     slog.Attr.string("what", err.ctx.what),
                     slog.Attr.string("key", err.ctx.key),
@@ -1703,13 +1703,13 @@ pub const Server = struct {
 
         switch (response.body) {
             .complete => |body| {
-                slog.debug("Rendering response", &.{ 
+                slog.debug("Rendering response", &.{
                     slog.Attr.int("status", @intCast(response.status)),
                     slog.Attr.int("body_len", @intCast(body.len)),
                 });
             },
             .streaming => {
-                slog.debug("Rendering streaming response", &.{ 
+                slog.debug("Rendering streaming response", &.{
                     slog.Attr.int("status", @intCast(response.status)),
                 });
             },
@@ -1720,7 +1720,7 @@ pub const Server = struct {
         switch (response.body) {
             .streaming => |streaming| {
                 if (is_head) {
-                    const headers_only = try self.httpResponse(.{ 
+                    const headers_only = try self.httpResponse(.{
                         .status = response.status,
                         .headers = response.headers,
                         .body = .{ .complete = "" },
@@ -1729,7 +1729,7 @@ pub const Server = struct {
                     return ResponseResult{ .complete = headers_only };
                 }
 
-                const headers_only = try self.httpResponse(.{ 
+                const headers_only = try self.httpResponse(.{
                     .status = response.status,
                     .headers = response.headers,
                     .body = .{ .complete = "" },
@@ -2267,7 +2267,7 @@ pub const Server = struct {
         var listener = try listen_addr.listen(.{ .reuse_address = true });
         defer listener.deinit();
 
-        slog.info("Server ready for HTTP requests", &.{ 
+        slog.info("Server ready for HTTP requests", &.{
             slog.Attr.string("host", ip_str),
             slog.Attr.int("port", @as(i64, @intCast(self.config.addr.port))),
             slog.Attr.string("status", "running"),
@@ -2275,7 +2275,7 @@ pub const Server = struct {
 
         while (true) {
             const connection = listener.accept() catch |err| {
-                slog.err("Failed to accept connection", &.{ 
+                slog.err("Failed to accept connection", &.{
                     slog.Attr.string("error", @errorName(err)),
                 });
                 continue;
@@ -2284,7 +2284,7 @@ pub const Server = struct {
             slog.info("Accepted new connection", &.{});
 
             self.handleConnection(connection) catch |err| {
-                slog.err("Connection handling failed", &.{ 
+                slog.err("Connection handling failed", &.{
                     slog.Attr.string("error", @errorName(err)),
                 });
             };
@@ -2318,7 +2318,7 @@ pub const Server = struct {
                         return;
                     },
                     else => {
-                        slog.err("Failed to read request", &.{ 
+                        slog.err("Failed to read request", &.{
                             slog.Attr.string("error", @errorName(err)),
                         });
                         return;
@@ -2334,7 +2334,7 @@ pub const Server = struct {
             last_activity = std.time.milliTimestamp();
 
             const preview_len = @min(request_bytes.len, 120);
-            slog.info("Received HTTP request", &.{ 
+            slog.info("Received HTTP request", &.{
                 slog.Attr.uint("bytes", request_bytes.len),
                 slog.Attr.string("preview", request_bytes[0..preview_len]),
             });
@@ -2342,20 +2342,20 @@ pub const Server = struct {
             if (request_bytes.len > 0) {
                 const line_end = std.mem.indexOf(u8, request_bytes, "\r\n") orelse request_bytes.len;
                 const request_line = request_bytes[0..line_end];
-                slog.info("HTTP request line", &.{ 
+                slog.info("HTTP request line", &.{
                     slog.Attr.string("line", request_line),
                 });
             }
 
             const response_result = self.handleRequest(request_bytes, request_arena.allocator()) catch |err| {
-                slog.err("Failed to handle request", &.{ 
+                slog.err("Failed to handle request", &.{
                     slog.Attr.string("error", @errorName(err)),
                 });
                 try net_handler.sendErrorResponse(connection, "500 Internal Server Error", "Internal Server Error");
                 return;
             };
 
-            slog.info("handleRequest completed", &.{ 
+            slog.info("handleRequest completed", &.{
                 slog.Attr.enumeration("result", response_result),
             });
 

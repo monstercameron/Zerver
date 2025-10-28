@@ -32,4 +32,3 @@ pub fn main() !void {
     // Start listening and serving
     try init_bundle.server.listen();
 }
-

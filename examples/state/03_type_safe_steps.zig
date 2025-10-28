@@ -81,4 +81,3 @@ pub fn main() void {
     slog.infof("The framework can call them via generic *CtxBase pointers.", .{});
     slog.infof("But the type system still enforces slot access at compile-time.", .{});
 }
-

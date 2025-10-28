@@ -49,4 +49,3 @@ pub const HttpResponseData = struct {
     body: []const u8,
     headers: std.StringHashMap([]const u8),
 };
-

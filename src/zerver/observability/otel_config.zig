@@ -84,4 +84,3 @@ test "OtelConfig defaults" {
     try std.testing.expectEqualStrings("continuations", config.queue_name_cont);
     try std.testing.expectEqual(false, config.export_job_depth);
 }
-

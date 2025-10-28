@@ -71,4 +71,3 @@ pub fn render_item(ctx: *zerver.CtxBase) !zerver.Decision {
         .body = "{\"id\":\"unknown\",\"title\":\"\",\"status\":\"pending\"}",
     });
 }
-

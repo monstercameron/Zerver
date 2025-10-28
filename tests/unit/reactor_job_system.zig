@@ -55,4 +55,3 @@ test "job system enforces queue capacity" {
     try js.submit(.{ .callback = incrementJob, .ctx = &counter });
     try std.testing.expectError(SubmitError.QueueFull, js.submit(.{ .callback = incrementJob, .ctx = &counter }));
 }
-

@@ -449,4 +449,3 @@ pub fn main() !void {
     slog.infof("✓ Error handling", .{});
     slog.infof("✓ Complete CRUD workflow", .{});
 }
-
