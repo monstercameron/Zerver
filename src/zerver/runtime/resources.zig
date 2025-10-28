@@ -1,6 +1,6 @@
 // src/zerver/runtime/resources.zig
 const std = @import("std");
-const config_mod = @import("config.zig");
+const config_mod = @import("runtime_config");
 const sql = @import("../sql/mod.zig");
 const task_system = @import("reactor/task_system.zig");
 const job_system = @import("reactor/job_system.zig");

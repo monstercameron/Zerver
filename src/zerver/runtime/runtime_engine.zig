@@ -1,7 +1,7 @@
 // src/zerver/runtime/runtime_engine.zig
 const std = @import("std");
 const slog = @import("../observability/slog.zig");
-const config_mod = @import("config.zig");
+const config_mod = @import("runtime_config");
 const resources_mod = @import("resources.zig");
 const runtime_global = @import("global.zig");
 

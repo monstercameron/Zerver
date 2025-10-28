@@ -139,6 +139,8 @@ pub fn build(b: *std.Build) void {
         .root_source_file = b.path("src/zerver/runtime/config.zig"),
     });
 
+    exe.root_module.addImport("runtime_config", runtime_config_mod);
+
     zerver_mod.addImport("runtime_config", runtime_config_mod);
 
     const bootstrap_helpers_mod = b.createModule(.{
