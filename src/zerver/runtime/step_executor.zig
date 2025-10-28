@@ -164,8 +164,9 @@ fn handleDecision(
                 slog.Attr.string("join", @tagName(need.join)),
             });
 
-            // Execute effects (blocking for Phase 1)
-            try executeEffectsBlocking(ctx, need, dispatcher, effector_context);
+            // Execute effects asynchronously (non-blocking)
+            // Worker will return to queue immediately
+            try executeEffectsAsync(ctx, need, dispatcher, effector_context);
         },
 
         .Done => |response| {
@@ -201,7 +202,181 @@ fn handleDecision(
     }
 }
 
+/// Effect work context for libuv async execution
+const EffectWork = struct {
+    work: effectors.libuv.Work = undefined,
+    ctx: *step_context.StepExecutionContext,
+    effect: types.Effect,
+    dispatcher: *effectors.EffectDispatcher,
+    effector_context: effectors.Context,
+    token: u32,
+    required: bool,
+    kind: []const u8,
+    effect_seq: usize,
+    start_ms: i64,
+    result: types.EffectResult = undefined,
+};
+
+/// Execute effects asynchronously (Phase 2 - non-blocking execution)
+fn executeEffectsAsync(
+    ctx: *step_context.StepExecutionContext,
+    need: types.Need,
+    dispatcher: *effectors.EffectDispatcher,
+    effector_context: effectors.Context,
+) !void {
+    // Submit each effect as async work
+    for (need.effects) |effect| {
+        const token = getEffectToken(effect);
+        const required = isEffectRequired(effect);
+        const kind = getEffectKind(effect);
+
+        // Emit telemetry
+        var effect_seq: usize = 0;
+        if (ctx.telemetry_ctx) |telem| {
+            effect_seq = telem.effectStart(.{
+                .kind = kind,
+                .token = token,
+                .required = required,
+                .mode = need.mode,
+                .join = need.join,
+                .timeout_ms = getEffectTimeout(effect),
+                .target = getEffectTarget(effect),
+                .need_sequence = ctx.need_sequence,
+            });
+        }
+
+        // Allocate work context (will be freed in after_work callback)
+        const work_ctx = try ctx.allocator.create(EffectWork);
+        work_ctx.* = .{
+            .ctx = ctx,
+            .effect = effect,
+            .dispatcher = dispatcher,
+            .effector_context = effector_context,
+            .token = token,
+            .required = required,
+            .kind = kind,
+            .effect_seq = effect_seq,
+            .start_ms = std.time.milliTimestamp(),
+        };
+
+        // Submit to libuv thread pool
+        try work_ctx.work.submit(
+            effector_context.loop,
+            effectWorkCallback,
+            effectAfterWorkCallback,
+            work_ctx,
+        );
+
+        slog.debug("effect_submitted_async", &.{
+            slog.Attr.string("kind", kind),
+            slog.Attr.uint("token", token),
+        });
+    }
+
+    // Worker returns immediately - will be re-queued when effects complete
+    ctx.state = .waiting;
+}
+
+/// Callback executed in thread pool - performs the actual effect work
+fn effectWorkCallback(work: *effectors.libuv.Work) void {
+    const work_ctx: *EffectWork = @ptrCast(@alignCast(work.getUserData().?));
+
+    // Execute effect via dispatcher (blocking in thread pool is fine)
+    // Note: We need to make a mutable copy of the context for dispatch
+    var effector_ctx = work_ctx.effector_context;
+    work_ctx.result = blk: {
+        const res = work_ctx.dispatcher.dispatch(&effector_ctx, work_ctx.effect) catch |err| {
+            slog.err("effect_execution_failed_async", &.{
+                slog.Attr.string("kind", work_ctx.kind),
+                slog.Attr.uint("token", work_ctx.token),
+                slog.Attr.string("error", @errorName(err)),
+            });
+
+            break :blk types.EffectResult{ .failure = .{
+                .kind = types.ErrorCode.InternalError,
+                .ctx = .{ .what = "effect", .key = "execution_failed" },
+            } };
+        };
+        break :blk res;
+    };
+}
+
+/// Callback executed on event loop thread after work completes
+fn effectAfterWorkCallback(work: *effectors.libuv.Work, status: c_int) void {
+    const work_ctx: *EffectWork = @ptrCast(@alignCast(work.getUserData().?));
+    const ctx = work_ctx.ctx;
+    const end_ms = std.time.milliTimestamp();
+    const duration = @as(u64, @intCast(end_ms - work_ctx.start_ms));
+
+    slog.debug("effect_completed_async", &.{
+        slog.Attr.string("kind", work_ctx.kind),
+        slog.Attr.uint("token", work_ctx.token),
+        slog.Attr.bool("success", work_ctx.result == .success),
+        slog.Attr.uint("duration_ms", duration),
+        slog.Attr.int("status", @as(i64, @intCast(status))),
+    });
+
+    // Record effect completion
+    ctx.recordEffectCompletion(work_ctx.token, work_ctx.result, work_ctx.required) catch |err| {
+        slog.err("effect_completion_record_failed", &.{
+            slog.Attr.string("error", @errorName(err)),
+            slog.Attr.uint("token", work_ctx.token),
+        });
+        work_ctx.ctx.allocator.destroy(work_ctx);
+        return;
+    };
+
+    // Emit telemetry
+    if (ctx.telemetry_ctx) |telem| {
+        const success = work_ctx.result == .success;
+        const error_ctx = if (work_ctx.result == .failure) work_ctx.result.failure.ctx else null;
+
+        telem.effectEnd(.{
+            .sequence = work_ctx.effect_seq,
+            .need_sequence = ctx.need_sequence,
+            .kind = work_ctx.kind,
+            .token = work_ctx.token,
+            .required = work_ctx.required,
+            .success = success,
+            .bytes_len = if (work_ctx.result == .success and work_ctx.result.success == .bytes) work_ctx.result.success.bytes.len else null,
+            .error_ctx = error_ctx,
+        });
+    }
+
+    // Check if ready to resume
+    if (ctx.readyToResume()) {
+        ctx.markReadyForResume();
+
+        slog.debug("effect_context_ready_to_resume", &.{
+            slog.Attr.uint("ctx_ptr", @as(u64, @intCast(@intFromPtr(ctx)))),
+            slog.Attr.uint("need_seq", ctx.need_sequence),
+        });
+
+        // Re-queue context for continuation
+        if (work_ctx.effector_context.task_system) |ts| {
+            ts.requeueContinuation(ctx) catch |err| {
+                slog.err("effect_context_requeue_failed", &.{
+                    slog.Attr.string("error", @errorName(err)),
+                    slog.Attr.uint("ctx_ptr", @as(u64, @intCast(@intFromPtr(ctx)))),
+                });
+                // Mark as failed if we can't re-queue
+                ctx.completeFailed(.{
+                    .kind = types.ErrorCode.InternalError,
+                    .ctx = .{ .what = "requeue", .key = "failed" },
+                });
+            };
+        } else {
+            slog.err("effect_no_task_system", &.{
+                slog.Attr.uint("ctx_ptr", @as(u64, @intCast(@intFromPtr(ctx)))),
+            });
+        }
+    }
+
+    work_ctx.ctx.allocator.destroy(work_ctx);
+}
+
 /// Execute effects blocking (Phase 1 - synchronous execution)
+/// DEPRECATED: Use executeEffectsAsync for non-blocking execution
 fn executeEffectsBlocking(
     ctx: *step_context.StepExecutionContext,
     need: types.Need,

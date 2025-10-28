@@ -9,6 +9,14 @@ pub const DispatchError = error{
     UnsupportedEffect,
 };
 
+/// Completion callback for async effects
+pub const EffectCompletionCallback = *const fn (
+    ctx: *anyopaque, // User context (typically StepExecutionContext)
+    token: u32,
+    result: types.EffectResult,
+    required: bool,
+) void;
+
 pub const Context = struct {
     loop: *libuv.Loop,
     jobs: *job.JobSystem,
@@ -16,6 +24,10 @@ pub const Context = struct {
     accelerator_jobs: ?*job.JobSystem = null,
     kv_cache: ?*anyopaque = null,
     task_system: ?*task_system.TaskSystem = null,
+
+    // Async execution support
+    completion_callback: ?EffectCompletionCallback = null,
+    user_context: ?*anyopaque = null,
 };
 
 pub const HttpGetHandler = *const fn (*Context, types.HttpGet) DispatchError!types.EffectResult;

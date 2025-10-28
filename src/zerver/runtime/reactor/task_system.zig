@@ -301,19 +301,18 @@ fn stepWorkerMain(task_system: *TaskSystem, worker_index: usize) !void {
                 };
             },
             .waiting => {
-                // Parked for I/O - will be re-queued when effects complete
+                // Parked for I/O - effects are executing asynchronously
+                // Context will be re-queued by effect completion callback
+                // Worker moves on to next task immediately (non-blocking)
                 queue.parkStep(ctx, "io_wait");
-                // In Phase 1, effects execute synchronously, so we should re-queue immediately
-                // (effects already executed in executeStepContext)
-                if (ctx.readyToResume()) {
-                    task_system.requeueContinuation(ctx) catch |err| {
-                        slog.err("step_continuation_requeue_failed", &.{
-                            slog.Attr.uint("worker_index", @as(u64, @intCast(worker_index))),
-                            slog.Attr.string("error", @errorName(err)),
-                        });
-                        ctx.deinit();
-                    };
-                }
+
+                slog.debug("step_worker_parked_context", &.{
+                    slog.Attr.uint("worker_index", @as(u64, @intCast(worker_index))),
+                    slog.Attr.uint("ctx_ptr", @as(u64, @intCast(@intFromPtr(ctx)))),
+                    slog.Attr.uint("outstanding_effects", ctx.outstanding_effects.load(.seq_cst)),
+                });
+
+                // Worker returns to queue to pick up next task - no blocking!
             },
             .resuming => {
                 // Should not happen (resuming is handled before re-queuing)
