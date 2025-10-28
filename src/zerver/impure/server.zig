@@ -1380,186 +1380,21 @@ pub const Server = struct {
     ) ![]const u8 {
         _ = self;
 
-        var buf = std.ArrayList(u8).initCapacity(arena, 512) catch unreachable;
-        const w = buf.writer(arena);
-
-        // Get status text - RFC 9110 Section 15
-        const status_text = switch (response.status) {
-            // 1xx Informational
-            100 => "Continue",
-            101 => "Switching Protocols",
-            102 => "Processing",
-
-            // 2xx Successful
-            200 => "OK",
-            201 => "Created",
-            202 => "Accepted",
-            203 => "Non-Authoritative Information",
-            204 => "No Content",
-            205 => "Reset Content",
-            206 => "Partial Content",
-            207 => "Multi-Status",
-            208 => "Already Reported",
-            226 => "IM Used",
-
-            // 3xx Redirection
-            300 => "Multiple Choices",
-            301 => "Moved Permanently",
-            302 => "Found",
-            303 => "See Other",
-            304 => "Not Modified",
-            305 => "Use Proxy",
-            307 => "Temporary Redirect",
-            308 => "Permanent Redirect",
-
-            // 4xx Client Error
-            400 => "Bad Request",
-            401 => "Unauthorized",
-            402 => "Payment Required",
-            403 => "Forbidden",
-            404 => "Not Found",
-            405 => "Method Not Allowed",
-            406 => "Not Acceptable",
-            407 => "Proxy Authentication Required",
-            408 => "Request Timeout",
-            409 => "Conflict",
-            410 => "Gone",
-            411 => "Length Required",
-            412 => "Precondition Failed",
-            413 => "Payload Too Large",
-            414 => "URI Too Long",
-            415 => "Unsupported Media Type",
-            416 => "Range Not Satisfiable",
-            417 => "Expectation Failed",
-            418 => "I'm a teapot",
-            421 => "Misdirected Request",
-            422 => "Unprocessable Entity",
-            423 => "Locked",
-            424 => "Failed Dependency",
-            425 => "Too Early",
-            426 => "Upgrade Required",
-            428 => "Precondition Required",
-            429 => "Too Many Requests",
-            431 => "Request Header Fields Too Large",
-            451 => "Unavailable For Legal Reasons",
-
-            // 5xx Server Error
-            500 => "Internal Server Error",
-            501 => "Not Implemented",
-            502 => "Bad Gateway",
-            503 => "Service Unavailable",
-            504 => "Gateway Timeout",
-            505 => "HTTP Version Not Supported",
-            506 => "Variant Also Negotiates",
-            507 => "Insufficient Storage",
-            508 => "Loop Detected",
-            510 => "Not Extended",
-            511 => "Network Authentication Required",
-
-            else => "OK", // Default fallback
-        };
-
-        try w.print("HTTP/1.1 {} {s}\r\n", .{ response.status, status_text });
-
-        const status = response.status;
-        const send_date = !((status >= 100 and status < 200) or status == 204 or status == 304);
-        if (send_date and !headerExists(response.headers, "Date")) {
-            const now_raw = std.time.timestamp();
-            const now = @as(i64, @intCast(now_raw));
-            const date_str = try response_formatter.formatHttpDate(arena, now);
-            try w.print("Date: {s}\r\n", .{date_str});
-        }
-
-        // RFC 9110 Section 10.2.4 - Include Server header if not already present
-        if (!headerExists(response.headers, "Server")) {
-            try w.print("Server: Zerver/1.0\r\n", .{});
-        }
-
-        // RFC 9112 Section 9 - Include Connection header
-        if (keep_alive) {
-            try w.print("Connection: keep-alive\r\n", .{});
-        } else {
-            try w.print("Connection: close\r\n", .{});
-        }
-
-        if (trace_header.len > 0) {
-            try w.print("X-Zerver-Trace: {s}\r\n", .{trace_header});
-        }
-
-        if (correlation_ctx) |ctx_corr| {
-            if (ctx_corr.header_name.len != 0 and ctx_corr.header_value.len != 0 and
-                !headerExists(response.headers, ctx_corr.header_name))
-            {
-                try w.print("{s}: {s}\r\n", .{ ctx_corr.header_name, ctx_corr.header_value });
+        // Map CorrelationContext to CorrelationHeader for formatter
+        const correlation_header: ?response_formatter.CorrelationHeader = if (correlation_ctx) |ctx|
+            response_formatter.CorrelationHeader{
+                .name = ctx.header_name,
+                .value = ctx.header_value,
             }
-        }
+        else
+            null;
 
-        if (!headerExists(response.headers, "Content-Language")) {
-            try w.print("Content-Language: en\r\n", .{});
-        }
-
-        if (!headerExists(response.headers, "Vary")) {
-            try w.print("Vary: Accept, Accept-Encoding, Accept-Charset, Accept-Language\r\n", .{});
-        }
-
-        // Add custom headers from the response
-        for (response.headers) |header| {
-            if (!send_date and std.ascii.eqlIgnoreCase(header.name, "date")) continue;
-            try w.print("{s}: {s}\r\n", .{ header.name, header.value });
-        }
-
-        // Handle different response body types
-        switch (response.body) {
-            .complete => |body| {
-                // For complete responses, add Content-Length unless it's SSE
-                const is_sse = response.status == 200 and
-                    blk: {
-                        for (response.headers) |header| {
-                            if (std.ascii.eqlIgnoreCase(header.name, "content-type") and
-                                std.mem.eql(u8, header.value, "text/event-stream"))
-                            {
-                                break :blk true;
-                            }
-                        }
-                        break :blk false;
-                    };
-
-                if (!is_sse) {
-                    const has_custom_content_length = headerExists(response.headers, "Content-Length");
-                    if (!has_custom_content_length) {
-                        try w.print("Content-Length: {d}\r\n", .{body.len});
-                    }
-                }
-
-                try w.print("\r\n", .{});
-
-                // RFC 9110 Section 9.3.2 - HEAD responses must not include a message body
-                if (!is_head) {
-                    try w.writeAll(body);
-                }
-            },
-            .streaming => |streaming| {
-                // For streaming responses (SSE), never send Content-Length
-                try w.print("\r\n", .{});
-
-                // For SSE, we don't write the body here - it will be streamed later
-                // The streaming writer will be called by the handler
-                _ = streaming;
-            },
-        }
-
-        // RFC 9110 Section 9.3.2 - HEAD responses omit bodies; handlers can supply Content-Length for the corresponding GET representation.
-
-        return buf.items;
-    }
-
-    fn headerExists(headers: []const types.Header, name: []const u8) bool {
-        for (headers) |header| {
-            if (std.ascii.eqlIgnoreCase(header.name, name)) {
-                return true;
-            }
-        }
-        return false;
+        return response_formatter.formatResponse(arena, response, .{
+            .is_head = is_head,
+            .keep_alive = keep_alive,
+            .trace_header = trace_header,
+            .correlation_header = correlation_header,
+        });
     }
 
     /// Start listening for HTTP requests (blocking).
