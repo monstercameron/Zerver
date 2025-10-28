@@ -105,7 +105,12 @@ jobs:
           zig version
           zig env
 
-      # --- Build / Test / Format ---
+      # --- Format check before build to avoid fmt scanning cache artifacts ---
+      - name: Check formatting
+        shell: pwsh
+        run: zig fmt --check build.zig main.zig src examples tests tools
+
+      # --- Build / Test ---
       - name: Build (ReleaseSafe)
         shell: pwsh
         run: zig build -Doptimize=ReleaseSafe
@@ -113,10 +118,6 @@ jobs:
       - name: Run tests
         shell: pwsh
         run: zig build test
-
-      - name: Check formatting
-        shell: pwsh
-        run: zig fmt --check .
 
       - name: Upload executable
         uses: actions/upload-artifact@v4
@@ -138,7 +139,7 @@ jobs:
         shell: bash
         run: |
           VERSION=$(jq -r '.project.version' config.json)
-          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Download executable artifact
         uses: actions/download-artifact@v4
@@ -149,10 +150,10 @@ jobs:
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
-          tag_name: v${{ env.VERSION }}
-          name: Release v${{ env.VERSION }}
+          tag_name: v${{ steps.get_version.outputs.version }}
+          name: Release v${{ steps.get_version.outputs.version }}
           body: |
-            Automated release for version ${{ env.VERSION }}.
+            Automated release for version ${{ steps.get_version.outputs.version }}.
             See the [CHANGELOG](CHANGELOG.md) for details.
           draft: false
           prerelease: false
