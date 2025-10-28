@@ -4,6 +4,7 @@ const types = @import("../../core/types.zig");
 const libuv = @import("libuv.zig");
 const job = @import("job_system.zig");
 const task_system = @import("task_system.zig");
+const db_effects = @import("db_effects.zig");
 
 pub const DispatchError = error{
     UnsupportedEffect,
@@ -81,10 +82,10 @@ pub const EffectHandlers = struct {
     websocket_connect: WebSocketConnectHandler = defaultWebSocketConnectHandler,
     websocket_send: WebSocketSendHandler = defaultWebSocketSendHandler,
     websocket_receive: WebSocketReceiveHandler = defaultWebSocketReceiveHandler,
-    db_get: DbGetHandler = defaultDbGetHandler,
-    db_put: DbPutHandler = defaultDbPutHandler,
-    db_del: DbDelHandler = defaultDbDelHandler,
-    db_scan: DbScanHandler = defaultDbScanHandler,
+    db_get: DbGetHandler = db_effects.handleDbGet,
+    db_put: DbPutHandler = db_effects.handleDbPut,
+    db_del: DbDelHandler = db_effects.handleDbDel,
+    db_scan: DbScanHandler = db_effects.handleDbScan,
     file_json_read: FileJsonReadHandler = defaultFileJsonReadHandler,
     file_json_write: FileJsonWriteHandler = defaultFileJsonWriteHandler,
     compute_task: ComputeTaskHandler = defaultComputeTaskHandler,
