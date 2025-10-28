@@ -87,10 +87,10 @@ pub const Server = struct {
     };
 
     /// Format an SSE event according to HTML Living Standard
+    /// Note: For SSE performance optimization notes, see src/zerver/runtime/http/response/sse.zig
     pub fn formatSSEEvent(self: *Server, event: SSEEvent, arena: std.mem.Allocator) ![]const u8 {
         _ = self;
         var buf = try std.ArrayList(u8).initCapacity(arena, 256);
-        // TODO: Perf - Reuse a scratch buffer or stream directly to the client to avoid per-event allocations when broadcasting SSE.
         const w = buf.writer(arena);
 
         // Event type (optional)
@@ -624,8 +624,7 @@ pub const Server = struct {
             try self.parseQueryString(query_str, &query, arena);
         }
 
-        path = try arena.dupe(u8, path);
-        // TODO: Perf - Avoid re-duplicating the path slice when it already lives in the arena; keep a slice into `path_with_query` instead.
+        // path is already a slice into arena-allocated normalized_target, no need to duplicate
 
         // Parse headers (until empty line)
         var headers = std.StringHashMap(std.ArrayList([]const u8)).init(arena);

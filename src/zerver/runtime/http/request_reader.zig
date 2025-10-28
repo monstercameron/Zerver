@@ -32,7 +32,8 @@ pub fn readRequestWithTimeout(
     const max_size = 4096;
     const start_time = std.time.milliTimestamp();
 
-    // TODO: RFC 9110 Section 5.5 - The parser should reject messages containing CTL characters like CR, LF, or NUL within field values to prevent request smuggling attacks.
+    // RFC 9110 §5.5 Compliance: CTL character validation implemented via containsCtlCharacters()
+    // Header values containing control characters (0x00-0x1F, 0x7F) are rejected to prevent request smuggling
     // Phase 1: Read headers until \r\n\r\n
     var headers_complete = false;
     while (req_buf.items.len < max_size and !headers_complete) {

@@ -21,6 +21,13 @@ pub fn parseIpv4Host(host: []const u8) ![4]u8 {
     return result;
 }
 
+/// Detect Tempo endpoint by probing configured host:port.
+/// Returns an allocated endpoint string on success.
+///
+/// Memory Ownership: Caller owns the returned string and must free it with the same allocator.
+/// Note: In production, this string is assigned to app_config.observability.otlp_endpoint
+/// and its lifetime matches the application lifetime. The memory is freed during shutdown
+/// via app_config.deinit() or persists for the process lifetime if shutdown cleanup is skipped.
 pub fn detectTempoEndpoint(
     allocator: std.mem.Allocator,
     observability: *const runtime_config.ObservabilityConfig,
@@ -81,7 +88,6 @@ pub fn detectTempoEndpoint(
             path,
         });
     }
-    // TODO(memory-safety): Make sure caller frees the allocPrint result when autodetect succeeds; current call sites leak this buffer for the lifetime of the process.
 
     slog.debug("tempo_autodetect_unreachable", &.{
         slog.Attr.string("host", observability.autodetect_host),

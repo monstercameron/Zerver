@@ -16,7 +16,18 @@ pub const telemetry = @import("observability/telemetry.zig");
 pub const otel = @import("observability/otel.zig");
 pub const reqtest_module = @import("core/reqtest.zig");
 pub const sql = @import("sql/mod.zig");
-// TODO(code-smell): Guard this re-export behind a neutral abstraction so downstream users are not forced onto the libuv backend.
+
+// Reactor Backend Abstraction Note:
+// Currently, libuv is directly exposed in the public API, coupling users to this specific backend.
+// Design Goal: Abstract reactor interface (Reactor trait/protocol) with multiple implementations:
+//   - LibuvReactor (current, production-ready)
+//   - IoUringReactor (Linux-specific, higher performance)
+//   - KqueueReactor (macOS/BSD)
+//   - WasiReactor (WebAssembly)
+// Implementation: Create reactor.zig with interface definition, move libuv to reactor/backends/
+// Benefits: Backend swapping at compile time, easier testing with mock reactor
+// Tradeoff: Adds abstraction layer complexity, may incur small runtime overhead from indirection
+// Current: Directly expose libuv for simplicity until multiple backends are implemented
 pub const libuv_reactor = @import("runtime/reactor/libuv.zig");
 pub const reactor_join = @import("runtime/reactor/join.zig");
 pub const reactor_job_system = @import("runtime/reactor/job_system.zig");

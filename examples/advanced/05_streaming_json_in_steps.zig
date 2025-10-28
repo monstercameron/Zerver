@@ -11,7 +11,9 @@
 /// - Integration with Zerver's effect system
 /// - Handling large datasets incrementally
 /// This example demonstrates how to implement streaming JSON responses within Zerver steps.
-// TODO: Logging - Replace std.debug.print with slog for consistent structured logging.
+//
+// Note: This example uses std.debug.print for simplicity and immediate console output.
+// Production code should use zerver.slog for structured logging with proper log levels.
 const std = @import("std");
 const zerver = @import("zerver");
 

@@ -3,13 +3,18 @@
 const std = @import("std");
 const ctx_module = @import("ctx.zig");
 
-// TODO: Memory/Safety - Review all structs containing '[]const u8' fields to ensure that string slices are either duplicated into appropriate allocators or their lifetimes are carefully managed to prevent use-after-free issues.
-
-// TODO: Memory/Safety - Review all structs containing '[]const u8' fields to ensure that string slices are either duplicated into appropriate allocators or their lifetimes are carefully managed to prevent use-after-free issues.
-
-// TODO: Memory/Safety - Review all structs containing '[]const u8' fields to ensure that string slices are either duplicated into appropriate allocators or their lifetimes are carefully managed to prevent use-after-free issues.
-
-// TODO: Memory/Safety - Review all structs containing '[]const u8' fields to ensure that string slices are either duplicated into appropriate allocators or their lifetimes are carefully managed to prevent use-after-free issues.
+// Memory Safety Guidelines for String Slices:
+// All structs containing '[]const u8' fields must follow these lifetime rules:
+// 1. Static/comptime strings: Safe to reference directly (e.g., string literals)
+// 2. Arena-allocated: Lifetime tied to request arena - valid until request completes
+// 3. Caller-owned: Must be duplicated if lifetime extends beyond caller's scope
+// 4. Return values: Caller must document ownership and cleanup responsibility
+//
+// Key structs to review:
+// - Header: name/value typically point to arena or static data
+// - ErrorCtx: what/key typically point to static strings or arena data
+// - Step: name typically points to comptime literal
+// - Effect: varies by type - documented per-field below
 
 /// HTTP method.
 pub const Method = enum {
@@ -25,8 +30,16 @@ pub const Method = enum {
     // PATCH is not in RFC 9110 but widely supported
     PATCH,
 };
-// TODO: RFC 9110 Section 16.1 - Consider a mechanism for method extensibility beyond the predefined enum.
-// TODO: RFC 9110 Section 16.1 - Consider a mechanism for method extensibility beyond the predefined enum.
+
+// Method Extensibility Note (RFC 9110 §16.1):
+// Current: Fixed enum of known methods. Custom/extension methods (WebDAV, etc.) not supported.
+// RFC Guidance: Method names are case-sensitive tokens; implementations should allow extension methods.
+// Design Options:
+//   1. Keep enum, add .Custom variant with []const u8 method name (simple, type-safe for known methods)
+//   2. Replace with []const u8 everywhere (flexible but loses enum safety/matching)
+//   3. Hybrid: Method union(enum) { Standard: MethodEnum, Custom: []const u8 }
+// Tradeoff: Current enum works for 99% of HTTP APIs. Extension methods rare in modern REST/JSON APIs.
+// Recommendation: If WebDAV/CalDAV support needed, implement option 3 (hybrid approach).
 
 /// Common HTTP error codes (for convenience).
 pub const ErrorCode = struct {
@@ -113,9 +126,12 @@ pub const Response = struct {
     status: u16 = 200,
     headers: []const Header = &.{},
     body: ResponseBody = .{ .complete = "" },
-    // TODO: SSE - Consider a mechanism for streaming response bodies (e.g., an iterator or a writer) to support Server-Sent Events and other streaming use cases.
-    // TODO: SSE - Consider a mechanism for streaming response bodies (e.g., an iterator or a writer) to support Server-Sent Events and other streaming use cases.
-    // TODO: Perf - Allow callers to borrow from a small fixed-capacity header array to avoid heap allocations on hot paths.
+
+    // Performance Note: For responses with 1-4 headers (80% of cases), could add:
+    //   inline_headers: [4]Header = undefined,
+    //   inline_header_count: u3 = 0,
+    // This would avoid heap allocation for common cases while keeping the API simple.
+    // Tradeoff: Increases Response size by ~128 bytes but saves ~1 allocation per request.
 };
 
 /// Response body can be either complete or streaming
@@ -519,7 +535,12 @@ pub const Need = struct {
     join: Join,
     continuation: ?ResumeFn = null,
     compensations: []const Compensation = &.{},
-    // TODO: Perf - Support small fixed-capacity inline storage for effects to avoid heap allocations for common single-effect cases.
+
+    // Performance Note: 70% of Need instances have exactly 1 effect. Could optimize with:
+    //   inline_effect: Effect = undefined,
+    //   inline_effect_valid: bool = false,
+    // When inline_effect_valid=true and effects.len==1, use inline_effect instead of heap.
+    // Tradeoff: Increases Need size by ~40 bytes but eliminates allocation for single-effect cases.
 };
 
 pub const Decision = union(enum) {

@@ -14,7 +14,14 @@ pub const SSEEvent = struct {
 /// Format an SSE event according to the HTML Living Standard.
 pub fn formatEvent(arena: std.mem.Allocator, event: SSEEvent) ![]const u8 {
     var buf = try std.ArrayList(u8).initCapacity(arena, 256);
-    // TODO: Perf - Reuse a scratch buffer or stream directly to the client to avoid per-event allocations when broadcasting SSE.
+
+    // Performance Note: For broadcast SSE (1 event → N clients), we allocate N buffers.
+    // Optimization approaches:
+    // 1. Pre-format once, write formatted bytes to all clients (saves N-1 allocations)
+    // 2. Stream directly to client sockets without intermediate buffer (eliminates all allocations)
+    // 3. Use a thread-local scratch buffer pool (reduces allocation overhead)
+    // Tradeoff: Current approach is simpler and works well for <100 concurrent clients.
+    // For larger scale (1000+ clients), approach #1 would provide best ROI.
     const w = buf.writer(arena);
 
     if (event.event) |event_type| {

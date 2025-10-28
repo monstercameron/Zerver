@@ -85,6 +85,16 @@ pub fn initializeServer(allocator: std.mem.Allocator) !Initialization {
     try blog_effects.initialize(resources);
 
     // Create server config
+    // API Design Note: Error handler is currently hardwired to blog_errors.onError
+    // Ideal: Accept error handler as parameter or via config:
+    //   pub fn init(allocator: Allocator, config: InitConfig) !*Server
+    //   where InitConfig contains:
+    //     - error_handler: ?*const fn(Error) void
+    //     - effect_handler: *const fn(Effect) EffectResult
+    //     - router: Router
+    // This would allow library consumers to provide custom error handling.
+    // Current limitation: bootstrap/init.zig is specific to blog example;
+    // consumers should copy and modify this file rather than calling it directly.
     const mut_config = root.Config{
         .addr = .{
             .ip = server_ip,
@@ -92,7 +102,6 @@ pub fn initializeServer(allocator: std.mem.Allocator) !Initialization {
         },
         .on_error = blog_errors.onError,
     };
-    // TODO(code-smell): Hard-wiring blog error handler here prevents consumers embedding the framework from injecting their own global handler.
 
     // Create server with the blog effects handler until additional feature routing is wired
     var config = mut_config;

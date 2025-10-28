@@ -132,10 +132,20 @@ fn handleConnection(
             .streaming => |streaming_resp| {
                 // Send streaming response (SSE)
                 try handler.sendStreamingResponse(connection, streaming_resp.headers, streaming_resp.writer, streaming_resp.context);
-                // For streaming responses, we typically don't keep the connection alive in the same way
-                // as the stream may run indefinitely
-                // TODO: RFC 9112 Section 8.1 - Pipelining is not supported. The server should read and respond to requests sequentially.
-                // TODO: Logical Error - For streaming responses (e.g., SSE), the 'shouldKeepConnectionAlive' check is currently skipped. Ensure streaming connections are properly managed for persistence, as they are typically long-lived.
+
+                // HTTP Pipelining Note (RFC 9112 §8.1):
+                // Current: Streaming responses return immediately, closing connection loop
+                // RFC: Pipelining allows multiple requests on one connection without waiting for responses
+                // Implementation Status: NOT SUPPORTED - server processes one request at a time per connection
+                // Rationale: Pipelining adds complexity and is deprecated in HTTP/2 and HTTP/3
+                // Most browsers disabled pipelining due to interoperability issues
+                // Current approach: One request → one response → optionally keep-alive for next request
+                //
+                // Streaming Connection Management:
+                // SSE and long-polling responses keep connection open for extended periods
+                // Current: Early return skips keep-alive check (connection closes after stream ends)
+                // Ideal: Track streaming connections separately, allow proper cleanup on timeout/error
+                // Risk: Connection may not be properly recycled if stream never completes
                 return;
             },
         }

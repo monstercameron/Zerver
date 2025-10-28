@@ -41,7 +41,19 @@ pub const Router = struct {
     routes: std.ArrayList(CompiledRoute),
     next_order: usize,
 
-    // TODO: RFC 9110 - Consider implementing URI normalization (Section 4.2.3) and defining consistent behavior for trailing slashes in paths.
+    // URI Normalization Note (RFC 9110 §4.2.3):
+    // Current: Routes match paths exactly as received (after URL decoding)
+    // Trailing slash handling: "/foo" and "/foo/" are different routes
+    // RFC Guidelines for normalization:
+    //   - Remove dot segments: /foo/./bar → /foo/bar, /foo/../bar → /bar
+    //   - Normalize percent-encoding: %7E → ~ (unreserved chars)
+    //   - Case normalization: scheme/host are case-insensitive, path is case-sensitive
+    // Current implementation: server.zig performs basic normalization (removes /./ and /../)
+    // Trailing slash policy options:
+    //   1. Strict: /foo != /foo/ (current - explicit, no surprises)
+    //   2. Redirect: /foo/ → 301 to /foo (or vice versa)
+    //   3. Canonical: Register both, prefer one as canonical
+    // Recommendation: Keep current strict behavior; apps can explicitly handle both if needed.
 
     pub fn init(allocator: std.mem.Allocator) !Router {
         return .{
