@@ -966,8 +966,14 @@ pub const Server = struct {
 
     /// URL decode a string per RFC 3986
     fn urlDecode(encoded: []const u8, arena: std.mem.Allocator) ![]const u8 {
+        // Fast-path: if no escapes present, return original slice (no allocation)
+        const has_escapes = for (encoded) |c| {
+            if (c == '%' or c == '+') break true;
+        } else false;
+
+        if (!has_escapes) return encoded;
+
         var result = try std.ArrayList(u8).initCapacity(arena, encoded.len);
-        // TODO: Perf - Fast-path strings without escapes to return the original slice and skip allocation.
         var i: usize = 0;
 
         while (i < encoded.len) {

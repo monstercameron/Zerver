@@ -151,13 +151,27 @@ pub const Error = struct {
 };
 
 /// Effect result: either success payload bytes or failure metadata.
+/// Caller owns the result and must call deinit() to free allocated bytes.
 pub const EffectResult = union(enum) {
     success: struct {
         bytes: []u8,
         allocator: ?std.mem.Allocator,
-        // TODO: Ownership - Clarify who frees `bytes`. Without a contract to call a deinit helper we leak buffers when effects succeed.
     },
     failure: Error,
+
+    /// Free allocated bytes if this result owns them.
+    /// Must be called by the consumer to prevent memory leaks.
+    pub fn deinit(self: *EffectResult) void {
+        switch (self.*) {
+            .success => |succ| {
+                if (succ.allocator) |alloc| {
+                    alloc.free(succ.bytes);
+                }
+            },
+            .failure => {},
+        }
+        self.* = undefined;
+    }
 };
 
 /// Retry policy with configurable parameters for fault tolerance.

@@ -4,6 +4,9 @@ const std = @import("std");
 const types = @import("types.zig");
 const slog = @import("../observability/slog.zig");
 
+// Global atomic counter for efficient request ID generation
+var request_id_counter = std.atomic.Value(u64).init(1);
+
 /// Callback type for on-exit hooks.
 pub const ExitCallback = *const fn (*CtxBase) void;
 
@@ -134,9 +137,10 @@ pub const CtxBase = struct {
     pub fn ensureRequestId(self: *CtxBase) void {
         if (self.request_id.len != 0) return;
 
-        var buf: [32]u8 = undefined;
-        const generated = std.fmt.bufPrint(&buf, "{d}", .{std.time.nanoTimestamp()}) catch return;
-        // TODO(perf): Switch to a cheaper ID source (e.g. monotonic counter + base36) to avoid formatting overhead on hot paths.
+        // Use atomic counter for fast ID generation (avoids timestamp formatting overhead)
+        const id_num = request_id_counter.fetchAdd(1, .monotonic);
+        var buf: [20]u8 = undefined; // u64 max is 20 decimal digits
+        const generated = std.fmt.bufPrint(&buf, "{d}", .{id_num}) catch return;
         self.request_id = self.allocator.dupe(u8, generated) catch return;
         self._owns_request_id = true;
     }

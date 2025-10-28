@@ -6,6 +6,11 @@ const ctx = @import("ctx.zig");
 const slog = @import("../observability/slog.zig");
 const http_status = @import("http_status.zig").HttpStatus;
 
+// Static header slice reused for all JSON error responses (performance optimization)
+const json_error_headers = [_]types.Header{
+    .{ .name = "Content-Type", .value = "application/json" },
+};
+
 pub const ErrorRenderer = struct {
     /// Escape a string for safe JSON embedding
     fn escapeJsonString(writer: anytype, s: []const u8) !void {
@@ -53,16 +58,9 @@ pub const ErrorRenderer = struct {
 
         const body = try allocator.dupe(u8, buf.items);
 
-        const headers = try allocator.alloc(types.Header, 1);
-        // TODO: Perf - Reuse a static Content-Type header slice instead of allocating a new array for every error.
-        headers[0] = .{
-            .name = "Content-Type",
-            .value = "application/json",
-        };
-
         return types.Response{
             .status = status,
-            .headers = headers,
+            .headers = &json_error_headers,
             .body = .{ .complete = body },
         };
     }
