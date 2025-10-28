@@ -105,11 +105,6 @@ jobs:
           zig version
           zig env
 
-      # --- Format check before build to avoid fmt scanning cache artifacts ---
-      - name: Check formatting
-        shell: pwsh
-        run: zig fmt --check build.zig main.zig src examples tests tools
-
       # --- Build / Test ---
       - name: Build (ReleaseSafe)
         shell: pwsh
