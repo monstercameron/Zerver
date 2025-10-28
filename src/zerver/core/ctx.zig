@@ -408,6 +408,297 @@ pub const CtxBase = struct {
         defer parsed.deinit();
         return parsed.value;
     }
+
+    // ========================================================================
+    // DX Improvement Helpers - Effect Builders
+    // ========================================================================
+
+    /// Create a database GET effect
+    pub fn dbGet(self: *CtxBase, token: u32, key: []const u8) types.Effect {
+        _ = self;
+        return .{ .db_get = .{
+            .key = key,
+            .token = token,
+            .required = true,
+        } };
+    }
+
+    /// Create a database PUT effect
+    pub fn dbPut(self: *CtxBase, token: u32, key: []const u8, value: []const u8) types.Effect {
+        _ = self;
+        return .{ .db_put = .{
+            .key = key,
+            .value = value,
+            .token = token,
+            .required = true,
+        } };
+    }
+
+    /// Create a database DELETE effect
+    pub fn dbDel(self: *CtxBase, token: u32, key: []const u8) types.Effect {
+        _ = self;
+        return .{ .db_del = .{
+            .key = key,
+            .token = token,
+            .required = true,
+        } };
+    }
+
+    /// Create an HTTP GET effect
+    pub fn httpGet(self: *CtxBase, token: u32, url: []const u8) types.Effect {
+        _ = self;
+        return .{ .http_get = .{
+            .url = url,
+            .token = token,
+            .required = true,
+        } };
+    }
+
+    /// Create an HTTP POST effect
+    pub fn httpPost(self: *CtxBase, token: u32, url: []const u8, body: []const u8) types.Effect {
+        _ = self;
+        return .{ .http_post = .{
+            .url = url,
+            .body = body,
+            .token = token,
+            .required = true,
+        } };
+    }
+
+    /// Create an HTTP HEAD effect
+    pub fn httpHead(self: *CtxBase, token: u32, url: []const u8) types.Effect {
+        _ = self;
+        return .{ .http_head = .{
+            .url = url,
+            .token = token,
+            .required = true,
+        } };
+    }
+
+    /// Create an HTTP PUT effect
+    pub fn httpPut(self: *CtxBase, token: u32, url: []const u8, body: []const u8) types.Effect {
+        _ = self;
+        return .{ .http_put = .{
+            .url = url,
+            .body = body,
+            .token = token,
+            .required = true,
+        } };
+    }
+
+    /// Create an HTTP DELETE effect
+    pub fn httpDelete(self: *CtxBase, token: u32, url: []const u8) types.Effect {
+        _ = self;
+        return .{ .http_delete = .{
+            .url = url,
+            .token = token,
+            .required = true,
+        } };
+    }
+
+    /// Create an HTTP PATCH effect
+    pub fn httpPatch(self: *CtxBase, token: u32, url: []const u8, body: []const u8) types.Effect {
+        _ = self;
+        return .{ .http_patch = .{
+            .url = url,
+            .body = body,
+            .token = token,
+            .required = true,
+        } };
+    }
+
+    /// Create an HTTP OPTIONS effect
+    pub fn httpOptions(self: *CtxBase, token: u32, url: []const u8) types.Effect {
+        _ = self;
+        return .{ .http_options = .{
+            .url = url,
+            .token = token,
+            .required = true,
+        } };
+    }
+
+    /// Create a database SCAN effect
+    pub fn dbScan(self: *CtxBase, token: u32, prefix: []const u8) types.Effect {
+        _ = self;
+        return .{ .db_scan = .{
+            .prefix = prefix,
+            .token = token,
+            .required = true,
+        } };
+    }
+
+    /// Create a file JSON read effect
+    pub fn fileJsonRead(self: *CtxBase, token: u32, file_path: []const u8) types.Effect {
+        _ = self;
+        return .{ .file_json_read = .{
+            .path = file_path,
+            .token = token,
+            .required = true,
+        } };
+    }
+
+    /// Create a file JSON write effect
+    pub fn fileJsonWrite(self: *CtxBase, token: u32, file_path: []const u8, content: []const u8) types.Effect {
+        _ = self;
+        return .{ .file_json_write = .{
+            .path = file_path,
+            .content = content,
+            .token = token,
+            .required = true,
+        } };
+    }
+
+    /// Create a compute task effect
+    pub fn computeTask(self: *CtxBase, token: u32, task_type: []const u8, input: []const u8) types.Effect {
+        _ = self;
+        return .{ .compute_task = .{
+            .task_type = task_type,
+            .input = input,
+            .token = token,
+            .required = true,
+        } };
+    }
+
+    /// Create an accelerator task effect (GPU/TPU)
+    pub fn acceleratorTask(self: *CtxBase, token: u32, task_type: []const u8, input: []const u8) types.Effect {
+        _ = self;
+        return .{ .accelerator_task = .{
+            .task_type = task_type,
+            .input = input,
+            .token = token,
+            .required = true,
+        } };
+    }
+
+    /// Create a KV cache get effect
+    pub fn kvCacheGet(self: *CtxBase, token: u32, key: []const u8) types.Effect {
+        _ = self;
+        return .{ .kv_cache_get = .{
+            .key = key,
+            .token = token,
+            .required = true,
+        } };
+    }
+
+    /// Create a KV cache set effect
+    pub fn kvCacheSet(self: *CtxBase, token: u32, key: []const u8, value: []const u8, ttl_seconds: u32) types.Effect {
+        _ = self;
+        return .{ .kv_cache_set = .{
+            .key = key,
+            .value = value,
+            .ttl_seconds = ttl_seconds,
+            .token = token,
+            .required = true,
+        } };
+    }
+
+    /// Create a KV cache delete effect
+    pub fn kvCacheDelete(self: *CtxBase, token: u32, key: []const u8) types.Effect {
+        _ = self;
+        return .{ .kv_cache_delete = .{
+            .key = key,
+            .token = token,
+            .required = true,
+        } };
+    }
+
+    // ========================================================================
+    // DX Improvement Helpers - Effect Execution
+    // ========================================================================
+
+    /// Execute effects sequentially with auto-continuation
+    /// Simplifies the common pattern of: create effects array → return Decision.need
+    pub fn runEffects(self: *CtxBase, effects: []const types.Effect) types.Decision {
+        _ = self;
+        return .{ .need = .{
+            .effects = effects,
+            .mode = .Sequential,
+            .join = .all,
+            .continuation = null, // Auto-continue to next step
+        } };
+    }
+
+    /// Execute effects in parallel with custom join strategy
+    pub fn runEffectsParallel(self: *CtxBase, join: types.Join, effects: []const types.Effect) types.Decision {
+        _ = self;
+        return .{ .need = .{
+            .effects = effects,
+            .mode = .Parallel,
+            .join = join,
+            .continuation = null, // Auto-continue to next step
+        } };
+    }
+
+    // ========================================================================
+    // DX Improvement Helpers - Response Builders
+    // ========================================================================
+
+    /// Build a JSON response (serializes data using toJson)
+    /// Eliminates the need for manual Response construction
+    pub fn jsonResponse(self: *CtxBase, status_code: u16, data: anytype) !types.Decision {
+        const json_str = try self.toJson(data);
+        return types.Decision{
+            .Done = .{
+                .status = status_code,
+                .headers = &[_]types.Header{
+                    .{ .name = "Content-Type", .value = "application/json" },
+                },
+                .body = .{ .complete = json_str },
+            },
+        };
+    }
+
+    /// Build a plain text response
+    pub fn textResponse(self: *CtxBase, status_code: u16, text: []const u8) types.Decision {
+        _ = self;
+        return types.Decision{
+            .Done = .{
+                .status = status_code,
+                .headers = &[_]types.Header{
+                    .{ .name = "Content-Type", .value = "text/plain; charset=utf-8" },
+                },
+                .body = .{ .complete = text },
+            },
+        };
+    }
+
+    /// Build an empty response (useful for 204 No Content)
+    pub fn emptyResponse(self: *CtxBase, status_code: u16) types.Decision {
+        _ = self;
+        return types.Decision{
+            .Done = .{
+                .status = status_code,
+                .body = .{ .complete = "" },
+            },
+        };
+    }
+
+    // ========================================================================
+    // DX Improvement Helpers - Parameter Extraction
+    // ========================================================================
+
+    /// Get a required path parameter or fail with NotFound error
+    /// Eliminates the need for manual null checking and error construction
+    pub fn paramRequired(self: *CtxBase, name: []const u8, domain: []const u8) ![]const u8 {
+        return self.param(name) orelse {
+            self.last_error = .{
+                .kind = types.ErrorCode.NotFound,
+                .ctx = .{ .what = domain, .key = try self.bufFmt("missing_{s}", .{name}) },
+            };
+            return error.MissingParameter;
+        };
+    }
+
+    /// Get a required header or fail with BadRequest error
+    pub fn headerRequired(self: *CtxBase, name: []const u8, domain: []const u8) ![]const u8 {
+        return self.header(name) orelse {
+            self.last_error = .{
+                .kind = types.ErrorCode.BadRequest,
+                .ctx = .{ .what = domain, .key = try self.bufFmt("missing_header_{s}", .{name}) },
+            };
+            return error.MissingHeader;
+        };
+    }
 };
 
 /// CtxView(spec) creates a typed view that enforces read/write permissions at compile time.
