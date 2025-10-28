@@ -17,7 +17,6 @@ test "ErrorRenderer.render returns JSON payload with headers" {
     );
 
     const response = try zerver.ErrorRenderer.render(allocator, err);
-    defer allocator.free(@constCast(response.headers));
 
     const body = try expectCompleteBody(response);
     defer allocator.free(@constCast(body));

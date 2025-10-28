@@ -154,13 +154,18 @@ eed`.
 - expose OTLP exporter toggle via config/env [@observability-team]
 - write setup guide for connecting to OTLP collector [@observability-team]
 - add troubleshooting notes and sample collector config [@observability-team]
-- Update src/zerver/core/types.zig so effect `token` fields take the application `Slot` enum instead of raw `u32` identifiers, keeping slot typing consistent with SPEC section 3.2.
-- Require an explicit non-null `resume` pointer on `Need` in src/zerver/core/types.zig (rename the optional `continuation` field) so continuations remain explicit as specified in section 3.2.
-- Provide SPEC-default values for `Need.mode` and `Need.join` (Parallel/all) in src/zerver/core/types.zig to remove boilerplate and match the published contract.
-- Add an arena-backed `jsonValue()` helper in src/zerver/core/ctx.zig that returns `std.json.Value`, matching the SPEC `CtxBase.json()` contract in section 3.3.
-- Teach src/zerver/core/reqtest.zig helpers (e.g., `seedSlotString`) to accept slot tags rather than bare tokens so ReqTest usage stays in lock-step with typed slots.
-- Introduce the FakeInterpreter harness promised in SPEC section 8 to let tests drive continuations without live I/O.
-- Build the request replay capture/restore tooling from SPEC section 8.3 so traces can be reproduced from serialized slot snapshots.
+
+// docs/wants.md: SPEC compliance gaps (high priority MVP items)
+- Change Effect token fields from `u32` to application `Slot` enum type in `src/zerver/core/types.zig` (HttpGet, HttpPost, HttpPut, HttpDelete, DbGet, DbPut, DbDel, DbScan, etc.) per SPEC §3.2 to maintain slot typing consistency.
+- Rename `Need.continuation` to `Need.resume` and make it required (non-optional) in `src/zerver/core/types.zig:536` per SPEC §3.2 so continuations are explicit and mandatory.
+- Add default values `mode: Mode = .Parallel` and `join: Join = .all` to `Need` struct in `src/zerver/core/types.zig:534-535` per SPEC §3.2 to reduce boilerplate.
+- Add `pub fn json(*CtxBase) !std.json.Value` method to `src/zerver/core/ctx.zig` that returns parsed JSON as JsonValue (distinct from existing typed `json(T)`) per SPEC §3.3.
+- Add short-hand `query()` method alias for `queryParam()` in `src/zerver/core/ctx.zig` to match SPEC §3.3 API surface.
+- Create FakeInterpreter test harness in `src/zerver/core/fake_interpreter.zig` to drive continuations without live I/O per SPEC §9.1.
+- Enhance ReqTest in `src/zerver/core/reqtest.zig` to accept Slot enum tags instead of bare u32 tokens in `seedSlotString` and related methods per SPEC §9.1.
+- Change Step.reads and Step.writes from `[]const u32` to `[]const Slot` in `src/zerver/core/types.zig:557-558` for stronger compile-time slot tracking.
+- Implement request replay capture/restore tooling per SPEC §8.3 with slot snapshot serialization and playback capabilities.
+- Add Config.debug field and wire it through Server initialization per SPEC §12 to control step/effect trace logging.
 
 // docs/wants.md: architecture.md review additions
 - Replace the `std.AutoHashMap(u32, *anyopaque)` slot store in `src/zerver/core/ctx.zig` with typed storage that honours the `CtxView` read/write spec at runtime, closing the TODO called out in the architecture doc.
