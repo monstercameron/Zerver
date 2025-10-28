@@ -96,6 +96,40 @@ Following OTEL HTTP semantic conventions:
 
 Example effect.kind values: `http_get`, `http_post`, `http_put`, `http_delete`, `http_patch`
 
+### TCP Effect Semantic Attributes
+
+Following OTEL network semantic conventions:
+
+| Attribute | Type | Example | Description |
+|-----------|------|---------|-------------|
+| `network.transport` | string | `tcp` | Transport protocol |
+| `network.operation` | string | `connect` | Operation type (extracted from effect.kind) |
+| `network.peer.address` | string | `api.example.com:8080` | Peer host and port |
+
+Example effect.kind values: `tcp_connect`, `tcp_send`, `tcp_receive`, `tcp_send_receive`, `tcp_close`
+
+### gRPC Effect Semantic Attributes
+
+Following OTEL RPC semantic conventions:
+
+| Attribute | Type | Example | Description |
+|-----------|------|---------|-------------|
+| `rpc.system` | string | `grpc` | RPC system name |
+| `rpc.service` | string | `helloworld.Greeter` | gRPC service name |
+| `rpc.method` | string | `unary_call` | Call type (extracted from effect.kind) |
+
+Example effect.kind values: `grpc_unary_call`, `grpc_server_stream`
+
+### WebSocket Effect Semantic Attributes
+
+| Attribute | Type | Example | Description |
+|-----------|------|---------|-------------|
+| `network.protocol.name` | string | `websocket` | Protocol name |
+| `websocket.operation` | string | `connect` | Operation type |
+| `websocket.url` | string | `wss://api.example.com/ws` | WebSocket URL |
+
+Example effect.kind values: `websocket_connect`, `websocket_send`, `websocket_receive`
+
 ### Database Effect Semantic Attributes
 
 Following OTEL database semantic conventions:
@@ -186,6 +220,19 @@ For fast requests, Zerver uses an event-first model to minimize overhead:
 - `zerver.step_job_completed`: Step job finished
 - `zerver.step_resume`: Step resumed after effects
 - `zerver.executor_crash`: Executor encountered error
+- `zerver.compute_budget_registered`: Compute task budget allocated
+- `zerver.compute_budget_exceeded`: Task exceeded CPU budget
+- `zerver.compute_budget_yield`: Task cooperatively yielded
+
+### Compute Budget Events
+
+Compute budget events track CPU time consumption for compute-bound tasks:
+
+| Event | Attributes | Description |
+|-------|-----------|-------------|
+| `compute_budget_registered` | token, allocated_ms, priority, yield_interval_ms | Budget allocated when task registered |
+| `compute_budget_exceeded` | token, allocated_ms, used_ms, action (park/reject) | Task exceeded budget, parked or rejected |
+| `compute_budget_yield` | token, elapsed_ms, yield_interval_ms | Task cooperatively yielded to other tasks |
 
 ## Configuration
 
@@ -204,6 +251,12 @@ export ZER_VER_PROMOTE_PARK_MS=5
 
 # Debug mode (promotes all jobs)
 export ZER_VER_DEBUG_JOBS=true
+
+# Compute budget configuration
+export ZER_VER_MAX_REQUEST_CPU_MS=2000  # Max CPU time per request
+export ZER_VER_MAX_TASK_CPU_MS=500      # Max CPU time per task
+export ZER_VER_ENFORCE_BUDGETS=true     # Enable budget enforcement
+export ZER_VER_PARK_ON_EXCEEDED=true    # Park tasks that exceed budgets
 ```
 
 ## Best Practices

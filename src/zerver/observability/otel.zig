@@ -643,6 +643,21 @@ const RequestRecord = struct {
             // HTTP semantic conventions (OTEL spec)
             try span.pushAttribute(try Attribute.initString(self.allocator, "http.url", event.target));
             try span.pushAttribute(try Attribute.initString(self.allocator, "http.method", event.kind[5..])); // Extract method from "http_get" etc
+        } else if (std.mem.startsWith(u8, event.kind, "tcp_")) {
+            // TCP semantic conventions
+            try span.pushAttribute(try Attribute.initString(self.allocator, "network.transport", "tcp"));
+            try span.pushAttribute(try Attribute.initString(self.allocator, "network.operation", event.kind[4..])); // Extract op from "tcp_connect" etc
+            try span.pushAttribute(try Attribute.initString(self.allocator, "network.peer.address", event.target));
+        } else if (std.mem.startsWith(u8, event.kind, "grpc_")) {
+            // gRPC semantic conventions (OTEL spec)
+            try span.pushAttribute(try Attribute.initString(self.allocator, "rpc.system", "grpc"));
+            try span.pushAttribute(try Attribute.initString(self.allocator, "rpc.service", event.target));
+            try span.pushAttribute(try Attribute.initString(self.allocator, "rpc.method", event.kind[5..])); // Extract method type
+        } else if (std.mem.startsWith(u8, event.kind, "websocket_")) {
+            // WebSocket semantic conventions
+            try span.pushAttribute(try Attribute.initString(self.allocator, "network.protocol.name", "websocket"));
+            try span.pushAttribute(try Attribute.initString(self.allocator, "websocket.operation", event.kind[10..])); // Extract op
+            try span.pushAttribute(try Attribute.initString(self.allocator, "websocket.url", event.target));
         } else if (std.mem.startsWith(u8, event.kind, "db_")) {
             // Database semantic conventions (OTEL spec)
             try span.pushAttribute(try Attribute.initString(self.allocator, "db.system", "zerver"));

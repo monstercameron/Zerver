@@ -376,6 +376,103 @@ pub const HttpPatch = struct {
     required: bool = true,
 };
 
+/// TCP connection effect - establishes a TCP connection.
+pub const TcpConnect = struct {
+    host: []const u8,
+    port: u16,
+    token: u32,
+    timeout_ms: u32 = 3000,
+    required: bool = true,
+    keep_alive: bool = true,
+    no_delay: bool = true,
+};
+
+/// TCP send effect - send data over established connection.
+pub const TcpSend = struct {
+    connection_token: u32,
+    data: []const u8,
+    token: u32,
+    timeout_ms: u32 = 1000,
+    required: bool = true,
+};
+
+/// TCP receive effect - receive data from established connection.
+pub const TcpReceive = struct {
+    connection_token: u32,
+    token: u32,
+    timeout_ms: u32 = 5000,
+    max_bytes: u32 = 65536,
+    required: bool = true,
+};
+
+/// TCP send-and-receive effect (most common pattern).
+pub const TcpSendReceive = struct {
+    connection_token: u32,
+    request: []const u8,
+    token: u32,
+    timeout_ms: u32 = 5000,
+    max_response_bytes: u32 = 65536,
+    required: bool = true,
+};
+
+/// TCP close effect - close established connection.
+pub const TcpClose = struct {
+    connection_token: u32,
+    token: u32,
+    required: bool = false,
+};
+
+/// gRPC unary call effect.
+pub const GrpcUnaryCall = struct {
+    endpoint: []const u8,
+    service: []const u8,
+    method: []const u8,
+    request_proto: []const u8,
+    token: u32,
+    timeout_ms: u32 = 5000,
+    required: bool = true,
+    metadata: []const Header = &.{},
+};
+
+/// gRPC server streaming call effect.
+pub const GrpcServerStream = struct {
+    endpoint: []const u8,
+    service: []const u8,
+    method: []const u8,
+    request_proto: []const u8,
+    token: u32,
+    timeout_ms: u32 = 30000,
+    required: bool = true,
+    metadata: []const Header = &.{},
+    max_messages: u32 = 1000,
+};
+
+/// WebSocket connect effect.
+pub const WebSocketConnect = struct {
+    url: []const u8,
+    token: u32,
+    timeout_ms: u32 = 5000,
+    required: bool = true,
+    headers: []const Header = &.{},
+};
+
+/// WebSocket send effect.
+pub const WebSocketSend = struct {
+    connection_token: u32,
+    message: []const u8,
+    token: u32,
+    timeout_ms: u32 = 1000,
+    required: bool = true,
+};
+
+/// WebSocket receive effect.
+pub const WebSocketReceive = struct {
+    connection_token: u32,
+    token: u32,
+    timeout_ms: u32 = 30000,
+    required: bool = true,
+};
+
 /// Database GET effect.
 pub const DbGet = struct {
     key: []const u8,
@@ -437,6 +534,12 @@ pub const ComputeTask = struct {
     timeout_ms: u32 = 0,
     required: bool = true,
     metadata: ?*const anyopaque = null,
+
+    // CPU Budget Management
+    cpu_budget_ms: u32 = 0, // Estimated CPU time budget (0 = unlimited)
+    priority: u8 = 128, // Task priority (0=highest, 255=lowest, 128=normal)
+    park_on_budget_exceeded: bool = true, // Park task if budget exceeded
+    cooperative_yield_interval_ms: u32 = 10, // Yield to other tasks every N ms
 };
 
 /// Accelerator task (GPU/TPU/etc.) routed to specialized queue.
@@ -446,6 +549,11 @@ pub const AcceleratorTask = struct {
     timeout_ms: u32 = 2000,
     required: bool = true,
     metadata: ?*const anyopaque = null,
+
+    // Accelerator Budget Management
+    compute_budget_ms: u32 = 0, // Estimated accelerator time budget (0 = unlimited)
+    priority: u8 = 128, // Task priority (0=highest, 255=lowest, 128=normal)
+    park_on_budget_exceeded: bool = true, // Park task if budget exceeded
 };
 
 /// Key-value cache read.
@@ -485,6 +593,16 @@ pub const Effect = union(enum) {
     http_trace: HttpTrace,
     http_connect: HttpConnect,
     http_patch: HttpPatch,
+    tcp_connect: TcpConnect,
+    tcp_send: TcpSend,
+    tcp_receive: TcpReceive,
+    tcp_send_receive: TcpSendReceive,
+    tcp_close: TcpClose,
+    grpc_unary_call: GrpcUnaryCall,
+    grpc_server_stream: GrpcServerStream,
+    websocket_connect: WebSocketConnect,
+    websocket_send: WebSocketSend,
+    websocket_receive: WebSocketReceive,
     db_get: DbGet,
     db_put: DbPut,
     db_del: DbDel,
