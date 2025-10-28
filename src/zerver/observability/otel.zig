@@ -638,6 +638,30 @@ const RequestRecord = struct {
         try span.pushAttribute(try Attribute.initString(self.allocator, "effect.join", @tagName(event.join)));
         try span.pushAttribute(try Attribute.initInt(self.allocator, "effect.timeout_ms", @as(i64, @intCast(event.timeout_ms))));
 
+        // Add domain-specific OTEL semantic attributes based on effect kind
+        if (std.mem.startsWith(u8, event.kind, "http_")) {
+            // HTTP semantic conventions (OTEL spec)
+            try span.pushAttribute(try Attribute.initString(self.allocator, "http.url", event.target));
+            try span.pushAttribute(try Attribute.initString(self.allocator, "http.method", event.kind[5..])); // Extract method from "http_get" etc
+        } else if (std.mem.startsWith(u8, event.kind, "db_")) {
+            // Database semantic conventions (OTEL spec)
+            try span.pushAttribute(try Attribute.initString(self.allocator, "db.system", "zerver"));
+            try span.pushAttribute(try Attribute.initString(self.allocator, "db.operation", event.kind[3..])); // Extract op from "db_get" etc
+            try span.pushAttribute(try Attribute.initString(self.allocator, "db.statement", event.target)); // key/prefix
+        } else if (std.mem.startsWith(u8, event.kind, "kv_cache_")) {
+            // Cache semantic conventions
+            try span.pushAttribute(try Attribute.initString(self.allocator, "cache.system", "kv"));
+            try span.pushAttribute(try Attribute.initString(self.allocator, "cache.operation", event.kind[9..])); // Extract op
+            try span.pushAttribute(try Attribute.initString(self.allocator, "cache.key", event.target));
+        } else if (std.mem.startsWith(u8, event.kind, "file_")) {
+            // File I/O semantic conventions
+            try span.pushAttribute(try Attribute.initString(self.allocator, "file.path", event.target));
+            try span.pushAttribute(try Attribute.initString(self.allocator, "file.operation", event.kind[5..])); // Extract op
+        } else if (std.mem.startsWith(u8, event.kind, "compute_") or std.mem.startsWith(u8, event.kind, "accelerator_")) {
+            // Compute semantic conventions
+            try span.pushAttribute(try Attribute.initString(self.allocator, "compute.operation", event.target));
+        }
+
         self.child_spans.append(self.allocator, span) catch |err| {
             span.deinit();
             self.allocator.destroy(span);

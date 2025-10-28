@@ -764,6 +764,19 @@ pub const Executor = struct {
             return reactor_decision;
         }
 
+        // Saga Pattern Stub: Check for compensations and fail if present
+        // TODO: Implement saga compensation execution (see docs/wants.md line 73)
+        if (need.compensations.len > 0) {
+            slog.warn("Saga compensations requested but not yet implemented", &.{
+                slog.Attr.uint("compensation_count", @as(u64, @intCast(need.compensations.len))),
+                slog.Attr.uint("need_sequence", @as(u64, @intCast(need_sequence))),
+            });
+            return .{ .Fail = .{
+                .kind = types.ErrorCode.InternalError,
+                .ctx = .{ .what = "saga", .key = "compensation_unimplemented" },
+            } };
+        }
+
         // Track effect results by token (slot identifier)
         var results = std.AutoHashMap(u32, types.EffectResult).init(ctx_base.allocator);
         defer results.deinit();
