@@ -57,6 +57,11 @@ pub const StepExecutionContext = struct {
     created_at_ms: i64,
     last_activity_ms: i64,
 
+    // SLO and fairness metadata
+    priority: u8,                         // Priority level (0=highest, 255=lowest)
+    deadline_ms: ?i64,                    // Absolute deadline timestamp (null = no deadline)
+    enqueue_count: usize,                 // Number of times re-queued (for fairness)
+
     // Parked state (when waiting for effects)
     parked_need: ?types.Need,             // The Need that caused parking
     parked_continuation: ?types.ResumeFn, // Continuation to call after effects
@@ -95,6 +100,7 @@ pub const StepExecutionContext = struct {
         telemetry_ctx: ?*telemetry.Telemetry,
     ) !*StepExecutionContext {
         const self = try allocator.create(StepExecutionContext);
+        const now_ms = std.time.milliTimestamp();
         self.* = .{
             .allocator = allocator,
             .request_ctx = request_ctx,
@@ -103,8 +109,11 @@ pub const StepExecutionContext = struct {
             .layer = layer,
             .depth = 0,
             .state = .ready,
-            .created_at_ms = std.time.milliTimestamp(),
-            .last_activity_ms = std.time.milliTimestamp(),
+            .created_at_ms = now_ms,
+            .last_activity_ms = now_ms,
+            .priority = 128,                      // Default: middle priority
+            .deadline_ms = null,                  // No deadline by default
+            .enqueue_count = 0,                   // First time queued
             .parked_need = null,
             .parked_continuation = null,
             .need_sequence = 0,

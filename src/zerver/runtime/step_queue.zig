@@ -121,7 +121,40 @@ pub const StepQueue = struct {
         self.cond.signal();
     }
 
-    /// Dequeue next step context for execution (blocking if empty)
+    /// Calculate priority score for a context (lower = higher priority)
+    fn calculatePriority(ctx: *step_context.StepExecutionContext, now_ms: i64) i64 {
+        var score: i64 = 0;
+
+        // 1. Deadline urgency (highest priority factor)
+        if (ctx.deadline_ms) |deadline| {
+            const time_until_deadline = deadline - now_ms;
+            if (time_until_deadline <= 0) {
+                // Deadline passed! Very urgent
+                score -= 1_000_000;
+            } else if (time_until_deadline < 100) {
+                // Very close to deadline
+                score -= 500_000;
+            } else {
+                // Closer deadline = higher priority
+                score -= (1_000_000 / @max(1, time_until_deadline));
+            }
+        }
+
+        // 2. Base priority (0=highest, 255=lowest)
+        score += @as(i64, ctx.priority) * 1000;
+
+        // 3. Anti-starvation: Boost priority based on re-queue count
+        // Each re-queue increases priority significantly
+        score -= @as(i64, ctx.enqueue_count) * 10_000;
+
+        // 4. Age bonus: Older requests get priority boost
+        const age_ms = now_ms - ctx.created_at_ms;
+        score -= age_ms / 10;  // Subtract 1 per 10ms of age
+
+        return score;
+    }
+
+    /// Dequeue next step context for execution (priority-based, blocking if empty)
     pub fn dequeue(self: *StepQueue) ?*step_context.StepExecutionContext {
         self.mutex.lock();
         defer self.mutex.unlock();
@@ -139,8 +172,22 @@ pub const StepQueue = struct {
             self.cond.wait(&self.mutex);
         }
 
-        // Pop from front (FIFO)
-        const ctx = self.queue.orderedRemove(0);
+        // Find highest priority item (lowest score)
+        const now_ms = std.time.milliTimestamp();
+        var best_index: usize = 0;
+        var best_score: i64 = calculatePriority(self.queue.items[0], now_ms);
+
+        for (self.queue.items, 0..) |ctx, i| {
+            const score = calculatePriority(ctx, now_ms);
+            if (score < best_score) {
+                best_score = score;
+                best_index = i;
+            }
+        }
+
+        // Remove highest priority item
+        const ctx = self.queue.orderedRemove(best_index);
+        ctx.enqueue_count += 1;  // Track re-queue count for fairness
         _ = self.total_dequeued.fetchAdd(1, .seq_cst);
 
         slog.debug("step_dequeued", &.{
