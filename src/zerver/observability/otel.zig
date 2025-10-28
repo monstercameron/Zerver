@@ -562,7 +562,9 @@ const RequestRecord = struct {
         else
             self.span_id;
         const start_ns = event.timestamp_ms * std.time.ns_per_ms;
-        var span = try ChildSpan.create(self.allocator, event.name, .internal, parent_span_id, start_ns);
+        const span_name = try std.fmt.allocPrint(self.allocator, "zerver.step.{s}", .{event.name});
+        defer self.allocator.free(span_name);
+        var span = try ChildSpan.create(self.allocator, span_name, .internal, parent_span_id, start_ns);
         errdefer {
             span.deinit();
             self.allocator.destroy(span);
@@ -618,7 +620,9 @@ const RequestRecord = struct {
         else
             self.span_id;
         const start_ns = event.timestamp_ms * std.time.ns_per_ms;
-        var span = try ChildSpan.create(self.allocator, event.kind, .client, parent_span_id, start_ns);
+        const span_name = try std.fmt.allocPrint(self.allocator, "zerver.effect.{s}", .{event.kind});
+        defer self.allocator.free(span_name);
+        var span = try ChildSpan.create(self.allocator, span_name, .client, parent_span_id, start_ns);
         errdefer {
             span.deinit();
             self.allocator.destroy(span);
@@ -864,7 +868,7 @@ const RequestRecord = struct {
                 if (effect_parent) |parent_span| {
                     const job_span = try ChildSpan.create(
                         self.allocator,
-                        "effect_job",
+                        "zerver.job.effect",
                         .internal,
                         parent_span.span_id,
                         @as(u64, @intCast(state.enqueue_ts)) * std.time.ns_per_ms,
@@ -913,11 +917,8 @@ const RequestRecord = struct {
                         event.timestamp_ms * std.time.ns_per_ms,
                     ));
 
-                    // Store job span for later export
-                    // For now, we'll immediately add it to a collection
-                    // TODO: Properly manage job span lifecycle
-                    job_span.deinit();
-                    self.allocator.destroy(job_span);
+                    // Store job span for export
+                    try self.child_spans.append(self.allocator, job_span);
                 }
             }
 
@@ -1023,7 +1024,7 @@ const RequestRecord = struct {
                 // Step jobs are children of root request span since they may not have a parent step span
                 const job_span = try ChildSpan.create(
                     self.allocator,
-                    "step_job",
+                    "zerver.job.step",
                     .internal,
                     self.span_id,
                     @as(u64, @intCast(state.enqueue_ts)) * std.time.ns_per_ms,
@@ -1065,10 +1066,8 @@ const RequestRecord = struct {
                     event.timestamp_ms * std.time.ns_per_ms,
                 ));
 
-                // Clean up promoted job span
-                // TODO: Properly manage job span lifecycle
-                job_span.deinit();
-                self.allocator.destroy(job_span);
+                // Store job span for export
+                try self.child_spans.append(self.allocator, job_span);
             }
 
             // Clean up JobState
@@ -1354,12 +1353,17 @@ const RequestRecord = struct {
 
         if (event.error_ctx) |ctx| {
             self.error_ctx = try ErrorCtxCopy.init(self.allocator, ctx);
+            try self.pushAttribute(try Attribute.initString(self.allocator, "error.type", ctx.what));
             try self.pushAttribute(try Attribute.initString(self.allocator, "zerver.error.what", ctx.what));
             try self.pushAttribute(try Attribute.initString(self.allocator, "zerver.error.key", ctx.key));
             try self.setStatus(.@"error", ctx.what);
         } else if (self.status != .@"error") {
             if (event.status_code >= 500) {
-                try self.setStatus(.@"error", "server error");
+                try self.setStatus(.@"error", "server_error");
+                try self.pushAttribute(try Attribute.initString(self.allocator, "error.type", "server_error"));
+            } else if (event.status_code >= 400) {
+                try self.setStatus(.@"error", "client_error");
+                try self.pushAttribute(try Attribute.initString(self.allocator, "error.type", "client_error"));
             } else if (event.status_code < 400) {
                 self.status = .ok;
             }

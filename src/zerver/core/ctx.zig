@@ -683,7 +683,7 @@ pub const CtxBase = struct {
         return self.param(name) orelse {
             self.last_error = .{
                 .kind = types.ErrorCode.NotFound,
-                .ctx = .{ .what = domain, .key = try self.bufFmt("missing_{s}", .{name}) },
+                .ctx = .{ .what = domain, .key = self.bufFmt("missing_{s}", .{name}) },
             };
             return error.MissingParameter;
         };
@@ -694,7 +694,7 @@ pub const CtxBase = struct {
         return self.header(name) orelse {
             self.last_error = .{
                 .kind = types.ErrorCode.BadRequest,
-                .ctx = .{ .what = domain, .key = try self.bufFmt("missing_header_{s}", .{name}) },
+                .ctx = .{ .what = domain, .key = self.bufFmt("missing_header_{s}", .{name}) },
             };
             return error.MissingHeader;
         };

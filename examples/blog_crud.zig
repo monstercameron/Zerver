@@ -112,7 +112,7 @@ fn step_render_post_list(ctx: *zerver.CtxBase) !zerver.Decision {
 // Get single post - Step 1: Load from DB
 fn step_get_post(ctx: *zerver.CtxBase) !zerver.Decision {
     const id = try ctx.paramRequired("id", "post");
-    const key = try ctx.bufFmt("posts/{s}", .{id});
+    const key = ctx.bufFmt("posts/{s}", .{id});
 
     return ctx.runEffects(&.{
         ctx.dbGet(@intFromEnum(Slot.Post), key),
@@ -151,7 +151,6 @@ fn step_save_post(ctx: *zerver.CtxBase) !zerver.Decision {
 
 // Create post - Step 3: Render created response
 fn step_render_created_post(ctx: *zerver.CtxBase) !zerver.Decision {
-    _ = ctx;
     return ctx.jsonResponse(201, "{\"id\":\"1\",\"title\":\"New Post\"}");
 }
 
@@ -165,7 +164,7 @@ fn step_parse_update(ctx: *zerver.CtxBase) !zerver.Decision {
 // Update post - Step 2: Save updated post
 fn step_save_update(ctx: *zerver.CtxBase) !zerver.Decision {
     const id = try ctx.paramRequired("id", "post");
-    const key = try ctx.bufFmt("posts/{s}", .{id});
+    const key = ctx.bufFmt("posts/{s}", .{id});
     const post_json = "{\"id\":\"1\",\"title\":\"Updated Post\",\"content\":\"Updated\"}";
 
     return ctx.runEffects(&.{
@@ -175,14 +174,13 @@ fn step_save_update(ctx: *zerver.CtxBase) !zerver.Decision {
 
 // Update post - Step 3: Render updated response
 fn step_render_updated_post(ctx: *zerver.CtxBase) !zerver.Decision {
-    _ = ctx;
     return ctx.jsonResponse(200, "{\"id\":\"1\",\"title\":\"Updated Post\"}");
 }
 
 // Delete post - Step 1: Delete from DB
 fn step_delete_post(ctx: *zerver.CtxBase) !zerver.Decision {
     const id = try ctx.paramRequired("id", "post");
-    const key = try ctx.bufFmt("posts/{s}", .{id});
+    const key = ctx.bufFmt("posts/{s}", .{id});
 
     return ctx.runEffects(&.{
         ctx.dbDel(@intFromEnum(Slot.Post), key),
@@ -201,7 +199,7 @@ fn step_render_deleted(ctx: *zerver.CtxBase) !zerver.Decision {
 // List comments - Step 1: Load from DB
 fn step_load_comments(ctx: *zerver.CtxBase) !zerver.Decision {
     const post_id = try ctx.paramRequired("post_id", "comment");
-    const key = try ctx.bufFmt("comments/post/{s}", .{post_id});
+    const key = ctx.bufFmt("comments/post/{s}", .{post_id});
 
     return ctx.runEffects(&.{
         ctx.dbGet(@intFromEnum(Slot.CommentList), key),
@@ -237,7 +235,7 @@ fn step_render_created_comment(ctx: *zerver.CtxBase) !zerver.Decision {
 // Delete comment - Step 1: Delete
 fn step_delete_comment(ctx: *zerver.CtxBase) !zerver.Decision {
     const comment_id = try ctx.paramRequired("comment_id", "comment");
-    const key = try ctx.bufFmt("comments/{s}", .{comment_id});
+    const key = ctx.bufFmt("comments/{s}", .{comment_id});
 
     return ctx.runEffects(&.{
         ctx.dbDel(@intFromEnum(Slot.Comment), key),
@@ -290,11 +288,11 @@ pub fn registerRoutes(srv: *zerver.Server) !void {
 
     // Simple test routes
     try srv.addRoute(.PATCH, "/blog/hello", .{
-        .steps = &.{step_parse_update},
+        .steps = &.{zerver.step("parse_update", step_parse_update)},
     });
 
     try srv.addRoute(.POST, "/blog/hello", .{
-        .steps = &.{step_parse_update},
+        .steps = &.{zerver.step("parse_update", step_parse_update)},
     });
 
     try srv.addRoute(.DELETE, "/blog/posts/:id", .{
