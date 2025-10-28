@@ -1,5 +1,7 @@
 // src/zerver/runtime/reactor/task_system.zig
 const std = @import("std");
+const types = @import("../../core/types.zig");
+const ctx_module = @import("../../core/ctx.zig");
 const job = @import("job_system.zig");
 const step_queue = @import("../step_queue.zig");
 const step_context = @import("../step_context.zig");
@@ -26,6 +28,7 @@ pub const TaskSystemConfig = struct {
     // New: Step queue for async execution
     enable_step_queue: bool = false,
     step_queue_workers: usize = 4,
+    effect_dispatcher: ?*effectors.EffectDispatcher = null,
 };
 
 pub const TaskSystem = struct {
@@ -39,12 +42,14 @@ pub const TaskSystem = struct {
     step_queue_enabled: bool = false,
     step_queue_ref: ?*step_queue.StepQueue = null,
     step_workers: []std.Thread = &[_]std.Thread{},
+    dispatcher: ?*effectors.EffectDispatcher = null,
 
     pub fn init(self: *TaskSystem, config: TaskSystemConfig) !void {
         self.allocator = config.allocator;
         self.compute_kind = config.compute_kind;
         self.has_compute = false;
         self.step_queue_enabled = config.enable_step_queue;
+        self.dispatcher = config.effect_dispatcher;
 
         // Initialize step queue if enabled
         if (config.enable_step_queue) {
@@ -242,6 +247,17 @@ pub const TaskSystem = struct {
 /// Step worker main loop - processes StepExecutionContext objects from queue
 fn stepWorkerMain(task_system: *TaskSystem, worker_index: usize) !void {
     const queue = task_system.step_queue_ref orelse return;
+    const dispatcher = task_system.dispatcher orelse {
+        slog.err("step_worker_no_dispatcher", &.{
+            slog.Attr.uint("worker_index", @as(u64, @intCast(worker_index))),
+        });
+        return;
+    };
+
+    // Create effector context for this worker
+    const effector_context = effectors.Context{
+        .allocator = task_system.allocator,
+    };
 
     slog.debug("step_worker_start", &.{
         slog.Attr.uint("worker_index", @as(u64, @intCast(worker_index))),
@@ -257,19 +273,108 @@ fn stepWorkerMain(task_system: *TaskSystem, worker_index: usize) !void {
             slog.Attr.string("state", @tagName(ctx.state)),
         });
 
-        // Execute step (for now, just log - full implementation coming)
-        // TODO: Implement actual step execution logic
-        _ = ctx;
+        // Execute step context
+        step_executor.executeStepContext(ctx, dispatcher, effector_context) catch |err| {
+            slog.err("step_execution_error", &.{
+                slog.Attr.uint("worker_index", @as(u64, @intCast(worker_index))),
+                slog.Attr.string("error", @errorName(err)),
+                slog.Attr.uint("ctx_ptr", @as(u64, @intCast(@intFromPtr(ctx)))),
+            });
 
-        slog.debug("step_worker_executed", &.{
-            slog.Attr.uint("worker_index", @as(u64, @intCast(worker_index))),
-            slog.Attr.uint("ctx_ptr", @as(u64, @intCast(@intFromPtr(ctx)))),
-        });
+            // Mark as failed
+            ctx.completeFailed(.{
+                .kind = types.ErrorCode.InternalError,
+                .ctx = .{ .what = "worker", .key = "execution_error" },
+            });
+        };
+
+        // Handle result based on state
+        switch (ctx.state) {
+            .ready => {
+                // More steps to execute - re-queue
+                queue.enqueue(ctx) catch |err| {
+                    slog.err("step_requeue_failed", &.{
+                        slog.Attr.uint("worker_index", @as(u64, @intCast(worker_index))),
+                        slog.Attr.string("error", @errorName(err)),
+                    });
+                    ctx.deinit();
+                };
+            },
+            .waiting => {
+                // Parked for I/O - will be re-queued when effects complete
+                queue.parkStep(ctx, "io_wait");
+                // In Phase 1, effects execute synchronously, so we should re-queue immediately
+                // (effects already executed in executeStepContext)
+                if (ctx.readyToResume()) {
+                    task_system.requeueContinuation(ctx) catch |err| {
+                        slog.err("step_continuation_requeue_failed", &.{
+                            slog.Attr.uint("worker_index", @as(u64, @intCast(worker_index))),
+                            slog.Attr.string("error", @errorName(err)),
+                        });
+                        ctx.deinit();
+                    };
+                }
+            },
+            .resuming => {
+                // Should not happen (resuming is handled before re-queuing)
+                queue.enqueue(ctx) catch |err| {
+                    slog.err("step_resuming_requeue_failed", &.{
+                        slog.Attr.uint("worker_index", @as(u64, @intCast(worker_index))),
+                        slog.Attr.string("error", @errorName(err)),
+                    });
+                    ctx.deinit();
+                };
+            },
+            .completed => {
+                // Request complete - send response
+                if (ctx.response) |response| {
+                    sendResponse(ctx.request_ctx, response);
+                }
+                ctx.deinit();
+            },
+            .failed => {
+                // Request failed - send error response
+                if (ctx.error_result) |err| {
+                    sendErrorResponse(ctx.request_ctx, err);
+                }
+                ctx.deinit();
+            },
+            .running => {
+                // Should not be in running state after execution
+                slog.warn("step_worker_running_state", &.{
+                    slog.Attr.uint("worker_index", @as(u64, @intCast(worker_index))),
+                });
+                ctx.deinit();
+            },
+        }
     }
 
     slog.debug("step_worker_stop", &.{
         slog.Attr.uint("worker_index", @as(u64, @intCast(worker_index))),
     });
+}
+
+/// Send response to client
+fn sendResponse(ctx_base: *ctx_module.CtxBase, response: types.Response) void {
+    // TODO: Actually send response via HTTP
+    // For now, just log
+    slog.debug("sending_response", &.{
+        slog.Attr.uint("status", response.status),
+        slog.Attr.string("request_id", ctx_base.requestId()),
+    });
+    _ = response;
+}
+
+/// Send error response to client
+fn sendErrorResponse(ctx_base: *ctx_module.CtxBase, err: types.Error) void {
+    // TODO: Actually send error response via HTTP
+    // For now, just log
+    slog.debug("sending_error_response", &.{
+        slog.Attr.string("error_what", err.ctx.what),
+        slog.Attr.string("error_key", err.ctx.key),
+        slog.Attr.string("request_id", ctx_base.requestId()),
+    });
+    _ = err;
 }
 
 // Covered by unit test: tests/unit/reactor_task_system.zig
