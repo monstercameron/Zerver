@@ -69,7 +69,7 @@ pub fn step_load_from_db(ctx: *zerver.CtxBase) !zerver.Decision {
             .effects = &effects,
             .mode = .Sequential,
             .join = .all,
-            .continuation = continuation_list,
+            .continuation = null,
         } };
     };
 
@@ -94,33 +94,33 @@ pub fn step_load_from_db(ctx: *zerver.CtxBase) !zerver.Decision {
         .effects = &effects,
         .mode = .Sequential,
         .join = .all,
-        .continuation = continuation_get,
+        .continuation = null,
     } };
 }
 
-fn continuation_list(ctx: *zerver.CtxBase) !zerver.Decision {
+pub fn step_return_list(ctx: *zerver.CtxBase) !zerver.Decision {
     _ = ctx;
-    slog.debug("List continuation called", &.{
-        slog.Attr.string("continuation", "list"),
+    slog.debug("Returning todo list", &.{
+        slog.Attr.string("step", "return_list"),
         slog.Attr.string("feature", "todos"),
     });
 
     return zerver.done(.{
         .status = http_status.ok,
-        .body = "[{\"id\":\"1\",\"title\":\"Buy milk\",\"done\":false},{\"id\":\"2\",\"title\":\"Pay bills\",\"done\":true}]",
+        .body = .{ .complete = "[{\"id\":\"1\",\"title\":\"Buy milk\",\"done\":false},{\"id\":\"2\",\"title\":\"Pay bills\",\"done\":true}]" },
     });
 }
 
-fn continuation_get(ctx: *zerver.CtxBase) !zerver.Decision {
+pub fn step_return_item(ctx: *zerver.CtxBase) !zerver.Decision {
     _ = ctx;
-    slog.debug("Item continuation called", &.{
-        slog.Attr.string("continuation", "get"),
+    slog.debug("Returning todo item", &.{
+        slog.Attr.string("step", "return_item"),
         slog.Attr.string("feature", "todos"),
     });
 
     return zerver.done(.{
         .status = http_status.ok,
-        .body = "{\"id\":\"1\",\"title\":\"Buy milk\",\"done\":false}",
+        .body = .{ .complete = "{\"id\":\"1\",\"title\":\"Buy milk\",\"done\":false}" },
     });
 }
 
@@ -147,20 +147,20 @@ pub fn step_create_todo(ctx: *zerver.CtxBase) !zerver.Decision {
         .effects = &effects,
         .mode = .Sequential,
         .join = .all,
-        .continuation = continuation_create,
+        .continuation = null,
     } };
 }
 
-fn continuation_create(ctx: *zerver.CtxBase) !zerver.Decision {
+pub fn step_return_created(ctx: *zerver.CtxBase) !zerver.Decision {
     _ = ctx;
-    slog.debug("Create continuation called", &.{
-        slog.Attr.string("continuation", "create"),
+    slog.debug("Returning created todo", &.{
+        slog.Attr.string("step", "return_created"),
         slog.Attr.string("feature", "todos"),
     });
 
     return zerver.done(.{
         .status = http_status.created,
-        .body = "{\"id\":\"1\",\"title\":\"New todo\",\"done\":false}",
+        .body = .{ .complete = "{\"id\":\"1\",\"title\":\"New todo\",\"done\":false}" },
     });
 }
 
@@ -192,20 +192,20 @@ pub fn step_update_todo(ctx: *zerver.CtxBase) !zerver.Decision {
         .effects = &effects,
         .mode = .Sequential,
         .join = .all,
-        .continuation = continuation_update,
+        .continuation = null,
     } };
 }
 
-fn continuation_update(ctx: *zerver.CtxBase) !zerver.Decision {
+pub fn step_return_updated(ctx: *zerver.CtxBase) !zerver.Decision {
     _ = ctx;
-    slog.debug("Update continuation called", &.{
-        slog.Attr.string("continuation", "update"),
+    slog.debug("Returning updated todo", &.{
+        slog.Attr.string("step", "return_updated"),
         slog.Attr.string("feature", "todos"),
     });
 
     return zerver.done(.{
         .status = http_status.ok,
-        .body = "{\"id\":\"1\",\"title\":\"Updated todo\",\"done\":true}",
+        .body = .{ .complete = "{\"id\":\"1\",\"title\":\"Updated todo\",\"done\":true}" },
     });
 }
 
@@ -235,19 +235,19 @@ pub fn step_delete_todo(ctx: *zerver.CtxBase) !zerver.Decision {
         .effects = &effects,
         .mode = .Sequential,
         .join = .all,
-        .continuation = continuation_delete,
+        .continuation = null,
     } };
 }
 
-fn continuation_delete(ctx: *zerver.CtxBase) !zerver.Decision {
+pub fn step_return_deleted(ctx: *zerver.CtxBase) !zerver.Decision {
     _ = ctx;
     slog.debug("Todo deleted", &.{
-        slog.Attr.string("continuation", "delete"),
+        slog.Attr.string("step", "return_deleted"),
         slog.Attr.string("feature", "todos"),
     });
 
     return zerver.done(.{
         .status = http_status.no_content,
-        .body = "",
+        .body = .{ .complete = "" },
     });
 }

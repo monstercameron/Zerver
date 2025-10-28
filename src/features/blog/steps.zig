@@ -82,16 +82,16 @@ pub fn step_list_posts(ctx: *zerver.CtxBase) !zerver.Decision {
     const effects = try util.singleEffect(ctx, .{
         .db_get = .{ .key = "posts", .token = slotId(.PostList), .required = true },
     });
-    return .{ .need = .{ .effects = effects, .mode = .Sequential, .join = .all, .continuation = continuation_list_posts } };
+    return .{ .need = .{ .effects = effects, .mode = .Sequential, .join = .all, .continuation = null } };
 }
 
 // Provides read access to the PostList slot populated by the effect runner.
 const PostListReadCtx = zerver.CtxView(.{ .slotTypeFn = blog_types.BlogSlotType, .reads = &.{Slot.PostList} });
 
-fn continuation_list_posts(ctx_base: *zerver.CtxBase) !zerver.Decision {
+pub fn step_return_post_list(ctx_base: *zerver.CtxBase) !zerver.Decision {
     const ctx = makeView(PostListReadCtx, ctx_base);
     const post_list_json = (try ctx.optional(Slot.PostList)) orelse "[]";
-    slog.info("continuation_list_posts", &.{
+    slog.info("step_return_post_list", &.{
         slog.Attr.string("body", post_list_json),
         slog.Attr.int("len", @as(i64, @intCast(post_list_json.len))),
     });
@@ -110,7 +110,7 @@ pub fn step_get_post(ctx_base: *zerver.CtxBase) !zerver.Decision {
     const effects = try util.singleEffect(ctx.base, .{
         .db_get = .{ .key = effect_key, .token = slotId(.PostJson), .required = true },
     });
-    return .{ .need = .{ .effects = effects, .mode = .Sequential, .join = .all, .continuation = continuation_get_post } };
+    return .{ .need = .{ .effects = effects, .mode = .Sequential, .join = .all, .continuation = null } };
 }
 
 pub fn step_load_existing_post(ctx_base: *zerver.CtxBase) !zerver.Decision {
@@ -121,13 +121,13 @@ pub fn step_load_existing_post(ctx_base: *zerver.CtxBase) !zerver.Decision {
     const effects = try util.singleEffect(ctx.base, .{
         .db_get = .{ .key = effect_key, .token = slotId(.PostJson), .required = true },
     });
-    return .{ .need = .{ .effects = effects, .mode = .Sequential, .join = .all, .continuation = continuation_load_existing_post } };
+    return .{ .need = .{ .effects = effects, .mode = .Sequential, .join = .all, .continuation = null } };
 }
 
 // Reads the PostJson slot containing the serialized blog post.
 const PostJsonReadCtx = zerver.CtxView(.{ .slotTypeFn = blog_types.BlogSlotType, .reads = &.{Slot.PostJson} });
 
-fn continuation_get_post(ctx_base: *zerver.CtxBase) !zerver.Decision {
+pub fn step_return_post(ctx_base: *zerver.CtxBase) !zerver.Decision {
     const ctx = makeView(PostJsonReadCtx, ctx_base);
     const post_json = (try ctx.optional(Slot.PostJson)) orelse {
         return zerver.fail(zerver.ErrorCode.NotFound, "post", "not_found");
@@ -141,7 +141,7 @@ fn continuation_get_post(ctx_base: *zerver.CtxBase) !zerver.Decision {
 // Converts persisted PostJson into a concrete Post value for editing.
 const PostJsonToPostCtx = zerver.CtxView(.{ .slotTypeFn = blog_types.BlogSlotType, .reads = &.{Slot.PostJson}, .writes = &.{Slot.Post} });
 
-fn continuation_load_existing_post(ctx_base: *zerver.CtxBase) !zerver.Decision {
+pub fn step_load_post_into_slot(ctx_base: *zerver.CtxBase) !zerver.Decision {
     const ctx = makeView(PostJsonToPostCtx, ctx_base);
     const base = ctx.base;
     const post_json = (try ctx.optional(Slot.PostJson)) orelse {
@@ -259,17 +259,17 @@ pub fn step_db_create_post(ctx_base: *zerver.CtxBase) !zerver.Decision {
     slog.debug("step_db_create_post queued effect", &.{
         slog.Attr.string("key", effect_key),
     });
-    return .{ .need = .{ .effects = effects, .mode = .Sequential, .join = .all, .continuation = continuation_create_post } };
+    return .{ .need = .{ .effects = effects, .mode = .Sequential, .join = .all, .continuation = null } };
 }
 
 // Reads saved Post structs when serializing responses.
 const PostReadCtx = zerver.CtxView(.{ .slotTypeFn = blog_types.BlogSlotType, .reads = &.{Slot.Post} });
 
-fn continuation_create_post(ctx_base: *zerver.CtxBase) !zerver.Decision {
+pub fn step_return_created_post(ctx_base: *zerver.CtxBase) !zerver.Decision {
     const ctx = makeView(PostReadCtx, ctx_base);
     const post = try ctx.require(Slot.Post);
     const post_json = try ctx.base.toJson(post);
-    slog.debug("continuation_create_post", &.{
+    slog.debug("step_return_created_post", &.{
         slog.Attr.string("post_id", post.id),
         slog.Attr.int("json_len", @as(i64, @intCast(post_json.len))),
     });
@@ -319,10 +319,10 @@ pub fn step_db_update_post(ctx_base: *zerver.CtxBase) !zerver.Decision {
     const effects = try util.singleEffect(base, .{
         .db_put = .{ .key = effect_key, .value = post_json, .token = slotId(.PostJson), .required = true },
     });
-    return .{ .need = .{ .effects = effects, .mode = .Sequential, .join = .all, .continuation = continuation_update_post } };
+    return .{ .need = .{ .effects = effects, .mode = .Sequential, .join = .all, .continuation = null } };
 }
 
-fn continuation_update_post(ctx_base: *zerver.CtxBase) !zerver.Decision {
+pub fn step_return_updated_post(ctx_base: *zerver.CtxBase) !zerver.Decision {
     const ctx = makeView(PostReadCtx, ctx_base);
     const post = try ctx.require(Slot.Post);
     const post_json = try ctx.base.toJson(post);
@@ -339,10 +339,10 @@ pub fn step_delete_post(ctx_base: *zerver.CtxBase) !zerver.Decision {
     const effects = try util.singleEffect(ctx.base, .{
         .db_del = .{ .key = effect_key, .token = slotId(.PostDeleteAck), .required = true },
     });
-    return .{ .need = .{ .effects = effects, .mode = .Sequential, .join = .all, .continuation = continuation_delete_post } };
+    return .{ .need = .{ .effects = effects, .mode = .Sequential, .join = .all, .continuation = null } };
 }
 
-fn continuation_delete_post(ctx: *zerver.CtxBase) !zerver.Decision {
+pub fn step_return_delete_ack(ctx: *zerver.CtxBase) !zerver.Decision {
     _ = ctx;
     return zerver.done(.{
         .status = http_status.no_content,
@@ -361,13 +361,13 @@ pub fn step_list_comments(ctx_base: *zerver.CtxBase) !zerver.Decision {
     const effects = try util.singleEffect(ctx.base, .{
         .db_get = .{ .key = effect_key, .token = slotId(.CommentList), .required = true },
     });
-    return .{ .need = .{ .effects = effects, .mode = .Sequential, .join = .all, .continuation = continuation_list_comments } };
+    return .{ .need = .{ .effects = effects, .mode = .Sequential, .join = .all, .continuation = null } };
 }
 
 // Reads the comment list payload produced by the effect runner.
 const CommentListReadCtx = zerver.CtxView(.{ .slotTypeFn = blog_types.BlogSlotType, .reads = &.{Slot.CommentList} });
 
-fn continuation_list_comments(ctx_base: *zerver.CtxBase) !zerver.Decision {
+pub fn step_return_comment_list(ctx_base: *zerver.CtxBase) !zerver.Decision {
     const ctx = makeView(CommentListReadCtx, ctx_base);
     const comment_list_json = (try ctx.optional(Slot.CommentList)) orelse "[]";
     return http_util.jsonResponse(http_status.ok, comment_list_json);
@@ -429,13 +429,13 @@ pub fn step_db_create_comment(ctx_base: *zerver.CtxBase) !zerver.Decision {
     const effects = try util.singleEffect(base, .{
         .db_put = .{ .key = effect_key, .value = comment_json, .token = slotId(.CommentJson), .required = true },
     });
-    return .{ .need = .{ .effects = effects, .mode = .Sequential, .join = .all, .continuation = continuation_create_comment } };
+    return .{ .need = .{ .effects = effects, .mode = .Sequential, .join = .all, .continuation = null } };
 }
 
 // Enables serializing the stored Comment after creation.
 const CommentReadCtx = zerver.CtxView(.{ .slotTypeFn = blog_types.BlogSlotType, .reads = &.{Slot.Comment} });
 
-fn continuation_create_comment(ctx_base: *zerver.CtxBase) !zerver.Decision {
+pub fn step_return_created_comment(ctx_base: *zerver.CtxBase) !zerver.Decision {
     const ctx = makeView(CommentReadCtx, ctx_base);
     const comment = try ctx.require(Slot.Comment);
     const comment_json = try ctx.base.toJson(comment);
@@ -455,10 +455,10 @@ pub fn step_delete_comment(ctx_base: *zerver.CtxBase) !zerver.Decision {
     const effects = try util.singleEffect(ctx.base, .{
         .db_del = .{ .key = effect_key, .token = slotId(.CommentDeleteAck), .required = true },
     });
-    return .{ .need = .{ .effects = effects, .mode = .Sequential, .join = .all, .continuation = continuation_delete_comment } };
+    return .{ .need = .{ .effects = effects, .mode = .Sequential, .join = .all, .continuation = null } };
 }
 
-fn continuation_delete_comment(ctx: *zerver.CtxBase) !zerver.Decision {
+pub fn step_return_comment_delete_ack(ctx: *zerver.CtxBase) !zerver.Decision {
     _ = ctx;
     return zerver.done(.{
         .status = http_status.no_content,
