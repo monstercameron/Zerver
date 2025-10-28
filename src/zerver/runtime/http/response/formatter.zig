@@ -167,7 +167,7 @@ fn statusText(status: u16) []const u8 {
     };
 }
 
-fn formatHttpDate(arena: std.mem.Allocator, timestamp: i64) ![]const u8 {
+pub fn formatHttpDate(arena: std.mem.Allocator, timestamp: i64) ![]const u8 {
     std.debug.assert(timestamp >= 0);
 
     const day_names = [_][]const u8{ "Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat" };

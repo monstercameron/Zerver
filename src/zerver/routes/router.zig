@@ -189,6 +189,48 @@ pub const Router = struct {
         return best_match;
     }
 
+    /// Get allowed methods for a given path (RFC 9110 Section 9.3.7).
+    /// Returns a comma-separated string of allowed HTTP methods for the path.
+    pub fn getAllowedMethods(self: *Router, path: []const u8, arena: std.mem.Allocator) ![]const u8 {
+        var allowed = try std.ArrayList(u8).initCapacity(arena, 64);
+
+        // Check each method to see if there's a route for it
+        const methods = [_]types.Method{ .GET, .HEAD, .POST, .PUT, .DELETE, .PATCH, .OPTIONS };
+        // CONNECT and TRACE (RFC 9110 Sections 9.3.6, 9.3.8) demand bespoke behaviors,
+        // so we intentionally omit them from the generic Allow synthesis.
+
+        for (methods) |method| {
+            var match_found = self.match(method, path, arena) catch null;
+            if (match_found == null and method == .HEAD) {
+                match_found = self.match(.GET, path, arena) catch null;
+            }
+
+            if (match_found != null) {
+                if (allowed.items.len > 0) try allowed.appendSlice(arena, ", ");
+                const method_str = switch (method) {
+                    .GET => "GET",
+                    .HEAD => "HEAD",
+                    .POST => "POST",
+                    .PUT => "PUT",
+                    .DELETE => "DELETE",
+                    .PATCH => "PATCH",
+                    .OPTIONS => "OPTIONS",
+                    else => continue,
+                };
+                try allowed.appendSlice(arena, method_str);
+            }
+        }
+
+        // Always allow OPTIONS
+        if (allowed.items.len == 0) {
+            try allowed.appendSlice(arena, "OPTIONS");
+        } else if (!std.mem.containsAtLeast(u8, allowed.items, 1, "OPTIONS")) {
+            try allowed.appendSlice(arena, ", OPTIONS");
+        }
+
+        return allowed.items;
+    }
+
     /// Compile a path pattern into segments.
     /// "/todos/:id/items" → [literal("todos"), param("id"), literal("items")]
     fn compilePattern(self: *Router, path: []const u8) !Pattern {
