@@ -1334,6 +1334,24 @@ const RequestRecord = struct {
         try self.pushEvent(request_event);
     }
 
+    fn recordComputeBudgetRegistered(self: *RequestRecord, event: telemetry.ComputeBudgetRegisteredEvent) !void {
+        _ = self;
+        _ = event;
+        // TODO: Implement compute budget tracking
+    }
+
+    fn recordComputeBudgetExceeded(self: *RequestRecord, event: telemetry.ComputeBudgetExceededEvent) !void {
+        _ = self;
+        _ = event;
+        // TODO: Implement compute budget tracking
+    }
+
+    fn recordComputeBudgetYield(self: *RequestRecord, event: telemetry.ComputeBudgetYieldEvent) !void {
+        _ = self;
+        _ = event;
+        // TODO: Implement compute budget tracking
+    }
+
     fn removeActiveStep(self: *RequestRecord, span: *ChildSpan) void {
         var i: usize = self.step_stack.items.len;
         while (i > 0) {
@@ -1726,6 +1744,21 @@ pub const OtelExporter = struct {
                 .step_job_resumed => |payload| {
                     if (self.requests.get(payload.request_id)) |record| {
                         try record.recordStepJobResumed(payload);
+                    }
+                },
+                .compute_budget_registered => |payload| {
+                    if (self.requests.get(payload.request_id)) |record| {
+                        try record.recordComputeBudgetRegistered(payload);
+                    }
+                },
+                .compute_budget_exceeded => |payload| {
+                    if (self.requests.get(payload.request_id)) |record| {
+                        try record.recordComputeBudgetExceeded(payload);
+                    }
+                },
+                .compute_budget_yield => |payload| {
+                    if (self.requests.get(payload.request_id)) |record| {
+                        try record.recordComputeBudgetYield(payload);
                     }
                 },
             }

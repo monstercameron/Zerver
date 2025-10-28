@@ -45,7 +45,8 @@ pub const ReactorResources = struct {
 
         errdefer self.deinit();
 
-        self.loop = try libuv.Loop.init();
+        // Initialize loop in place to avoid copy issues with internal pointers
+        try self.loop.initInPlace();
         self.loop_initialized = true;
 
         try self.effector_jobs.init(.{

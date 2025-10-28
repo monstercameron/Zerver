@@ -1,4 +1,10 @@
 // src/features/blog/types.zig
+/// Blog feature types and slot definitions with automatic token assignment
+const feature_registry = @import("../../zerver/features/registry.zig");
+
+// Blog is feature index 0 in the registry (gets tokens 0-99 automatically)
+const TokenGen = feature_registry.TokenFor(0);
+
 pub const PostInput = struct {
     title: []const u8,
     content: []const u8,
@@ -27,19 +33,20 @@ pub const Comment = struct {
     created_at: i64,
 };
 
+/// Slot definitions - tokens automatically assigned by Zerver registry
 pub const BlogSlot = enum(u32) {
-    PostId = 0,
-    CommentId = 1,
-    PostInput = 2,
-    Post = 3,
-    CommentInput = 4,
-    Comment = 5,
-    PostList = 6, // JSON string of posts
-    CommentList = 7, // JSON string of comments
-    PostJson = 8, // JSON for single post (effect output)
-    CommentJson = 9, // JSON for single comment (effect output)
-    PostDeleteAck = 10, // Ack payload for post delete effect
-    CommentDeleteAck = 11, // Ack payload for comment delete effect
+    PostId = TokenGen.token(0),
+    CommentId = TokenGen.token(1),
+    PostInput = TokenGen.token(2),
+    Post = TokenGen.token(3),
+    CommentInput = TokenGen.token(4),
+    Comment = TokenGen.token(5),
+    PostList = TokenGen.token(6), // JSON string of posts
+    CommentList = TokenGen.token(7), // JSON string of comments
+    PostJson = TokenGen.token(8), // JSON for single post (effect output)
+    CommentJson = TokenGen.token(9), // JSON for single comment (effect output)
+    PostDeleteAck = TokenGen.token(10), // Ack payload for post delete effect
+    CommentDeleteAck = TokenGen.token(11), // Ack payload for comment delete effect
 };
 
 pub fn BlogSlotType(comptime s: BlogSlot) type {

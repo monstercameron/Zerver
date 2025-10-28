@@ -231,6 +231,67 @@ pub const Router = struct {
         return allowed.items;
     }
 
+    /// Route information for introspection
+    pub const RouteInfo = struct {
+        method: []const u8,
+        path: []const u8,
+    };
+
+    /// Get all registered routes (for introspection/debugging)
+    pub fn getAllRoutes(self: *Router, allocator: std.mem.Allocator) ![]RouteInfo {
+        var result = try std.ArrayList(RouteInfo).initCapacity(allocator, self.routes.items.len);
+        errdefer result.deinit(allocator);
+
+        for (self.routes.items) |route| {
+            const method_str = switch (route.method) {
+                .GET => "GET",
+                .POST => "POST",
+                .PUT => "PUT",
+                .DELETE => "DELETE",
+                .PATCH => "PATCH",
+                .HEAD => "HEAD",
+                .OPTIONS => "OPTIONS",
+                .TRACE => "TRACE",
+                .CONNECT => "CONNECT",
+            };
+
+            const path = try self.reconstructPath(route.pattern, allocator);
+            try result.append(allocator, .{
+                .method = method_str,
+                .path = path,
+            });
+        }
+
+        return result.toOwnedSlice(allocator);
+    }
+
+    /// Reconstruct path pattern from compiled segments
+    fn reconstructPath(self: *Router, pattern: Pattern, allocator: std.mem.Allocator) ![]const u8 {
+        _ = self;
+        var result = try std.ArrayList(u8).initCapacity(allocator, 128);
+        errdefer result.deinit(allocator);
+
+        try result.append(allocator, '/');
+
+        for (pattern.segments, 0..) |segment, i| {
+            if (i > 0) try result.append(allocator, '/');
+
+            switch (segment) {
+                .literal => |lit| try result.appendSlice(allocator, lit),
+                .param => |param| {
+                    try result.append(allocator, ':');
+                    try result.appendSlice(allocator, param);
+                },
+                .wildcard => |param| {
+                    try result.append(allocator, '*');
+                    try result.appendSlice(allocator, param);
+                },
+            }
+        }
+
+        return result.toOwnedSlice(allocator);
+    }
+
     /// Compile a path pattern into segments.
     /// "/todos/:id/items" → [literal("todos"), param("id"), literal("items")]
     fn compilePattern(self: *Router, path: []const u8) !Pattern {

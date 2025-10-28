@@ -107,7 +107,7 @@ fn step_load_from_db(ctx: *zerver.CtxBase) !zerver.Decision {
         effects_list[0] = .{
             .db_get = .{
                 .key = "todos:*",
-                .token = 3, // TodoList slot
+                .token = @intFromEnum(types.TodoSlot.TodoList),
                 .required = true,
             },
         };
@@ -131,7 +131,7 @@ fn step_load_from_db(ctx: *zerver.CtxBase) !zerver.Decision {
     effects_single[0] = .{
         .db_get = .{
             .key = "todo:123", // In real app, use todo_id
-            .token = 2, // TodoItem slot
+            .token = @intFromEnum(types.TodoSlot.TodoItem),
             .required = true,
         },
     };
@@ -182,7 +182,7 @@ fn step_create_todo(ctx: *zerver.CtxBase) !zerver.Decision {
         .db_put = .{
             .key = "todo:123",
             .value = "{\"id\":1,\"title\":\"New todo\"}",
-            .token = 2, // TodoItem
+            .token = @intFromEnum(types.TodoSlot.TodoItem),
             .required = true,
         },
     };
@@ -225,7 +225,7 @@ fn step_update_todo(ctx: *zerver.CtxBase) !zerver.Decision {
         .db_put = .{
             .key = "todo:123",
             .value = "{\"id\":1,\"title\":\"Updated todo\",\"done\":true}",
-            .token = 2, // TodoItem
+            .token = @intFromEnum(types.TodoSlot.TodoItem),
             .required = true,
             .idem = "update-123", // Idempotency key
         },
@@ -268,7 +268,7 @@ fn step_delete_todo(ctx: *zerver.CtxBase) !zerver.Decision {
     effects[0] = .{
         .db_del = .{
             .key = "todo:123",
-            .token = 2, // TodoItem
+            .token = @intFromEnum(types.TodoSlot.TodoItem),
             .required = true,
         },
     };

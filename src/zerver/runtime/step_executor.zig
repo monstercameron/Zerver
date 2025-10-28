@@ -279,7 +279,7 @@ fn executeEffectsAsync(
 }
 
 /// Callback executed in thread pool - performs the actual effect work
-fn effectWorkCallback(work: *effectors.libuv.Work) void {
+fn effectWorkCallback(work: *libuv.Work) void {
     const work_ctx: *EffectWork = @ptrCast(@alignCast(work.getUserData().?));
 
     // Execute effect via dispatcher (blocking in thread pool is fine)
@@ -303,7 +303,7 @@ fn effectWorkCallback(work: *effectors.libuv.Work) void {
 }
 
 /// Callback executed on event loop thread after work completes
-fn effectAfterWorkCallback(work: *effectors.libuv.Work, status: c_int) void {
+fn effectAfterWorkCallback(work: *libuv.Work, status: c_int) void {
     const work_ctx: *EffectWork = @ptrCast(@alignCast(work.getUserData().?));
     const ctx = work_ctx.ctx;
     const end_ms = std.time.milliTimestamp();
@@ -339,7 +339,7 @@ fn effectAfterWorkCallback(work: *effectors.libuv.Work, status: c_int) void {
             .token = work_ctx.token,
             .required = work_ctx.required,
             .success = success,
-            .bytes_len = if (work_ctx.result == .success and work_ctx.result.success == .bytes) work_ctx.result.success.bytes.len else null,
+            .bytes_len = if (work_ctx.result == .success) work_ctx.result.success.bytes.len else null,
             .error_ctx = error_ctx,
         });
     }
@@ -530,14 +530,24 @@ fn getEffectTimeout(effect: types.Effect) u32 {
 
 fn getEffectTarget(effect: types.Effect) []const u8 {
     return switch (effect) {
-        .http_get, .http_post, .http_put, .http_delete, .http_head,
-        .http_options, .http_trace, .http_connect, .http_patch => |e| e.url,
+        .http_get => |e| e.url,
+        .http_post => |e| e.url,
+        .http_put => |e| e.url,
+        .http_delete => |e| e.url,
+        .http_head => |e| e.url,
+        .http_options => |e| e.url,
+        .http_trace => |e| e.url,
+        .http_connect => |e| e.url,
+        .http_patch => |e| e.url,
         .tcp_connect => |e| e.host,
         .tcp_send_receive => |e| e.request,
-        .grpc_unary_call, .grpc_server_stream => |e| e.endpoint,
+        .grpc_unary_call => |e| e.endpoint,
+        .grpc_server_stream => |e| e.endpoint,
         .websocket_connect => |e| e.url,
-        .db_get, .db_del => |e| e.key,
-        .file_json_read, .file_json_write => |e| e.path,
+        .db_get => |e| e.key,
+        .db_del => |e| e.key,
+        .file_json_read => |e| e.path,
+        .file_json_write => |e| e.path,
         .compute_task => |e| e.operation,
         else => "",
     };

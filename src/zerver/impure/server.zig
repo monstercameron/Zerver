@@ -127,6 +127,12 @@ pub const Server = struct {
         });
     }
 
+    /// Get all registered routes (for introspection/debugging)
+    /// Caller owns the returned slice and must free it
+    pub fn getAllRoutes(self: *Server, allocator: std.mem.Allocator) ![]router_module.Router.RouteInfo {
+        return self.router.getAllRoutes(allocator);
+    }
+
     /// Execute a pipeline for a request context.
     pub fn executePipeline(
         self: *Server,

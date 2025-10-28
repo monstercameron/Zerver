@@ -10,12 +10,81 @@ const runtime_config = @import("runtime_config");
 const runtime_resources = @import("../runtime/resources.zig");
 const runtime_global = @import("../runtime/global.zig");
 const helpers = @import("helpers.zig");
+const effectors = @import("../runtime/reactor/effectors.zig");
 
 // Import features
 const hello = @import("../../features/hello/routes.zig");
-const blog = @import("../../features/blog/routes.zig");
-const blog_effects = @import("../../features/blog/effects.zig");
-const blog_errors = @import("../../features/blog/errors.zig");
+const blog = @import("../../features/blog/index.zig");
+const todos = @import("../../features/todos/index.zig");
+const feature_registry = @import("../features/registry.zig");
+
+// Create feature registry with automatic token assignment
+// Blog gets tokens 0-99, Todos gets tokens 100-199
+const FeatureRouter = feature_registry.FeatureRegistry(.{ blog, todos });
+
+// Reactor dispatcher handlers that route through the feature registry
+fn reactorDbGetHandler(_: *effectors.Context, payload: root.types.DbGet) effectors.DispatchError!root.types.EffectResult {
+    slog.info("🚀 REGISTRY DB_GET 🚀", &.{
+        slog.Attr.string("key", payload.key),
+        slog.Attr.uint("token", payload.token),
+    });
+    const effect = root.types.Effect{ .db_get = payload };
+    return FeatureRouter.effectHandler(&effect, 300) catch |err| {
+        slog.err("registry_handler_error", &.{
+            slog.Attr.string("error", @errorName(err)),
+        });
+        return effectors.DispatchError.UnsupportedEffect;
+    };
+}
+
+fn reactorDbPutHandler(_: *effectors.Context, payload: root.types.DbPut) effectors.DispatchError!root.types.EffectResult {
+    slog.info("🚀 REGISTRY DB_PUT 🚀", &.{
+        slog.Attr.string("key", payload.key),
+        slog.Attr.uint("token", payload.token),
+    });
+    const effect = root.types.Effect{ .db_put = payload };
+    return FeatureRouter.effectHandler(&effect, 300) catch |err| {
+        slog.err("registry_handler_error", &.{
+            slog.Attr.string("error", @errorName(err)),
+        });
+        return effectors.DispatchError.UnsupportedEffect;
+    };
+}
+
+fn reactorDbDelHandler(_: *effectors.Context, payload: root.types.DbDel) effectors.DispatchError!root.types.EffectResult {
+    slog.info("🚀 REGISTRY DB_DEL 🚀", &.{
+        slog.Attr.string("key", payload.key),
+        slog.Attr.uint("token", payload.token),
+    });
+    const effect = root.types.Effect{ .db_del = payload };
+    return FeatureRouter.effectHandler(&effect, 300) catch |err| {
+        slog.err("registry_handler_error", &.{
+            slog.Attr.string("error", @errorName(err)),
+        });
+        return effectors.DispatchError.UnsupportedEffect;
+    };
+}
+
+// Register feature registry handlers with the reactor dispatcher
+fn registerReactorHandlers(resources: *runtime_resources.RuntimeResources) void {
+    if (resources.reactorEffectDispatcher()) |dispatcher| {
+        slog.info("Registering feature registry handlers", &.{});
+        dispatcher.setDbGetHandler(reactorDbGetHandler);
+        dispatcher.setDbPutHandler(reactorDbPutHandler);
+        dispatcher.setDbDelHandler(reactorDbDelHandler);
+    }
+}
+
+// Stub effect handler (won't be called since dispatcher handles everything)
+fn stubEffectHandler(effect: *const root.types.Effect, timeout_ms: u32) anyerror!root.types.EffectResult {
+    _ = effect;
+    _ = timeout_ms;
+    slog.warn("⚠️ STUB HANDLER CALLED - SHOULD NOT HAPPEN ⚠️", &.{});
+    return root.types.EffectResult{ .failure = .{
+        .kind = 500,
+        .ctx = .{ .what = "stub", .key = "unreachable" },
+    } };
+}
 
 pub const Initialization = struct {
     server: root.Server,
@@ -33,6 +102,7 @@ pub const Initialization = struct {
         runtime_global.clear();
     }
 };
+
 
 /// Initialize and configure the server
 pub fn initializeServer(allocator: std.mem.Allocator) !Initialization {
@@ -82,7 +152,8 @@ pub fn initializeServer(allocator: std.mem.Allocator) !Initialization {
     // app_config ownership transferred to runtime resources
     runtime_global.set(resources);
 
-    try blog_effects.initialize(resources);
+    // Register feature registry handlers with the reactor dispatcher
+    registerReactorHandlers(resources);
 
     // Create server config
     // API Design Note: Error handler is currently hardwired to blog_errors.onError
@@ -100,7 +171,7 @@ pub fn initializeServer(allocator: std.mem.Allocator) !Initialization {
             .ip = server_ip,
             .port = server_port,
         },
-        .on_error = blog_errors.onError,
+        .on_error = blog.errors.onError,
     };
 
     // Create server with the blog effects handler until additional feature routing is wired
@@ -143,14 +214,19 @@ pub fn initializeServer(allocator: std.mem.Allocator) !Initialization {
         }
     }
 
-    var srv = try root.Server.init(allocator, config, blog_effects.effectHandler);
+    var srv = try root.Server.init(allocator, config, stubEffectHandler);
 
     // Register features
     try blog.registerRoutes(&srv); // Blog routes now working
     try hello.registerRoutes(&srv);
+    try todos.registerRoutes(&srv);
 
     // Print available routes
-    printRoutes();
+    printRoutes(&srv, allocator) catch |err| {
+        slog.err("failed to print routes", &.{
+            slog.Attr.string("error", @errorName(err)),
+        });
+    };
 
     return Initialization{
         .server = srv,
@@ -160,11 +236,25 @@ pub fn initializeServer(allocator: std.mem.Allocator) !Initialization {
 }
 
 /// Print available routes for documentation
-fn printRoutes() void {
-    slog.info("Routes registered", &[_]slog.Attr{
-        slog.Attr.string("hello_routes", "GET /"),
-        slog.Attr.string("blog_routes", "GET /blogs/api/posts, GET /blogs/api/posts/:id, POST /blogs/api/posts, PUT /blogs/api/posts/:id, PATCH /blogs/api/posts/:id, DELETE /blogs/api/posts/:id, GET /blogs/api/posts/:post_id/comments, POST /blogs/api/posts/:post_id/comments, DELETE /blogs/api/posts/:post_id/comments/:comment_id"),
+fn printRoutes(srv: *root.Server, allocator: std.mem.Allocator) !void {
+    const routes = try srv.getAllRoutes(allocator);
+    defer {
+        for (routes) |route| {
+            allocator.free(route.path);
+        }
+        allocator.free(routes);
+    }
+
+    slog.info("Routes registered", &.{
+        slog.Attr.uint("count", @as(u64, @intCast(routes.len))),
     });
+
+    for (routes) |route| {
+        slog.info("route", &.{
+            slog.Attr.string("method", route.method),
+            slog.Attr.string("path", route.path),
+        });
+    }
 }
 
 /// Print demonstration information
@@ -180,3 +270,4 @@ pub fn printDemoInfo(app_config: *const runtime_config.AppConfig) void {
     });
 }
 // Covered by unit test: tests/unit/bootstrap_init_test.zig
+// FORCE_RECOMPILE_1761666448

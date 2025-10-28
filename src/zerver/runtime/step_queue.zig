@@ -98,7 +98,7 @@ pub const StepQueue = struct {
         defer self.mutex.unlock();
 
         const before_len = self.queue.items.len;
-        try self.queue.append(ctx);
+        try self.queue.append(self.allocator, ctx);
         const after_len = self.queue.items.len;
 
         _ = self.total_enqueued.fetchAdd(1, .seq_cst);
@@ -238,7 +238,7 @@ pub const StepQueue = struct {
         self.mutex.lock();
         defer self.mutex.unlock();
 
-        try self.queue.append(ctx);
+        try self.queue.append(self.allocator, ctx);
 
         slog.debug("step_requeued_continuation", &.{
             slog.Attr.string("queue", self.label),
