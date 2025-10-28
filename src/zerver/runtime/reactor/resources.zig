@@ -10,6 +10,7 @@ const scheduler_mod = @import("../scheduler.zig");
 const AtomicOrder = std.builtin.AtomicOrder;
 
 pub const ReactorResources = struct {
+    allocator: std.mem.Allocator = undefined,
     enabled: bool = false,
     scheduler: scheduler_mod.Scheduler = .{},
     effector_jobs: job_system.JobSystem = undefined,
@@ -25,6 +26,7 @@ pub const ReactorResources = struct {
 
     pub fn init(self: *ReactorResources, allocator: std.mem.Allocator, cfg: config_mod.ReactorConfig) !void {
         self.* = .{
+            .allocator = allocator,
             .enabled = cfg.enabled,
             .has_scheduler = false,
             .has_effector_jobs = false,
@@ -152,6 +154,7 @@ pub const ReactorResources = struct {
         if (!self.loop_initialized) return null;
         const compute_jobs = if (self.has_scheduler) self.scheduler.computeJobs() else null;
         return effectors.Context{
+            .allocator = self.allocator,
             .loop = &self.loop,
             .jobs = &self.effector_jobs,
             .compute_jobs = compute_jobs,

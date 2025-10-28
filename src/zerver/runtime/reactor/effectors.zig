@@ -20,6 +20,7 @@ pub const EffectCompletionCallback = *const fn (
 ) void;
 
 pub const Context = struct {
+    allocator: std.mem.Allocator,
     loop: *libuv.Loop,
     jobs: *job.JobSystem,
     compute_jobs: ?*job.JobSystem = null,

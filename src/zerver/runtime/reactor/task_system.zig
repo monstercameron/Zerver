@@ -255,8 +255,12 @@ fn stepWorkerMain(task_system: *TaskSystem, worker_index: usize) !void {
     };
 
     // Create effector context for this worker
+    // Note: loop and jobs are set to undefined for now since the stub effect handlers
+    // don't use them. In a real implementation, these would come from ReactorResources.
     const effector_context = effectors.Context{
         .allocator = task_system.allocator,
+        .loop = undefined,
+        .jobs = undefined,
     };
 
     slog.debug("step_worker_start", &.{

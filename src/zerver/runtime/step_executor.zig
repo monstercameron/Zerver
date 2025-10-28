@@ -18,6 +18,7 @@ const step_context = @import("step_context.zig");
 const step_queue = @import("step_queue.zig");
 const telemetry = @import("../observability/telemetry.zig");
 const effectors = @import("reactor/effectors.zig");
+const libuv = @import("reactor/libuv.zig");
 const slog = @import("../observability/slog.zig");
 
 pub const ExecutionError = error{
@@ -204,7 +205,7 @@ fn handleDecision(
 
 /// Effect work context for libuv async execution
 const EffectWork = struct {
-    work: effectors.libuv.Work = undefined,
+    work: libuv.Work = undefined,
     ctx: *step_context.StepExecutionContext,
     effect: types.Effect,
     dispatcher: *effectors.EffectDispatcher,

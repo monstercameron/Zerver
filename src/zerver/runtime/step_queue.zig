@@ -43,7 +43,7 @@ pub const StepQueue = struct {
             .allocator = allocator,
             .mutex = .{},
             .cond = .{},
-            .queue = std.ArrayList(*step_context.StepExecutionContext).init(allocator),
+            .queue = .{},
             .accepting = std.atomic.Value(bool).init(true),
             .label = label,
             .total_enqueued = std.atomic.Value(u64).init(0),
@@ -70,7 +70,7 @@ pub const StepQueue = struct {
         for (self.queue.items) |ctx| {
             ctx.deinit();
         }
-        self.queue.deinit();
+        self.queue.deinit(self.allocator);
 
         slog.debug("step_queue_deinit", &.{
             slog.Attr.string("queue", self.label),
@@ -145,11 +145,11 @@ pub const StepQueue = struct {
 
         // 3. Anti-starvation: Boost priority based on re-queue count
         // Each re-queue increases priority significantly
-        score -= @as(i64, ctx.enqueue_count) * 10_000;
+        score -= @as(i64, @intCast(ctx.enqueue_count)) * 10_000;
 
         // 4. Age bonus: Older requests get priority boost
         const age_ms = now_ms - ctx.created_at_ms;
-        score -= age_ms / 10;  // Subtract 1 per 10ms of age
+        score -= @divTrunc(age_ms, 10);  // Subtract 1 per 10ms of age
 
         return score;
     }
