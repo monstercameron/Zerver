@@ -38,6 +38,16 @@ pub const AcceleratorTaskHandler = *const fn (*Context, types.AcceleratorTask) D
 pub const KvCacheGetHandler = *const fn (*Context, types.KvCacheGet) DispatchError!types.EffectResult;
 pub const KvCacheSetHandler = *const fn (*Context, types.KvCacheSet) DispatchError!types.EffectResult;
 pub const KvCacheDeleteHandler = *const fn (*Context, types.KvCacheDelete) DispatchError!types.EffectResult;
+pub const TcpConnectHandler = *const fn (*Context, types.TcpConnect) DispatchError!types.EffectResult;
+pub const TcpSendHandler = *const fn (*Context, types.TcpSend) DispatchError!types.EffectResult;
+pub const TcpReceiveHandler = *const fn (*Context, types.TcpReceive) DispatchError!types.EffectResult;
+pub const TcpSendReceiveHandler = *const fn (*Context, types.TcpSendReceive) DispatchError!types.EffectResult;
+pub const TcpCloseHandler = *const fn (*Context, types.TcpClose) DispatchError!types.EffectResult;
+pub const GrpcUnaryCallHandler = *const fn (*Context, types.GrpcUnaryCall) DispatchError!types.EffectResult;
+pub const GrpcServerStreamHandler = *const fn (*Context, types.GrpcServerStream) DispatchError!types.EffectResult;
+pub const WebSocketConnectHandler = *const fn (*Context, types.WebSocketConnect) DispatchError!types.EffectResult;
+pub const WebSocketSendHandler = *const fn (*Context, types.WebSocketSend) DispatchError!types.EffectResult;
+pub const WebSocketReceiveHandler = *const fn (*Context, types.WebSocketReceive) DispatchError!types.EffectResult;
 
 pub const EffectHandlers = struct {
     http_get: HttpGetHandler = defaultHttpGetHandler,
@@ -49,6 +59,16 @@ pub const EffectHandlers = struct {
     http_trace: HttpTraceHandler = defaultHttpTraceHandler,
     http_connect: HttpConnectHandler = defaultHttpConnectHandler,
     http_patch: HttpPatchHandler = defaultHttpPatchHandler,
+    tcp_connect: TcpConnectHandler = defaultTcpConnectHandler,
+    tcp_send: TcpSendHandler = defaultTcpSendHandler,
+    tcp_receive: TcpReceiveHandler = defaultTcpReceiveHandler,
+    tcp_send_receive: TcpSendReceiveHandler = defaultTcpSendReceiveHandler,
+    tcp_close: TcpCloseHandler = defaultTcpCloseHandler,
+    grpc_unary_call: GrpcUnaryCallHandler = defaultGrpcUnaryCallHandler,
+    grpc_server_stream: GrpcServerStreamHandler = defaultGrpcServerStreamHandler,
+    websocket_connect: WebSocketConnectHandler = defaultWebSocketConnectHandler,
+    websocket_send: WebSocketSendHandler = defaultWebSocketSendHandler,
+    websocket_receive: WebSocketReceiveHandler = defaultWebSocketReceiveHandler,
     db_get: DbGetHandler = defaultDbGetHandler,
     db_put: DbPutHandler = defaultDbPutHandler,
     db_del: DbDelHandler = defaultDbDelHandler,
@@ -160,6 +180,16 @@ pub const EffectDispatcher = struct {
             .http_trace => |payload| try self.handlers.http_trace(ctx, payload),
             .http_connect => |payload| try self.handlers.http_connect(ctx, payload),
             .http_patch => |payload| try self.handlers.http_patch(ctx, payload),
+            .tcp_connect => |payload| try self.handlers.tcp_connect(ctx, payload),
+            .tcp_send => |payload| try self.handlers.tcp_send(ctx, payload),
+            .tcp_receive => |payload| try self.handlers.tcp_receive(ctx, payload),
+            .tcp_send_receive => |payload| try self.handlers.tcp_send_receive(ctx, payload),
+            .tcp_close => |payload| try self.handlers.tcp_close(ctx, payload),
+            .grpc_unary_call => |payload| try self.handlers.grpc_unary_call(ctx, payload),
+            .grpc_server_stream => |payload| try self.handlers.grpc_server_stream(ctx, payload),
+            .websocket_connect => |payload| try self.handlers.websocket_connect(ctx, payload),
+            .websocket_send => |payload| try self.handlers.websocket_send(ctx, payload),
+            .websocket_receive => |payload| try self.handlers.websocket_receive(ctx, payload),
             .db_get => |payload| try self.handlers.db_get(ctx, payload),
             .db_put => |payload| try self.handlers.db_put(ctx, payload),
             .db_del => |payload| try self.handlers.db_del(ctx, payload),
@@ -214,6 +244,46 @@ fn defaultHttpConnectHandler(_: *Context, _: types.HttpConnect) DispatchError!ty
 
 fn defaultHttpPatchHandler(_: *Context, _: types.HttpPatch) DispatchError!types.EffectResult {
     return unsupported("http_patch");
+}
+
+fn defaultTcpConnectHandler(_: *Context, _: types.TcpConnect) DispatchError!types.EffectResult {
+    return unsupported("tcp_connect");
+}
+
+fn defaultTcpSendHandler(_: *Context, _: types.TcpSend) DispatchError!types.EffectResult {
+    return unsupported("tcp_send");
+}
+
+fn defaultTcpReceiveHandler(_: *Context, _: types.TcpReceive) DispatchError!types.EffectResult {
+    return unsupported("tcp_receive");
+}
+
+fn defaultTcpSendReceiveHandler(_: *Context, _: types.TcpSendReceive) DispatchError!types.EffectResult {
+    return unsupported("tcp_send_receive");
+}
+
+fn defaultTcpCloseHandler(_: *Context, _: types.TcpClose) DispatchError!types.EffectResult {
+    return unsupported("tcp_close");
+}
+
+fn defaultGrpcUnaryCallHandler(_: *Context, _: types.GrpcUnaryCall) DispatchError!types.EffectResult {
+    return unsupported("grpc_unary_call");
+}
+
+fn defaultGrpcServerStreamHandler(_: *Context, _: types.GrpcServerStream) DispatchError!types.EffectResult {
+    return unsupported("grpc_server_stream");
+}
+
+fn defaultWebSocketConnectHandler(_: *Context, _: types.WebSocketConnect) DispatchError!types.EffectResult {
+    return unsupported("websocket_connect");
+}
+
+fn defaultWebSocketSendHandler(_: *Context, _: types.WebSocketSend) DispatchError!types.EffectResult {
+    return unsupported("websocket_send");
+}
+
+fn defaultWebSocketReceiveHandler(_: *Context, _: types.WebSocketReceive) DispatchError!types.EffectResult {
+    return unsupported("websocket_receive");
 }
 
 fn defaultDbGetHandler(_: *Context, _: types.DbGet) DispatchError!types.EffectResult {

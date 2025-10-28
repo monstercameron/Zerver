@@ -234,17 +234,20 @@ fn executeEffectsBlocking(
         const start_ms = std.time.milliTimestamp();
 
         // Execute effect via dispatcher
-        const result = dispatcher.dispatch(effect, effector_context) catch |err| {
-            slog.err("effect_execution_failed", &.{
-                slog.Attr.string("kind", kind),
-                slog.Attr.uint("token", token),
-                slog.Attr.string("error", @errorName(err)),
-            });
+        const result = blk: {
+            const res = dispatcher.dispatch(effect, effector_context) catch |err| {
+                slog.err("effect_execution_failed", &.{
+                    slog.Attr.string("kind", kind),
+                    slog.Attr.uint("token", token),
+                    slog.Attr.string("error", @errorName(err)),
+                });
 
-            types.EffectResult{ .failure = .{
-                .kind = types.ErrorCode.InternalError,
-                .ctx = .{ .what = "effect", .key = "execution_failed" },
-            } }
+                break :blk types.EffectResult{ .failure = .{
+                    .kind = types.ErrorCode.InternalError,
+                    .ctx = .{ .what = "effect", .key = "execution_failed" },
+                } };
+            };
+            break :blk res;
         };
 
         const end_ms = std.time.milliTimestamp();

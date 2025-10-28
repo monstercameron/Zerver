@@ -362,7 +362,6 @@ fn sendResponse(ctx_base: *ctx_module.CtxBase, response: types.Response) void {
         slog.Attr.uint("status", response.status),
         slog.Attr.string("request_id", ctx_base.requestId()),
     });
-    _ = response;
 }
 
 /// Send error response to client
@@ -374,7 +373,6 @@ fn sendErrorResponse(ctx_base: *ctx_module.CtxBase, err: types.Error) void {
         slog.Attr.string("error_key", err.ctx.key),
         slog.Attr.string("request_id", ctx_base.requestId()),
     });
-    _ = err;
 }
 
 // Covered by unit test: tests/unit/reactor_task_system.zig
