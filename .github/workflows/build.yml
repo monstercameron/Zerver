@@ -13,6 +13,9 @@ concurrency:
   group: zig-ci-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: write
+
 jobs:
   build:
     name: build (windows-latest)
@@ -136,6 +139,34 @@ jobs:
           VERSION=$(jq -r '.project.version' config.json)
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
+      - name: Determine release version
+        id: determine_release
+        shell: bash
+        run: |
+          git fetch --tags --quiet
+          BASE="${{ steps.get_version.outputs.version }}"
+          if [[ ! "$BASE" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Unsupported semantic version: $BASE" >&2
+            exit 1
+          fi
+
+          IFS='.' read -r MAJOR MINOR PATCH <<< "$BASE"
+          VERSION="$BASE"
+
+          while git rev-parse -q --verify "refs/tags/v${VERSION}" >/dev/null; do
+            PATCH=$((PATCH + 1))
+            VERSION="${MAJOR}.${MINOR}.${PATCH}"
+          done
+
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          if [ "$VERSION" != "$BASE" ]; then
+            echo "bumped=true" >> "$GITHUB_OUTPUT"
+            echo "release_version_bumped=true" >> "$GITHUB_ENV"
+            echo "release_version_previous=${BASE}" >> "$GITHUB_ENV"
+          else
+            echo "bumped=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Download executable artifact
         uses: actions/download-artifact@v4
         with:
@@ -145,10 +176,11 @@ jobs:
       - name: Create Release
         uses: softprops/action-gh-release@v1
         with:
-          tag_name: v${{ steps.get_version.outputs.version }}
-          name: Release v${{ steps.get_version.outputs.version }}
+          tag_name: v${{ steps.determine_release.outputs.version }}
+          name: Release v${{ steps.determine_release.outputs.version }}
           body: |
-            Automated release for version ${{ steps.get_version.outputs.version }}.
+            Automated release for version ${{ steps.determine_release.outputs.version }}.
+            ${{ steps.determine_release.outputs.bumped == 'true' && format('Original config requested version {0}.', steps.get_version.outputs.version) || '' }}
             See the [CHANGELOG](CHANGELOG.md) for details.
           draft: false
           prerelease: false
