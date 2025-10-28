@@ -270,30 +270,36 @@ fn readWithTimeout(
             };
             return result;
         } else {
-            const timeout_val = std.posix.timeval{
-                .tv_sec = @intCast((timeout_ms) / 1000),
-                .tv_usec = @intCast(((timeout_ms) % 1000) * 1000),
+            // Use poll() for POSIX systems (Linux, macOS, BSD)
+            var poll_fds = [_]std.posix.pollfd{
+                .{
+                    .fd = connection.stream.handle,
+                    .events = std.posix.POLL.IN,
+                    .revents = 0,
+                },
             };
 
-            var set: std.posix.fd_set = undefined;
-            std.posix.FD_ZERO(&set);
-            std.posix.FD_SET(connection.stream.handle, &set);
-
-            const select_result = std.posix.select(connection.stream.handle + 1, &set, null, null, &timeout_val) catch {
+            const poll_result = std.posix.poll(&poll_fds, @intCast(per_attempt_timeout_ms)) catch {
                 return error.ConnectionClosed;
             };
 
-            if (select_result == 0) {
-                return error.Timeout;
+            if (poll_result == 0) {
+                // Timeout
+                continue;
             }
 
-            const read_result = connection.stream.read(buffer) catch |err| {
-                if (err == error.WouldBlock) {
-                    return error.Timeout;
-                }
+            if (poll_fds[0].revents & std.posix.POLL.IN != 0) {
+                const read_result = connection.stream.read(buffer) catch |err| {
+                    if (err == error.WouldBlock) {
+                        return error.Timeout;
+                    }
+                    return error.ConnectionClosed;
+                };
+                return read_result;
+            } else {
+                // Error or HUP
                 return error.ConnectionClosed;
-            };
-            return read_result;
+            }
         }
     }
 }

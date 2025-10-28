@@ -54,19 +54,18 @@ fn installPosixHandler() !void {
 
     var action = posix.Sigaction{
         .handler = .{ .handler = posixSignalHandler },
-        .mask = posix.empty_sigset,
+        .mask = std.posix.sigemptyset(),
         .flags = 0,
     };
 
-    try posix.sigaction(posix.SIGINT, &action, null);
-    try posix.sigaction(posix.SIGTERM, &action, null);
+    posix.sigaction(posix.SIG.INT, &action, null);
+    posix.sigaction(posix.SIG.TERM, &action, null);
 }
 
-fn posixSignalHandler(sig: c_int) callconv(.C) void {
-    const posix = std.posix;
+fn posixSignalHandler(sig: c_int) callconv(.c) void {
     const signal_name = switch (sig) {
-        posix.SIGINT => "SIGINT",
-        posix.SIGTERM => "SIGTERM",
+        std.posix.SIG.INT => "SIGINT",
+        std.posix.SIG.TERM => "SIGTERM",
         else => "SIGNAL",
     };
     handleTermination(signal_name);
