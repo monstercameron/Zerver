@@ -25,6 +25,10 @@ pub const Comment = struct {
     created_at: i64,
 };
 
+pub const ErrorResponse = struct {
+    @"error": []const u8,
+};
+
 // Slot definitions
 const Slot = enum(u32) {
     PostList = 1,
@@ -41,16 +45,18 @@ pub fn onError(ctx: *zerver.CtxBase) anyerror!zerver.Decision {
         slog.warnf("[blog] Error: kind={} what='{s}' key='{s}'", .{ err.kind, err.ctx.what, err.ctx.key });
 
         const error_msg = if (std.mem.eql(u8, err.ctx.key, "missing_id"))
-            "{\"error\":\"Missing ID\"}"
+            "Missing ID"
         else if (std.mem.eql(u8, err.ctx.key, "not_found"))
-            "{\"error\":\"Not Found\"}"
+            "Not Found"
         else
-            "{\"error\":\"Unknown error\"}";
+            "Unknown error";
 
-        return try ctx.jsonResponse(@intCast(err.kind), error_msg);
+        const error_response = ErrorResponse{ .@"error" = error_msg };
+        return try ctx.jsonResponse(@intCast(err.kind), error_response);
     }
 
-    return ctx.textResponse(500, "{\"error\":\"Internal server error\"}");
+    const error_response = ErrorResponse{ .@"error" = "Internal server error" };
+    return try ctx.jsonResponse(500, error_response);
 }
 
 // Effect handler (simplified for demo)
@@ -106,7 +112,9 @@ fn step_load_posts(ctx: *zerver.CtxBase) !zerver.Decision {
 // List all posts - Step 2: Render response
 fn step_render_post_list(ctx: *zerver.CtxBase) !zerver.Decision {
     // In a real app: const posts = try ctx.require(Slot.PostList);
-    return ctx.jsonResponse(200, "[]");
+    // For now, return empty array
+    const empty_list: []const Post = &.{};
+    return ctx.jsonResponse(200, empty_list);
 }
 
 // Get single post - Step 1: Load from DB
@@ -123,13 +131,24 @@ fn step_get_post(ctx: *zerver.CtxBase) !zerver.Decision {
 fn step_render_post(ctx: *zerver.CtxBase) !zerver.Decision {
     if (ctx.last_error) |err| {
         if (std.mem.eql(u8, err.ctx.key, "not_found")) {
-            return ctx.jsonResponse(404, "{\"error\":\"Post not found\"}");
+            const error_response = ErrorResponse{ .@"error" = "Post not found" };
+            return ctx.jsonResponse(404, error_response);
         }
-        return ctx.jsonResponse(500, "{\"error\":\"Internal server error\"}");
+        const error_response = ErrorResponse{ .@"error" = "Internal server error" };
+        return ctx.jsonResponse(500, error_response);
     }
 
     // In real app: const post = try ctx.require(Slot.Post);
-    return ctx.jsonResponse(200, "{\"id\":\"1\",\"title\":\"Test Post\"}");
+    // For now, return sample post
+    const post = Post{
+        .id = "1",
+        .title = "Test Post",
+        .content = "This is a test post",
+        .author = "demo",
+        .created_at = std.time.timestamp(),
+        .updated_at = std.time.timestamp(),
+    };
+    return ctx.jsonResponse(200, post);
 }
 
 // Create post - Step 1: Parse and validate
@@ -151,7 +170,16 @@ fn step_save_post(ctx: *zerver.CtxBase) !zerver.Decision {
 
 // Create post - Step 3: Render created response
 fn step_render_created_post(ctx: *zerver.CtxBase) !zerver.Decision {
-    return ctx.jsonResponse(201, "{\"id\":\"1\",\"title\":\"New Post\"}");
+    // In real app: const post = try ctx.require(Slot.PostPayload);
+    const post = Post{
+        .id = "1",
+        .title = "New Post",
+        .content = "Content",
+        .author = "Author",
+        .created_at = std.time.timestamp(),
+        .updated_at = std.time.timestamp(),
+    };
+    return ctx.jsonResponse(201, post);
 }
 
 // Update post - Step 1: Extract ID and parse
@@ -174,7 +202,16 @@ fn step_save_update(ctx: *zerver.CtxBase) !zerver.Decision {
 
 // Update post - Step 3: Render updated response
 fn step_render_updated_post(ctx: *zerver.CtxBase) !zerver.Decision {
-    return ctx.jsonResponse(200, "{\"id\":\"1\",\"title\":\"Updated Post\"}");
+    // In real app: const post = try ctx.require(Slot.UpdatePayload);
+    const post = Post{
+        .id = "1",
+        .title = "Updated Post",
+        .content = "Updated content",
+        .author = "demo",
+        .created_at = std.time.timestamp() - 3600, // 1 hour ago
+        .updated_at = std.time.timestamp(),
+    };
+    return ctx.jsonResponse(200, post);
 }
 
 // Delete post - Step 1: Delete from DB
@@ -208,7 +245,9 @@ fn step_load_comments(ctx: *zerver.CtxBase) !zerver.Decision {
 
 // List comments - Step 2: Render response
 fn step_render_comment_list(ctx: *zerver.CtxBase) !zerver.Decision {
-    return ctx.jsonResponse(200, "[]");
+    // In a real app: const comments = try ctx.require(Slot.CommentList);
+    const empty_list: []const Comment = &.{};
+    return ctx.jsonResponse(200, empty_list);
 }
 
 // Create comment - Step 1: Parse
@@ -229,7 +268,15 @@ fn step_save_comment(ctx: *zerver.CtxBase) !zerver.Decision {
 
 // Create comment - Step 3: Render created
 fn step_render_created_comment(ctx: *zerver.CtxBase) !zerver.Decision {
-    return ctx.jsonResponse(201, "{\"id\":\"1\",\"content\":\"New comment\"}");
+    // In real app: const comment = try ctx.require(Slot.Comment);
+    const comment = Comment{
+        .id = "1",
+        .post_id = "1",
+        .content = "New comment",
+        .author = "Commenter",
+        .created_at = std.time.timestamp(),
+    };
+    return ctx.jsonResponse(201, comment);
 }
 
 // Delete comment - Step 1: Delete
@@ -246,83 +293,72 @@ fn step_delete_comment(ctx: *zerver.CtxBase) !zerver.Decision {
 // Route Registration
 // ============================================================================
 
+// Step definitions at module scope for static lifetime
+const load_posts_step = zerver.step("load_posts", step_load_posts);
+const render_list_step = zerver.step("render_list", step_render_post_list);
+const get_post_step = zerver.step("get_post", step_get_post);
+const render_post_step = zerver.step("render_post", step_render_post);
+const parse_post_step = zerver.step("parse_post", step_parse_post);
+const save_post_step = zerver.step("save_post", step_save_post);
+const render_created_step = zerver.step("render_created", step_render_created_post);
+const parse_update_step = zerver.step("parse_update", step_parse_update);
+const save_update_step = zerver.step("save_update", step_save_update);
+const render_updated_step = zerver.step("render_updated", step_render_updated_post);
+const delete_post_step = zerver.step("delete_post", step_delete_post);
+const render_deleted_step = zerver.step("render_deleted", step_render_deleted);
+const load_comments_step = zerver.step("load_comments", step_load_comments);
+const render_comments_step = zerver.step("render_comments", step_render_comment_list);
+const parse_comment_step = zerver.step("parse_comment", step_parse_comment);
+const save_comment_step = zerver.step("save_comment", step_save_comment);
+const render_created_comment_step = zerver.step("render_created", step_render_created_comment);
+const delete_comment_step = zerver.step("delete_comment", step_delete_comment);
+
 pub fn registerRoutes(srv: *zerver.Server) !void {
     // Post routes
     try srv.addRoute(.GET, "/blog/posts", .{
-        .steps = &.{
-            zerver.step("load_posts", step_load_posts),
-            zerver.step("render_list", step_render_post_list),
-        },
+        .steps = &.{load_posts_step, render_list_step},
     });
 
     try srv.addRoute(.GET, "/blog/posts/:id", .{
-        .steps = &.{
-            zerver.step("get_post", step_get_post),
-            zerver.step("render_post", step_render_post),
-        },
+        .steps = &.{get_post_step, render_post_step},
     });
 
     try srv.addRoute(.POST, "/blog/posts", .{
-        .steps = &.{
-            zerver.step("parse_post", step_parse_post),
-            zerver.step("save_post", step_save_post),
-            zerver.step("render_created", step_render_created_post),
-        },
+        .steps = &.{parse_post_step, save_post_step, render_created_step},
     });
 
     try srv.addRoute(.PUT, "/blog/posts/:id", .{
-        .steps = &.{
-            zerver.step("parse_update", step_parse_update),
-            zerver.step("save_update", step_save_update),
-            zerver.step("render_updated", step_render_updated_post),
-        },
+        .steps = &.{parse_update_step, save_update_step, render_updated_step},
     });
 
     try srv.addRoute(.PATCH, "/blog/posts/:id", .{
-        .steps = &.{
-            zerver.step("parse_update", step_parse_update),
-            zerver.step("save_update", step_save_update),
-            zerver.step("render_updated", step_render_updated_post),
-        },
+        .steps = &.{parse_update_step, save_update_step, render_updated_step},
     });
 
     // Simple test routes
     try srv.addRoute(.PATCH, "/blog/hello", .{
-        .steps = &.{zerver.step("parse_update", step_parse_update)},
+        .steps = &.{parse_update_step},
     });
 
     try srv.addRoute(.POST, "/blog/hello", .{
-        .steps = &.{zerver.step("parse_update", step_parse_update)},
+        .steps = &.{parse_update_step},
     });
 
     try srv.addRoute(.DELETE, "/blog/posts/:id", .{
-        .steps = &.{
-            zerver.step("delete_post", step_delete_post),
-            zerver.step("render_deleted", step_render_deleted),
-        },
+        .steps = &.{delete_post_step, render_deleted_step},
     });
 
     // Comment routes
     try srv.addRoute(.GET, "/blog/posts/:post_id/comments", .{
-        .steps = &.{
-            zerver.step("load_comments", step_load_comments),
-            zerver.step("render_comments", step_render_comment_list),
-        },
+        .steps = &.{load_comments_step, render_comments_step},
     });
 
     try srv.addRoute(.POST, "/blog/posts/:post_id/comments", .{
-        .steps = &.{
-            zerver.step("parse_comment", step_parse_comment),
-            zerver.step("save_comment", step_save_comment),
-            zerver.step("render_created", step_render_created_comment),
-        },
+        .steps = &.{parse_comment_step, save_comment_step, render_created_comment_step},
     });
 
     try srv.addRoute(.DELETE, "/blog/posts/:post_id/comments/:comment_id", .{
-        .steps = &.{
-            zerver.step("delete_comment", step_delete_comment),
-            zerver.step("render_deleted", step_render_deleted),
-        },
+        .steps = &.{delete_comment_step, render_deleted_step},
     });
 }
 
