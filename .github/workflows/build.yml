@@ -108,14 +108,14 @@ jobs:
           zig version
           zig env
 
-      # --- Build / Test ---
-      - name: Build (ReleaseSafe)
-        shell: pwsh
-        run: zig build -Doptimize=ReleaseSafe
-
+      # --- Test then Build ---
       - name: Run tests
         shell: pwsh
         run: zig build test
+
+      - name: Build (ReleaseSafe)
+        shell: pwsh
+        run: zig build -Doptimize=ReleaseSafe
 
       - name: Upload executable
         uses: actions/upload-artifact@v4
