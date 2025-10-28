@@ -5,6 +5,7 @@ const libuv = @import("libuv.zig");
 const job = @import("job_system.zig");
 const task_system = @import("task_system.zig");
 const db_effects = @import("db_effects.zig");
+const http_effects = @import("http_effects.zig");
 
 pub const DispatchError = error{
     UnsupportedEffect,
@@ -63,15 +64,15 @@ pub const WebSocketSendHandler = *const fn (*Context, types.WebSocketSend) Dispa
 pub const WebSocketReceiveHandler = *const fn (*Context, types.WebSocketReceive) DispatchError!types.EffectResult;
 
 pub const EffectHandlers = struct {
-    http_get: HttpGetHandler = defaultHttpGetHandler,
-    http_head: HttpHeadHandler = defaultHttpHeadHandler,
-    http_post: HttpPostHandler = defaultHttpPostHandler,
-    http_put: HttpPutHandler = defaultHttpPutHandler,
-    http_delete: HttpDeleteHandler = defaultHttpDeleteHandler,
-    http_options: HttpOptionsHandler = defaultHttpOptionsHandler,
-    http_trace: HttpTraceHandler = defaultHttpTraceHandler,
-    http_connect: HttpConnectHandler = defaultHttpConnectHandler,
-    http_patch: HttpPatchHandler = defaultHttpPatchHandler,
+    http_get: HttpGetHandler = http_effects.handleHttpGet,
+    http_head: HttpHeadHandler = http_effects.handleHttpHead,
+    http_post: HttpPostHandler = http_effects.handleHttpPost,
+    http_put: HttpPutHandler = http_effects.handleHttpPut,
+    http_delete: HttpDeleteHandler = http_effects.handleHttpDelete,
+    http_options: HttpOptionsHandler = http_effects.handleHttpOptions,
+    http_trace: HttpTraceHandler = http_effects.handleHttpTrace,
+    http_connect: HttpConnectHandler = http_effects.handleHttpConnect,
+    http_patch: HttpPatchHandler = http_effects.handleHttpPatch,
     tcp_connect: TcpConnectHandler = defaultTcpConnectHandler,
     tcp_send: TcpSendHandler = defaultTcpSendHandler,
     tcp_receive: TcpReceiveHandler = defaultTcpReceiveHandler,
