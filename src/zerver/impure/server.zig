@@ -65,7 +65,7 @@ pub const StreamingResponse = struct {
 pub const Server = struct {
     allocator: std.mem.Allocator,
     config: Config,
-    router: router_module.Router,
+    router: router_module.Router(types.RouteSpec),
     executor: executor_module.Executor,
     flows: std.ArrayList(Flow),
     global_before: std.ArrayList(types.Step),
@@ -95,7 +95,7 @@ pub const Server = struct {
         return Server{
             .allocator = allocator,
             .config = cfg,
-            .router = try router_module.Router.init(allocator),
+            .router = try router_module.Router(types.RouteSpec).init(allocator),
             .executor = executor_module.Executor.init(allocator, effect_handler),
             .flows = try std.ArrayList(Flow).initCapacity(allocator, 16),
             .global_before = try std.ArrayList(types.Step).initCapacity(allocator, 8),
@@ -437,7 +437,7 @@ pub const Server = struct {
             }
             telemetry_ctx.stepEnd(.system, "route_match", "Continue");
 
-            const decision = try self.executePipeline(&ctx, &telemetry_ctx, route_match.spec.before, route_match.spec.steps);
+            const decision = try self.executePipeline(&ctx, &telemetry_ctx, route_match.handler.before, route_match.handler.steps);
 
             var outcome = telemetry.RequestOutcome{
                 .status_code = ctx.status(),

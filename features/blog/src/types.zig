@@ -1,6 +1,6 @@
 // src/features/blog/types.zig
 /// Blog feature types and slot definitions with automatic token assignment
-const feature_registry = @import("../../zerver/features/registry.zig");
+const feature_registry = @import("zerver/features/registry.zig");
 
 // Blog is feature index 0 in the registry (gets tokens 0-99 automatically)
 const TokenGen = feature_registry.TokenFor(0);

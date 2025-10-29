@@ -4,12 +4,15 @@
 /// Provides crash isolation - Zupervisor crashes don't bring down HTTP ingress
 
 const std = @import("std");
-const slog = @import("../zerver/observability/slog.zig");
+const zerver = @import("zerver");
+const slog = zerver.slog;
 const ipc = @import("ipc_client.zig");
 
 const DEFAULT_PORT = 8080;
 const DEFAULT_IPC_SOCKET = "/tmp/zerver.sock";
 const MAX_REQUEST_SIZE = 16 * 1024 * 1024; // 16 MB
+
+const Header = zerver.ipc_types.Header;
 
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
@@ -20,7 +23,7 @@ pub fn main() !void {
     const socket_path = try getSocketPath(allocator);
     defer allocator.free(socket_path);
 
-    slog.info("Zingest starting", .{
+    slog.info("Zingest starting", &.{
         slog.Attr.int("port", port),
         slog.Attr.string("ipc_socket", socket_path),
     });
@@ -33,11 +36,10 @@ pub fn main() !void {
     const address = std.net.Address.parseIp("0.0.0.0", port) catch unreachable;
     var server = try address.listen(.{
         .reuse_address = true,
-        .reuse_port = false,
     });
     defer server.deinit();
 
-    slog.info("HTTP server listening", .{
+    slog.info("HTTP server listening", &.{
         slog.Attr.string("address", "0.0.0.0"),
         slog.Attr.int("port", port),
     });
@@ -46,7 +48,7 @@ pub fn main() !void {
     var request_counter: u64 = 0;
     while (true) {
         const connection = server.accept() catch |err| {
-            slog.err("Failed to accept connection", .{
+            slog.err("Failed to accept connection", &.{
                 slog.Attr.string("error", @errorName(err)),
             });
             continue;
@@ -61,7 +63,7 @@ pub fn main() !void {
             &client_pool,
             request_counter,
         }) catch |err| {
-            slog.err("Failed to spawn handler thread", .{
+            slog.err("Failed to spawn handler thread", &.{
                 slog.Attr.string("error", @errorName(err)),
             });
             connection.stream.close();
@@ -80,9 +82,9 @@ fn handleConnection(
     defer connection.stream.close();
 
     handleRequest(allocator, connection, client_pool, request_id) catch |err| {
-        slog.err("Request handling failed", .{
+        slog.err("Request handling failed", &.{
             slog.Attr.string("error", @errorName(err)),
-            slog.Attr.int("request_id", request_id),
+            slog.Attr.int("request_id", @intCast(request_id)),
         });
 
         // Send 500 error response
@@ -97,7 +99,7 @@ fn handleRequest(
     client_pool: *ipc.IPCClientPool,
     request_id: u64,
 ) !void {
-    const start_time = std.time.nanoTimestamp();
+    const start_time: i64 = @intCast(std.time.nanoTimestamp());
 
     // Read HTTP request
     var request_buffer: [8192]u8 = undefined;
@@ -124,8 +126,8 @@ fn handleRequest(
     const method = try parseMethod(method_str);
 
     // Parse headers
-    var headers = std.ArrayList(ipc.Header).init(allocator);
-    defer headers.deinit();
+    var headers_buf: [32]ipc.Header = undefined;
+    var header_count: usize = 0;
 
     var header_start = request_line_end + 2;
     while (true) {
@@ -145,15 +147,19 @@ fn handleRequest(
         const name = std.mem.trim(u8, line[0..colon_pos], " \t");
         const value = std.mem.trim(u8, line[colon_pos + 1 ..], " \t");
 
-        try headers.append(.{
-            .name = try allocator.dupe(u8, name),
-            .value = try allocator.dupe(u8, value),
-        });
+        if (header_count < headers_buf.len) {
+            headers_buf[header_count] = .{
+                .name = try allocator.dupe(u8, name),
+                .value = try allocator.dupe(u8, value),
+            };
+            header_count += 1;
+        }
 
         header_start = line_end + 2;
     }
+    const headers = headers_buf[0..header_count];
     defer {
-        for (headers.items) |header| {
+        for (headers) |header| {
             allocator.free(header.name);
             allocator.free(header.value);
         }
@@ -165,24 +171,23 @@ fn handleRequest(
     else
         &[_]u8{};
 
-    // Get remote address
-    const remote_addr = try connection.address.format(allocator);
-    defer allocator.free(remote_addr);
+    // Get remote address - simplified for now
+    const remote_addr = "127.0.0.1";
 
     // Build IPC request
     const ipc_request = ipc.IPCRequest{
         .request_id = @intCast(request_id),
         .method = method,
         .path = path,
-        .headers = headers.items,
+        .headers = headers,
         .body = body,
         .remote_addr = remote_addr,
         .timestamp_ns = start_time,
     };
 
     // Forward to Zupervisor
-    slog.debug("Forwarding request to Zupervisor", .{
-        slog.Attr.int("request_id", request_id),
+    slog.debug("Forwarding request to Zupervisor", &.{
+        slog.Attr.int("request_id", @intCast(request_id)),
         slog.Attr.string("method", method_str),
         slog.Attr.string("path", path),
     });
@@ -198,29 +203,29 @@ fn handleRequest(
     }
 
     // Build HTTP response
-    var response = std.ArrayList(u8).init(allocator);
-    defer response.deinit();
+    var response = try std.ArrayList(u8).initCapacity(allocator, 512);
+    defer response.deinit(allocator);
 
-    try response.writer().print("HTTP/1.1 {d} {s}\r\n", .{
+    try response.writer(allocator).print("HTTP/1.1 {d} {s}\r\n", .{
         ipc_response.status,
         getStatusText(ipc_response.status),
     });
 
     for (ipc_response.headers) |header| {
-        try response.writer().print("{s}: {s}\r\n", .{ header.name, header.value });
+        try response.writer(allocator).print("{s}: {s}\r\n", .{ header.name, header.value });
     }
 
-    try response.writer().print("Content-Length: {d}\r\n\r\n", .{ipc_response.body.len});
-    try response.appendSlice(ipc_response.body);
+    try response.writer(allocator).print("Content-Length: {d}\r\n\r\n", .{ipc_response.body.len});
+    try response.appendSlice(allocator, ipc_response.body);
 
     // Send response
     try connection.stream.writeAll(response.items);
 
     const duration_us = @divTrunc(std.time.nanoTimestamp() - start_time, 1000);
-    slog.info("Request completed", .{
-        slog.Attr.int("request_id", request_id),
-        slog.Attr.int("status", ipc_response.status),
-        slog.Attr.int("duration_us", duration_us),
+    slog.info("Request completed", &.{
+        slog.Attr.int("request_id", @intCast(request_id)),
+        slog.Attr.int("status", @intCast(ipc_response.status)),
+        slog.Attr.int("duration_us", @intCast(duration_us)),
     });
 }
 

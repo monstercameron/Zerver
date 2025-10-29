@@ -1,5 +1,5 @@
 // src/features/blog/util.zig
-const zerver = @import("../../zerver/root.zig");
+const zerver = @import("zerver/root.zig");
 pub fn singleEffect(ctx: *zerver.CtxBase, effect: zerver.Effect) ![]zerver.Effect {
     const effects = try ctx.allocator.alloc(zerver.Effect, 1);
     effects[0] = effect;

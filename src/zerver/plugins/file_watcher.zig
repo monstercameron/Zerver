@@ -20,12 +20,12 @@ pub const FileWatcher = struct {
     };
 
     pub fn init(allocator: std.mem.Allocator, watch_path: []const u8) !FileWatcher {
-        const dir = try std.fs.openDirAbsolute(watch_path, .{ .iterate = true });
+        var dir = try std.fs.openDirAbsolute(watch_path, .{ .iterate = true });
         errdefer dir.close();
 
         const impl = try Impl.init(allocator, dir, watch_path);
 
-        slog.info("FileWatcher initialized", .{
+        slog.info("FileWatcher initialized", &.{
             slog.Attr.string("path", watch_path),
             slog.Attr.string("backend", @tagName(builtin.os.tag)),
         });
@@ -62,20 +62,20 @@ pub const FileWatcher = struct {
 
 const KqueueImpl = struct {
     allocator: std.mem.Allocator,
-    kq: std.os.fd_t,
+    kq: std.posix.fd_t,
     watch_dir: std.fs.Dir,
     watched_files: std.StringHashMap(WatchedFile),
 
     const WatchedFile = struct {
-        fd: std.os.fd_t,
+        fd: std.posix.fd_t,
         name: []const u8,
     };
 
     fn init(allocator: std.mem.Allocator, dir: std.fs.Dir, watch_path: []const u8) !KqueueImpl {
         _ = watch_path;
 
-        const kq = try std.os.kqueue();
-        errdefer std.os.close(kq);
+        const kq = try std.posix.kqueue();
+        errdefer std.posix.close(kq);
 
         var impl = KqueueImpl{
             .allocator = allocator,
@@ -93,11 +93,11 @@ const KqueueImpl = struct {
     fn deinit(self: *KqueueImpl) void {
         var iter = self.watched_files.valueIterator();
         while (iter.next()) |file| {
-            std.os.close(file.fd);
+            std.posix.close(file.fd);
             self.allocator.free(file.name);
         }
         self.watched_files.deinit();
-        std.os.close(self.kq);
+        std.posix.close(self.kq);
     }
 
     fn scanAndWatch(self: *KqueueImpl) !void {
@@ -114,27 +114,23 @@ const KqueueImpl = struct {
     }
 
     fn addWatch(self: *KqueueImpl, filename: []const u8) !void {
-        const fd = try self.watch_dir.openFile(filename, .{});
-        errdefer std.os.close(fd);
+        const file = try self.watch_dir.openFile(filename, .{});
+        const fd = file.handle;
+        errdefer std.posix.close(fd);
 
         // Register kevent for VNODE changes
-        var event: std.os.system.kevent_t = undefined;
-        const fflags = std.os.system.NOTE_WRITE |
-            std.os.system.NOTE_DELETE |
-            std.os.system.NOTE_RENAME;
+        var event: std.c.Kevent = undefined;
+        const fflags: u32 = 0x0002 | 0x0001 | 0x0010; // NOTE_WRITE | NOTE_DELETE | NOTE_RENAME
 
-        std.os.system.EV_SET(
-            &event,
-            @as(usize, @intCast(fd)),
-            std.os.system.EVFILT_VNODE,
-            std.os.system.EV_ADD | std.os.system.EV_CLEAR,
-            fflags,
-            0,
-            null,
-        );
+        event.ident = @intCast(fd);
+        event.filter = -4; // EVFILT_VNODE
+        event.flags = 0x0001 | 0x0020; // EV_ADD | EV_CLEAR
+        event.fflags = fflags;
+        event.data = 0;
+        event.udata = 0;
 
-        const changelist = [_]std.os.system.kevent_t{event};
-        _ = try std.os.kevent(self.kq, &changelist, &[_]std.os.system.kevent_t{}, null);
+        const changelist = [_]std.c.Kevent{event};
+        _ = try std.posix.kevent(self.kq, &changelist, &[0]std.c.Kevent{}, null);
 
         const name_copy = try self.allocator.dupe(u8, filename);
         errdefer self.allocator.free(name_copy);
@@ -144,7 +140,7 @@ const KqueueImpl = struct {
             .name = name_copy,
         });
 
-        slog.debug("Added file watch", .{
+        slog.debug("Added file watch", &.{
             slog.Attr.string("file", filename),
             slog.Attr.int("fd", fd),
         });
@@ -155,12 +151,12 @@ const KqueueImpl = struct {
         try self.scanAndWatch();
 
         // Non-blocking check for events
-        var eventlist: [1]std.os.system.kevent_t = undefined;
-        const timeout = std.os.timespec{ .tv_sec = 0, .tv_nsec = 0 };
+        var eventlist: [1]std.c.Kevent = undefined;
+        const timeout = std.posix.timespec{ .sec = 0, .nsec = 0 };
 
-        const n = try std.os.kevent(
+        const n = try std.posix.kevent(
             self.kq,
-            &[_]std.os.system.kevent_t{},
+            &[_]std.c.Kevent{},
             &eventlist,
             &timeout,
         );
@@ -174,15 +170,15 @@ const KqueueImpl = struct {
         // Check for new files first
         try self.scanAndWatch();
 
-        var eventlist: [1]std.os.system.kevent_t = undefined;
+        var eventlist: [1]std.c.Kevent = undefined;
         const timeout = std.os.timespec{
             .tv_sec = @intCast(timeout_ms / 1000),
             .tv_nsec = @intCast((timeout_ms % 1000) * 1_000_000),
         };
 
-        const n = try std.os.kevent(
+        const n = try std.posix.kevent(
             self.kq,
-            &[_]std.os.system.kevent_t{},
+            &[_]std.c.Kevent{},
             &eventlist,
             &timeout,
         );
@@ -192,8 +188,8 @@ const KqueueImpl = struct {
         return try self.handleEvent(&eventlist[0]);
     }
 
-    fn handleEvent(self: *KqueueImpl, event: *const std.os.system.kevent_t) !?[]const u8 {
-        const fd: std.os.fd_t = @intCast(event.ident);
+    fn handleEvent(self: *KqueueImpl, event: *const std.c.Kevent) !?[]const u8 {
+        const fd: std.posix.fd_t = @intCast(event.ident);
 
         // Find which file this fd belongs to
         var iter = self.watched_files.iterator();
@@ -201,17 +197,17 @@ const KqueueImpl = struct {
             if (entry.value_ptr.fd == fd) {
                 const filename = entry.value_ptr.name;
 
-                slog.debug("File changed", .{
+                slog.debug("File changed", &.{
                     slog.Attr.string("file", filename),
                     slog.Attr.int("fflags", @intCast(event.fflags)),
                 });
 
                 // If deleted/renamed, remove from watch list
-                if (event.fflags & std.os.system.NOTE_DELETE != 0 or
-                    event.fflags & std.os.system.NOTE_RENAME != 0)
+                if (event.fflags & 0x0001 != 0 or // NOTE_DELETE
+                    event.fflags & 0x0010 != 0) // NOTE_RENAME
                 {
                     const name_copy = try self.allocator.dupe(u8, filename);
-                    std.os.close(fd);
+                    std.posix.close(fd);
                     self.allocator.free(entry.key_ptr.*);
                     _ = self.watched_files.remove(filename);
                     return name_copy;
@@ -231,15 +227,15 @@ const KqueueImpl = struct {
 
 const InotifyImpl = struct {
     allocator: std.mem.Allocator,
-    inotify_fd: std.os.fd_t,
-    watch_fd: std.os.fd_t,
+    inotify_fd: std.posix.fd_t,
+    watch_fd: std.posix.fd_t,
     watch_path: []const u8,
 
     fn init(allocator: std.mem.Allocator, dir: std.fs.Dir, watch_path: []const u8) !InotifyImpl {
         _ = dir;
 
         const inotify_fd = try std.os.inotify_init1(std.os.linux.IN.CLOEXEC);
-        errdefer std.os.close(inotify_fd);
+        errdefer std.posix.close(inotify_fd);
 
         // Watch directory for modifications
         const mask = std.os.linux.IN.MODIFY |
@@ -267,7 +263,7 @@ const InotifyImpl = struct {
     }
 
     fn deinit(self: *InotifyImpl) void {
-        std.os.close(self.inotify_fd);
+        std.posix.close(self.inotify_fd);
     }
 
     fn poll(self: *InotifyImpl) !?[]const u8 {

@@ -1,6 +1,6 @@
 // src/features/blog/logging.zig
 const std = @import("std");
-const slog = @import("../../zerver/observability/slog.zig");
+const slog = @import("zerver/observability/slog.zig");
 const blog_types = @import("types.zig");
 
 pub fn hexPreview(data: []const u8, out: []u8) []const u8 {

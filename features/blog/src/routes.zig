@@ -1,5 +1,5 @@
 // src/features/blog/routes.zig
-const zerver = @import("../../../src/zerver/root.zig");
+const zerver = @import("zerver");
 const steps = @import("steps.zig");
 const page = @import("page.zig");
 const list = @import("list.zig");
@@ -46,7 +46,7 @@ const render_blog_list_header_step = zerver.step("render_blog_list_header", list
 const load_blog_post_page_step = zerver.step("load_blog_post_page", list.step_load_blog_post_page);
 const render_blog_post_page_step = zerver.step("render_blog_post_page", list.step_render_blog_post_page);
 
-pub fn registerRoutes(srv: *zerver.Server) !void {
+pub fn registerRoutes(srv: anytype) !void {
     // Homepage route
     try srv.addRoute(.GET, "/blogs", .{
         .steps = &.{homepage_step},

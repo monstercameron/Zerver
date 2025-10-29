@@ -3,60 +3,16 @@
 /// Implements Unix socket protocol with MessagePack encoding
 
 const std = @import("std");
-const slog = @import("../zerver/observability/slog.zig");
+const zerver = @import("zerver");
+const slog = zerver.slog;
 
-/// HTTP method enum matching IPC protocol
-pub const HttpMethod = enum(u8) {
-    GET = 0,
-    POST = 1,
-    PUT = 2,
-    PATCH = 3,
-    DELETE = 4,
-    HEAD = 5,
-    OPTIONS = 6,
-};
-
-/// Header key-value pair
-pub const Header = struct {
-    name: []const u8,
-    value: []const u8,
-};
-
-/// Request message sent to Process 2
-pub const IPCRequest = struct {
-    request_id: u128,
-    method: HttpMethod,
-    path: []const u8,
-    headers: []const Header,
-    body: []const u8,
-    remote_addr: []const u8,
-    timestamp_ns: i64,
-};
-
-/// Response message from Process 2
-pub const IPCResponse = struct {
-    request_id: u128,
-    status: u16,
-    headers: []const Header,
-    body: []const u8,
-    processing_time_us: u64,
-};
-
-/// Error response from Process 2
-pub const IPCError = struct {
-    request_id: u128,
-    error_code: ErrorCode,
-    message: []const u8,
-    details: ?[]const u8,
-};
-
-pub const ErrorCode = enum(u8) {
-    Timeout = 1,
-    FeatureCrash = 2,
-    RouteNotFound = 3,
-    InternalError = 4,
-    OverloadRejection = 5,
-};
+// Re-export shared IPC types
+pub const HttpMethod = zerver.ipc_types.HttpMethod;
+pub const Header = zerver.ipc_types.Header;
+pub const IPCRequest = zerver.ipc_types.IPCRequest;
+pub const IPCResponse = zerver.ipc_types.IPCResponse;
+pub const IPCError = zerver.ipc_types.IPCError;
+pub const ErrorCode = zerver.ipc_types.ErrorCode;
 
 /// Single IPC client connection
 pub const IPCClient = struct {
@@ -85,12 +41,11 @@ pub const IPCClient = struct {
 
         if (self.stream != null) return; // Already connected
 
-        const address = try std.net.Address.initUnix(self.socket_path);
-        const stream = try std.net.tcpConnectToAddress(address);
+        const stream = try std.net.connectUnixSocket(self.socket_path);
 
         self.stream = stream;
 
-        slog.debug("IPC client connected", .{
+        slog.debug("IPC client connected", &.{
             slog.Attr.string("socket", self.socket_path),
         });
     }
@@ -110,10 +65,12 @@ pub const IPCClient = struct {
         allocator: std.mem.Allocator,
         request: *const IPCRequest,
     ) !IPCResponse {
-        // Ensure connected
-        if (self.stream == null) {
-            try self.connect();
-        }
+        // Always disconnect first to ensure fresh connection
+        self.disconnect();
+
+        // Connect for this request
+        try self.connect();
+        defer self.disconnect(); // Disconnect after request completes
 
         const stream = self.stream orelse return error.NotConnected;
 
@@ -130,7 +87,8 @@ pub const IPCClient = struct {
 
         // Read response length
         var response_length_buf: [4]u8 = undefined;
-        try stream.readNoEof(&response_length_buf);
+        const bytes_read_len = try stream.readAtLeast(&response_length_buf, response_length_buf.len);
+        if (bytes_read_len != response_length_buf.len) return error.UnexpectedEOF;
         const response_length = std.mem.readInt(u32, &response_length_buf, .big);
 
         if (response_length > 16 * 1024 * 1024) {
@@ -141,7 +99,8 @@ pub const IPCClient = struct {
         const response_data = try allocator.alloc(u8, response_length);
         defer allocator.free(response_data);
 
-        try stream.readNoEof(response_data);
+        const bytes_read_data = try stream.readAtLeast(response_data, response_length);
+        if (bytes_read_data != response_length) return error.UnexpectedEOF;
 
         // Deserialize response
         return try self.deserializeResponse(allocator, response_data);
@@ -155,30 +114,50 @@ pub const IPCClient = struct {
         _ = self;
 
         // Simplified JSON serialization (would use MessagePack in production)
-        var buf = std.ArrayList(u8).init(allocator);
-        defer buf.deinit();
+        var buf = try std.ArrayList(u8).initCapacity(allocator, 256);
+        defer buf.deinit(allocator);
 
-        try buf.writer().writeAll("{");
-        try buf.writer().print("\"request_id\":{d},", .{request.request_id});
-        try buf.writer().print("\"method\":{d},", .{@intFromEnum(request.method)});
-        try buf.writer().print("\"path\":\"{s}\",", .{request.path});
-        try buf.writer().writeAll("\"headers\":[");
+        const writer = buf.writer(allocator);
+
+        try writer.writeAll("{");
+        try writer.print("\"request_id\":{d},", .{request.request_id});
+        try writer.print("\"method\":{d},", .{@intFromEnum(request.method)});
+        try writer.writeAll("\"path\":");
+        try writeJsonString(writer, request.path);
+        try writer.writeAll(",\"headers\":[");
 
         for (request.headers, 0..) |header, i| {
-            if (i > 0) try buf.writer().writeAll(",");
-            try buf.writer().print("{{\"name\":\"{s}\",\"value\":\"{s}\"}}", .{
-                header.name,
-                header.value,
-            });
+            if (i > 0) try writer.writeAll(",");
+            try writer.writeAll("{\"name\":");
+            try writeJsonString(writer, header.name);
+            try writer.writeAll(",\"value\":");
+            try writeJsonString(writer, header.value);
+            try writer.writeAll("}");
         }
 
-        try buf.writer().writeAll("],");
-        try buf.writer().print("\"body\":\"{s}\",", .{request.body});
-        try buf.writer().print("\"remote_addr\":\"{s}\",", .{request.remote_addr});
-        try buf.writer().print("\"timestamp_ns\":{d}", .{request.timestamp_ns});
-        try buf.writer().writeAll("}");
+        try writer.writeAll("],\"body\":");
+        try writeJsonString(writer, request.body);
+        try writer.writeAll(",\"remote_addr\":");
+        try writeJsonString(writer, request.remote_addr);
+        try writer.print(",\"timestamp_ns\":{d}", .{request.timestamp_ns});
+        try writer.writeAll("}");
 
-        return try buf.toOwnedSlice();
+        return try buf.toOwnedSlice(allocator);
+    }
+
+    fn writeJsonString(writer: anytype, s: []const u8) !void {
+        try writer.writeByte('"');
+        for (s) |c| {
+            switch (c) {
+                '"' => try writer.writeAll("\\\""),
+                '\\' => try writer.writeAll("\\\\"),
+                '\n' => try writer.writeAll("\\n"),
+                '\r' => try writer.writeAll("\\r"),
+                '\t' => try writer.writeAll("\\t"),
+                else => try writer.writeByte(c),
+            }
+        }
+        try writer.writeByte('"');
     }
 
     fn deserializeResponse(
@@ -189,19 +168,40 @@ pub const IPCClient = struct {
         _ = self;
 
         // Simplified JSON deserialization (would use MessagePack in production)
-        // For now, return a stub response
-        // In production, this would parse the MessagePack response
+        const parsed = try std.json.parseFromSlice(
+            std.json.Value,
+            allocator,
+            data,
+            .{},
+        );
+        defer parsed.deinit();
 
-        // Stub implementation - just return 502 for now
-        var headers = try allocator.alloc(Header, 0);
-        const body = try allocator.dupe(u8, data);
+        const root = parsed.value.object;
+
+        const request_id: u128 = @intCast(root.get("request_id").?.integer);
+        const status: u16 = @intCast(root.get("status").?.integer);
+        const processing_time_us: u64 = @intCast(root.get("processing_time_us").?.integer);
+
+        // Parse headers
+        const headers_array = root.get("headers").?.array;
+        var headers = try allocator.alloc(Header, headers_array.items.len);
+
+        for (headers_array.items, 0..) |header_obj, i| {
+            const header = header_obj.object;
+            headers[i] = .{
+                .name = try allocator.dupe(u8, header.get("name").?.string),
+                .value = try allocator.dupe(u8, header.get("value").?.string),
+            };
+        }
+
+        const body = try allocator.dupe(u8, root.get("body").?.string);
 
         return IPCResponse{
-            .request_id = 0,
-            .status = 502,
+            .request_id = request_id,
+            .status = status,
             .headers = headers,
             .body = body,
-            .processing_time_us = 0,
+            .processing_time_us = processing_time_us,
         };
     }
 };
@@ -219,8 +219,8 @@ pub const IPCClientPool = struct {
             client.* = try IPCClient.init(allocator, socket_path);
         }
 
-        slog.info("IPC client pool initialized", .{
-            slog.Attr.int("pool_size", pool_size),
+        slog.info("IPC client pool initialized", &.{
+            slog.Attr.int("pool_size", @intCast(pool_size)),
             slog.Attr.string("socket", socket_path),
         });
 

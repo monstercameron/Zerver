@@ -2,6 +2,8 @@
 /// Core type definitions for Zerver: Decision, Effect, Response, Error, etc.
 const std = @import("std");
 const ctx_module = @import("ctx.zig");
+const route_types = @import("../routes/types.zig");
+const effect_interface = @import("effect_interface.zig");
 
 // Memory Safety Guidelines for String Slices:
 // All structs containing '[]const u8' fields must follow these lifetime rules:
@@ -16,20 +18,8 @@ const ctx_module = @import("ctx.zig");
 // - Step: name typically points to comptime literal
 // - Effect: varies by type - documented per-field below
 
-/// HTTP method.
-pub const Method = enum {
-    // RFC 9110 Section 9 - Standard HTTP methods
-    GET,
-    HEAD,
-    POST,
-    PUT,
-    DELETE,
-    CONNECT,
-    OPTIONS,
-    TRACE,
-    // PATCH is not in RFC 9110 but widely supported
-    PATCH,
-};
+/// HTTP method - re-exported from routes/types.zig for backward compatibility
+pub const Method = route_types.Method;
 
 // Method Extensibility Note (RFC 9110 §16.1):
 // Current: Fixed enum of known methods. Custom/extension methods (WebDAV, etc.) not supported.
@@ -41,85 +31,63 @@ pub const Method = enum {
 // Tradeoff: Current enum works for 99% of HTTP APIs. Extension methods rare in modern REST/JSON APIs.
 // Recommendation: If WebDAV/CalDAV support needed, implement option 3 (hybrid approach).
 
-/// Common HTTP error codes (for convenience).
-pub const ErrorCode = struct {
-    // RFC 9110 Section 15 - Comprehensive HTTP status codes
+// Re-export all effect types from effect_interface.zig
+pub const ErrorCode = effect_interface.ErrorCode;
+pub const ErrorCtx = effect_interface.ErrorCtx;
+pub const Error = effect_interface.Error;
+pub const EffectResult = effect_interface.EffectResult;
+pub const Retry = effect_interface.Retry;
 
-    // 1xx Informational
-    pub const Continue = 100;
-    pub const SwitchingProtocols = 101;
-    pub const Processing = 102;
+// Re-export all HTTP effect types
+pub const HttpGet = effect_interface.HttpGet;
+pub const HttpPost = effect_interface.HttpPost;
+pub const HttpHead = effect_interface.HttpHead;
+pub const HttpPut = effect_interface.HttpPut;
+pub const HttpDelete = effect_interface.HttpDelete;
+pub const HttpOptions = effect_interface.HttpOptions;
+pub const HttpTrace = effect_interface.HttpTrace;
+pub const HttpConnect = effect_interface.HttpConnect;
+pub const HttpPatch = effect_interface.HttpPatch;
 
-    // 2xx Successful
-    pub const OK = 200;
-    pub const Created = 201;
-    pub const Accepted = 202;
-    pub const NonAuthoritativeInformation = 203;
-    pub const NoContent = 204;
-    pub const ResetContent = 205;
-    pub const PartialContent = 206;
-    pub const MultiStatus = 207;
-    pub const AlreadyReported = 208;
-    pub const IMUsed = 226;
+// Re-export TCP effect types
+pub const TcpConnect = effect_interface.TcpConnect;
+pub const TcpSend = effect_interface.TcpSend;
+pub const TcpReceive = effect_interface.TcpReceive;
+pub const TcpSendReceive = effect_interface.TcpSendReceive;
+pub const TcpClose = effect_interface.TcpClose;
 
-    // 3xx Redirection
-    pub const MultipleChoices = 300;
-    pub const MovedPermanently = 301;
-    pub const Found = 302;
-    pub const SeeOther = 303;
-    pub const NotModified = 304;
-    pub const UseProxy = 305;
-    pub const TemporaryRedirect = 307;
-    pub const PermanentRedirect = 308;
+// Re-export gRPC effect types
+pub const GrpcUnaryCall = effect_interface.GrpcUnaryCall;
+pub const GrpcServerStream = effect_interface.GrpcServerStream;
 
-    // 4xx Client Error
-    pub const BadRequest = 400;
-    pub const InvalidInput = BadRequest; // Alias for backward compatibility
-    pub const Unauthorized = 401;
-    pub const PaymentRequired = 402;
-    pub const Forbidden = 403;
-    pub const NotFound = 404;
-    pub const MethodNotAllowed = 405;
-    pub const NotAcceptable = 406;
-    pub const ProxyAuthenticationRequired = 407;
-    pub const RequestTimeout = 408;
-    pub const Conflict = 409;
-    pub const Gone = 410;
-    pub const LengthRequired = 411;
-    pub const PreconditionFailed = 412;
-    pub const PayloadTooLarge = 413;
-    pub const URITooLong = 414;
-    pub const UnsupportedMediaType = 415;
-    pub const RangeNotSatisfiable = 416;
-    pub const ExpectationFailed = 417;
-    pub const ImATeapot = 418;
-    pub const MisdirectedRequest = 421;
-    pub const UnprocessableEntity = 422;
-    pub const Locked = 423;
-    pub const FailedDependency = 424;
-    pub const TooEarly = 425;
-    pub const UpgradeRequired = 426;
-    pub const PreconditionRequired = 428;
-    pub const TooManyRequests = 429;
-    pub const RequestHeaderFieldsTooLarge = 431;
-    pub const UnavailableForLegalReasons = 451;
+// Re-export WebSocket effect types
+pub const WebSocketConnect = effect_interface.WebSocketConnect;
+pub const WebSocketSend = effect_interface.WebSocketSend;
+pub const WebSocketReceive = effect_interface.WebSocketReceive;
 
-    // 5xx Server Error
-    pub const InternalServerError = 500;
-    pub const InternalError = InternalServerError; // Alias for backward compatibility
-    pub const NotImplemented = 501;
-    pub const BadGateway = 502;
-    pub const UpstreamUnavailable = BadGateway; // Alias for backward compatibility
-    pub const ServiceUnavailable = 503;
-    pub const GatewayTimeout = 504;
-    pub const Timeout = GatewayTimeout; // Alias for backward compatibility
-    pub const HTTPVersionNotSupported = 505;
-    pub const VariantAlsoNegotiates = 506;
-    pub const InsufficientStorage = 507;
-    pub const LoopDetected = 508;
-    pub const NotExtended = 510;
-    pub const NetworkAuthenticationRequired = 511;
-};
+// Re-export database effect types
+pub const DbGet = effect_interface.DbGet;
+pub const DbPut = effect_interface.DbPut;
+pub const DbDel = effect_interface.DbDel;
+pub const DbParam = effect_interface.DbParam;
+pub const DbQuery = effect_interface.DbQuery;
+pub const DbScan = effect_interface.DbScan;
+
+// Re-export file effect types
+pub const FileJsonRead = effect_interface.FileJsonRead;
+pub const FileJsonWrite = effect_interface.FileJsonWrite;
+
+// Re-export compute effect types
+pub const ComputeTask = effect_interface.ComputeTask;
+pub const AcceleratorTask = effect_interface.AcceleratorTask;
+
+// Re-export cache effect types
+pub const KvCacheGet = effect_interface.KvCacheGet;
+pub const KvCacheSet = effect_interface.KvCacheSet;
+pub const KvCacheDelete = effect_interface.KvCacheDelete;
+
+// Re-export Effect union
+pub const Effect = effect_interface.Effect;
 
 /// A response to send back to the client.
 pub const Response = struct {
@@ -148,473 +116,8 @@ pub const StreamingBody = struct {
     is_sse: bool = false,
 };
 
-/// A header name-value pair.
-pub const Header = struct {
-    name: []const u8,
-    value: []const u8,
-};
-
-/// Error context for detailed diagnostics.
-pub const ErrorCtx = struct {
-    what: []const u8, // domain: "todo", "auth", "db"
-    key: []const u8 = "", // id or key associated with the error
-};
-
-/// An error result with kind code and context.
-pub const Error = struct {
-    kind: u16,
-    ctx: ErrorCtx,
-};
-
-/// Effect result: either success payload bytes or failure metadata.
-/// Caller owns the result and must call deinit() to free allocated bytes.
-pub const EffectResult = union(enum) {
-    success: struct {
-        bytes: []u8,
-        allocator: ?std.mem.Allocator,
-    },
-    failure: Error,
-
-    /// Free allocated bytes if this result owns them.
-    /// Must be called by the consumer to prevent memory leaks.
-    pub fn deinit(self: *EffectResult) void {
-        switch (self.*) {
-            .success => |succ| {
-                if (succ.allocator) |alloc| {
-                    alloc.free(succ.bytes);
-                }
-            },
-            .failure => {},
-        }
-        self.* = undefined;
-    }
-};
-
-/// Retry policy with configurable parameters for fault tolerance.
-pub const Retry = struct {
-    max: u8 = 0, // Maximum number of retries
-    initial_backoff_ms: u32 = 10, // Initial backoff in milliseconds
-    max_backoff_ms: u32 = 5000, // Maximum backoff in milliseconds
-    backoff_multiplier: f32 = 1.5, // Exponential backoff multiplier
-    jitter_enabled: bool = false, // Add randomness to backoff
-};
-
-/// Timeout policy for operations with configurable thresholds.
-pub const Timeout = struct {
-    deadline_ms: u32, // Hard deadline in milliseconds
-    warn_threshold_ms: u32 = 0, // Warn if approaching deadline
-};
-
-/// Backoff strategy for retry timing.
-pub const BackoffStrategy = enum {
-    NoBackoff, // Retry immediately
-    Linear, // Linear backoff: delay = attempt * base_ms
-    Exponential, // Exponential backoff: delay = base_ms * (multiplier ^ attempt)
-    Fibonacci, // Fibonacci backoff: delay = fib(attempt) * base_ms
-};
-
-/// Retry policy with advanced options (Phase-2 ready).
-pub const AdvancedRetryPolicy = struct {
-    max_attempts: u8 = 3, // Total attempts (including initial)
-    backoff_strategy: BackoffStrategy = .Exponential,
-    initial_delay_ms: u32 = 50,
-    max_delay_ms: u32 = 5000,
-    timeout_per_attempt_ms: u32 = 1000,
-
-    /// Calculate delay for a specific attempt number
-    pub fn calculateDelay(self: @This(), attempt: u8) u32 {
-        if (attempt == 0) return 0;
-
-        return switch (self.backoff_strategy) {
-            .NoBackoff => 0,
-            .Linear => blk: {
-                // Use saturating multiplication to prevent overflow
-                const result = @mulWithOverflow(self.initial_delay_ms, @as(u32, attempt));
-                if (result[1] != 0 or result[0] > self.max_delay_ms) {
-                    break :blk self.max_delay_ms;
-                }
-                break :blk result[0];
-            },
-            .Exponential => calculateExponentialBackoff(attempt, self.initial_delay_ms, self.max_delay_ms),
-            .Fibonacci => calculateFibonacciBackoff(attempt, self.initial_delay_ms, self.max_delay_ms),
-        };
-    }
-
-    fn calculateExponentialBackoff(attempt: u8, initial: u32, max: u32) u32 {
-        var delay: u64 = initial;
-        var i: u8 = 1;
-        // Use f64 for better precision and u64 to avoid overflow
-        while (i < attempt) : (i += 1) {
-            const float_delay = @as(f64, @floatFromInt(delay)) * 1.5;
-            if (float_delay > @as(f64, @floatFromInt(max))) {
-                return max;
-            }
-            delay = @as(u64, @intFromFloat(float_delay));
-            if (delay > max) return max;
-        }
-        return @as(u32, @intCast(@min(delay, max)));
-    }
-
-    fn calculateFibonacciBackoff(attempt: u8, initial: u32, max: u32) u32 {
-        var fib_prev: u64 = 0;
-        var fib_curr: u64 = 1;
-        var i: u8 = 0;
-        // Use u64 to prevent overflow in Fibonacci sequence
-        while (i < attempt) : (i += 1) {
-            const add_result = @addWithOverflow(fib_prev, fib_curr);
-            if (add_result[1] != 0) {
-                // Overflow occurred, cap at max
-                return max;
-            }
-            const temp = fib_curr;
-            fib_curr = add_result[0];
-            fib_prev = temp;
-
-            // Early exit if fibonacci value gets too large
-            if (fib_curr > max) return max;
-        }
-
-        // Use saturating multiplication for delay calculation
-        const mul_result = @mulWithOverflow(@as(u64, initial), fib_curr);
-        if (mul_result[1] != 0 or mul_result[0] > max) {
-            return max;
-        }
-        return @as(u32, @intCast(mul_result[0]));
-    }
-};
-
-/// HTTP GET effect.
-pub const HttpGet = struct {
-    url: []const u8,
-    token: u32, // Slot identifier (enum tag value) for result storage
-    timeout_ms: u32 = 1000,
-    retry: Retry = .{},
-    required: bool = true,
-};
-
-/// HTTP POST effect.
-pub const HttpPost = struct {
-    url: []const u8,
-    body: []const u8,
-    headers: []const Header = &.{},
-    token: u32, // Slot identifier (enum tag value) for result storage
-    timeout_ms: u32 = 1000,
-    retry: Retry = .{},
-    required: bool = true,
-};
-
-/// HTTP HEAD effect.
-pub const HttpHead = struct {
-    url: []const u8,
-    headers: []const Header = &.{},
-    token: u32,
-    timeout_ms: u32 = 1000,
-    retry: Retry = .{},
-    required: bool = true,
-};
-
-/// HTTP PUT effect.
-pub const HttpPut = struct {
-    url: []const u8,
-    body: []const u8,
-    headers: []const Header = &.{},
-    token: u32,
-    timeout_ms: u32 = 1000,
-    retry: Retry = .{},
-    required: bool = true,
-};
-
-/// HTTP DELETE effect.
-pub const HttpDelete = struct {
-    url: []const u8,
-    body: []const u8 = "",
-    headers: []const Header = &.{},
-    token: u32,
-    timeout_ms: u32 = 1000,
-    retry: Retry = .{},
-    required: bool = true,
-};
-
-/// HTTP OPTIONS effect.
-pub const HttpOptions = struct {
-    url: []const u8,
-    headers: []const Header = &.{},
-    token: u32,
-    timeout_ms: u32 = 1000,
-    retry: Retry = .{},
-    required: bool = true,
-};
-
-/// HTTP TRACE effect.
-pub const HttpTrace = struct {
-    url: []const u8,
-    headers: []const Header = &.{},
-    token: u32,
-    timeout_ms: u32 = 1000,
-    retry: Retry = .{},
-    required: bool = true,
-};
-
-/// HTTP CONNECT effect.
-pub const HttpConnect = struct {
-    url: []const u8,
-    headers: []const Header = &.{},
-    token: u32,
-    timeout_ms: u32 = 1000,
-    retry: Retry = .{},
-    required: bool = true,
-};
-
-/// HTTP PATCH effect.
-pub const HttpPatch = struct {
-    url: []const u8,
-    body: []const u8,
-    headers: []const Header = &.{},
-    token: u32,
-    timeout_ms: u32 = 1000,
-    retry: Retry = .{},
-    required: bool = true,
-};
-
-/// TCP connection effect - establishes a TCP connection.
-pub const TcpConnect = struct {
-    host: []const u8,
-    port: u16,
-    token: u32,
-    timeout_ms: u32 = 3000,
-    required: bool = true,
-    keep_alive: bool = true,
-    no_delay: bool = true,
-};
-
-/// TCP send effect - send data over established connection.
-pub const TcpSend = struct {
-    connection_token: u32,
-    data: []const u8,
-    token: u32,
-    timeout_ms: u32 = 1000,
-    required: bool = true,
-};
-
-/// TCP receive effect - receive data from established connection.
-pub const TcpReceive = struct {
-    connection_token: u32,
-    token: u32,
-    timeout_ms: u32 = 5000,
-    max_bytes: u32 = 65536,
-    required: bool = true,
-};
-
-/// TCP send-and-receive effect (most common pattern).
-pub const TcpSendReceive = struct {
-    connection_token: u32,
-    request: []const u8,
-    token: u32,
-    timeout_ms: u32 = 5000,
-    max_response_bytes: u32 = 65536,
-    required: bool = true,
-};
-
-/// TCP close effect - close established connection.
-pub const TcpClose = struct {
-    connection_token: u32,
-    token: u32,
-    required: bool = false,
-};
-
-/// gRPC unary call effect.
-pub const GrpcUnaryCall = struct {
-    endpoint: []const u8,
-    service: []const u8,
-    method: []const u8,
-    request_proto: []const u8,
-    token: u32,
-    timeout_ms: u32 = 5000,
-    required: bool = true,
-    metadata: []const Header = &.{},
-};
-
-/// gRPC server streaming call effect.
-pub const GrpcServerStream = struct {
-    endpoint: []const u8,
-    service: []const u8,
-    method: []const u8,
-    request_proto: []const u8,
-    token: u32,
-    timeout_ms: u32 = 30000,
-    required: bool = true,
-    metadata: []const Header = &.{},
-    max_messages: u32 = 1000,
-};
-
-/// WebSocket connect effect.
-pub const WebSocketConnect = struct {
-    url: []const u8,
-    token: u32,
-    timeout_ms: u32 = 5000,
-    required: bool = true,
-    headers: []const Header = &.{},
-};
-
-/// WebSocket send effect.
-pub const WebSocketSend = struct {
-    connection_token: u32,
-    message: []const u8,
-    token: u32,
-    timeout_ms: u32 = 1000,
-    required: bool = true,
-};
-
-/// WebSocket receive effect.
-pub const WebSocketReceive = struct {
-    connection_token: u32,
-    token: u32,
-    timeout_ms: u32 = 30000,
-    required: bool = true,
-};
-
-/// Database GET effect.
-pub const DbGet = struct {
-    key: []const u8,
-    token: u32, // Slot identifier (enum tag value) for result storage
-    timeout_ms: u32 = 300,
-    retry: Retry = .{},
-    required: bool = true,
-};
-
-/// Database PUT effect.
-pub const DbPut = struct {
-    key: []const u8,
-    value: []const u8,
-    token: u32, // Slot identifier (enum tag value) for result storage
-    timeout_ms: u32 = 400,
-    retry: Retry = .{},
-    required: bool = true,
-    idem: []const u8 = "", // idempotency key
-};
-
-/// Database DELETE effect.
-pub const DbDel = struct {
-    key: []const u8,
-    token: u32,
-    timeout_ms: u32 = 300,
-    retry: Retry = .{},
-    required: bool = true,
-    idem: []const u8 = "",
-};
-
-/// Database SCAN effect.
-pub const DbScan = struct {
-    prefix: []const u8,
-    token: u32,
-    timeout_ms: u32 = 300,
-    retry: Retry = .{},
-    required: bool = true,
-};
-
-/// File JSON Read effect.
-pub const FileJsonRead = struct {
-    path: []const u8,
-    token: u32, // Slot identifier for result storage
-    required: bool = true,
-};
-
-/// File JSON Write effect.
-pub const FileJsonWrite = struct {
-    path: []const u8,
-    data: []const u8,
-    token: u32, // Slot identifier for result storage (e.g., success/failure)
-    required: bool = true,
-};
-
-/// Compute-bound task scheduled on dedicated worker pool.
-pub const ComputeTask = struct {
-    operation: []const u8,
-    token: u32,
-    timeout_ms: u32 = 0,
-    required: bool = true,
-    metadata: ?*const anyopaque = null,
-
-    // CPU Budget Management
-    cpu_budget_ms: u32 = 0, // Estimated CPU time budget (0 = unlimited)
-    priority: u8 = 128, // Task priority (0=highest, 255=lowest, 128=normal)
-    park_on_budget_exceeded: bool = true, // Park task if budget exceeded
-    cooperative_yield_interval_ms: u32 = 10, // Yield to other tasks every N ms
-};
-
-/// Accelerator task (GPU/TPU/etc.) routed to specialized queue.
-pub const AcceleratorTask = struct {
-    kernel: []const u8,
-    token: u32,
-    timeout_ms: u32 = 2000,
-    required: bool = true,
-    metadata: ?*const anyopaque = null,
-
-    // Accelerator Budget Management
-    compute_budget_ms: u32 = 0, // Estimated accelerator time budget (0 = unlimited)
-    priority: u8 = 128, // Task priority (0=highest, 255=lowest, 128=normal)
-    park_on_budget_exceeded: bool = true, // Park task if budget exceeded
-};
-
-/// Key-value cache read.
-pub const KvCacheGet = struct {
-    key: []const u8,
-    token: u32,
-    timeout_ms: u32 = 50,
-    required: bool = true,
-};
-
-/// Key-value cache write.
-pub const KvCacheSet = struct {
-    key: []const u8,
-    value: []const u8,
-    token: u32,
-    timeout_ms: u32 = 50,
-    required: bool = true,
-    ttl_ms: u32 = 0,
-};
-
-/// Key-value cache delete/invalidate.
-pub const KvCacheDelete = struct {
-    key: []const u8,
-    token: u32,
-    timeout_ms: u32 = 50,
-    required: bool = false,
-};
-
-/// An Effect represents a request to perform I/O (HTTP, DB, etc.).
-pub const Effect = union(enum) {
-    http_get: HttpGet,
-    http_head: HttpHead,
-    http_post: HttpPost,
-    http_put: HttpPut,
-    http_delete: HttpDelete,
-    http_options: HttpOptions,
-    http_trace: HttpTrace,
-    http_connect: HttpConnect,
-    http_patch: HttpPatch,
-    tcp_connect: TcpConnect,
-    tcp_send: TcpSend,
-    tcp_receive: TcpReceive,
-    tcp_send_receive: TcpSendReceive,
-    tcp_close: TcpClose,
-    grpc_unary_call: GrpcUnaryCall,
-    grpc_server_stream: GrpcServerStream,
-    websocket_connect: WebSocketConnect,
-    websocket_send: WebSocketSend,
-    websocket_receive: WebSocketReceive,
-    db_get: DbGet,
-    db_put: DbPut,
-    db_del: DbDel,
-    db_scan: DbScan,
-    file_json_read: FileJsonRead,
-    file_json_write: FileJsonWrite,
-    compute_task: ComputeTask,
-    accelerator_task: AcceleratorTask,
-    kv_cache_get: KvCacheGet,
-    kv_cache_set: KvCacheSet,
-    kv_cache_delete: KvCacheDelete,
-};
+/// A header name-value pair - re-exported from routes/types.zig for backward compatibility
+pub const Header = route_types.Header;
 
 /// Trigger condition for running compensating actions.
 pub const CompensationTrigger = enum {

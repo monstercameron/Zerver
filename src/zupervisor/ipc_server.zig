@@ -4,8 +4,9 @@
 /// Implements length-prefix framing with MessagePack encoding
 
 const std = @import("std");
-const slog = @import("../zerver/observability/slog.zig");
-const ipc_types = @import("../zingest/ipc_client.zig");
+const zerver = @import("zerver");
+const slog = zerver.slog;
+const ipc_types = zerver.ipc_types;
 
 /// IPC server that accepts connections from Zingest
 pub const IPCServer = struct {
@@ -51,7 +52,7 @@ pub const IPCServer = struct {
 
         self.running.store(true, .release);
 
-        slog.info("IPC server listening", .{
+        slog.info("IPC server listening", &.{
             slog.Attr.string("socket", self.socket_path),
         });
     }
@@ -69,12 +70,12 @@ pub const IPCServer = struct {
     }
 
     pub fn acceptLoop(self: *IPCServer) !void {
-        const server = self.server orelse return error.ServerNotStarted;
+        var server = self.server orelse return error.ServerNotStarted;
 
         while (self.running.load(.acquire)) {
             const connection = server.accept() catch |err| {
                 if (!self.running.load(.acquire)) break;
-                slog.err("Failed to accept connection", .{
+                slog.err("Failed to accept connection", &.{
                     slog.Attr.string("error", @errorName(err)),
                 });
                 continue;
@@ -86,7 +87,7 @@ pub const IPCServer = struct {
                 connection,
                 self.handler,
             }) catch |err| {
-                slog.err("Failed to spawn handler thread", .{
+                slog.err("Failed to spawn handler thread", &.{
                     slog.Attr.string("error", @errorName(err)),
                 });
                 connection.stream.close();
@@ -104,7 +105,7 @@ pub const IPCServer = struct {
         defer connection.stream.close();
 
         handleRequest(allocator, connection, handler) catch |err| {
-            slog.err("IPC request handling failed", .{
+            slog.err("IPC request handling failed", &.{
                 slog.Attr.string("error", @errorName(err)),
             });
 
@@ -122,7 +123,8 @@ pub const IPCServer = struct {
 
         // Read request length
         var length_buf: [4]u8 = undefined;
-        try stream.readNoEof(&length_buf);
+        const bytes_read = try stream.readAtLeast(&length_buf, length_buf.len);
+        if (bytes_read != length_buf.len) return error.UnexpectedEOF;
         const request_length = std.mem.readInt(u32, &length_buf, .big);
 
         if (request_length > 16 * 1024 * 1024) {
@@ -133,7 +135,8 @@ pub const IPCServer = struct {
         const request_data = try allocator.alloc(u8, request_length);
         defer allocator.free(request_data);
 
-        try stream.readNoEof(request_data);
+        const bytes_read2 = try stream.readAtLeast(request_data, request_length);
+        if (bytes_read2 != request_length) return error.UnexpectedEOF;
 
         // Deserialize request (simplified JSON for now)
         const request = try deserializeRequest(allocator, request_data);
@@ -224,28 +227,32 @@ pub const IPCServer = struct {
         response: *const ipc_types.IPCResponse,
     ) ![]const u8 {
         // Simplified JSON serialization (would use MessagePack in production)
-        var buf = std.ArrayList(u8).init(allocator);
-        defer buf.deinit();
+        var buf = try std.ArrayList(u8).initCapacity(allocator, 256);
+        defer buf.deinit(allocator);
 
-        try buf.writer().writeAll("{");
-        try buf.writer().print("\"request_id\":{d},", .{response.request_id});
-        try buf.writer().print("\"status\":{d},", .{response.status});
-        try buf.writer().writeAll("\"headers\":[");
+        const writer = buf.writer(allocator);
+
+        try writer.writeAll("{");
+        try writer.print("\"request_id\":{d},", .{response.request_id});
+        try writer.print("\"status\":{d},", .{response.status});
+        try writer.writeAll("\"headers\":[");
 
         for (response.headers, 0..) |header, i| {
-            if (i > 0) try buf.writer().writeAll(",");
-            try buf.writer().print("{{\"name\":\"{s}\",\"value\":\"{s}\"}}", .{
+            if (i > 0) try writer.writeAll(",");
+            try writer.print("{{\"name\":\"{s}\",\"value\":\"{s}\"}}", .{
                 header.name,
                 header.value,
             });
         }
 
-        try buf.writer().writeAll("],");
-        try buf.writer().print("\"body\":\"{s}\",", .{escapeJson(response.body)});
-        try buf.writer().print("\"processing_time_us\":{d}", .{response.processing_time_us});
-        try buf.writer().writeAll("}");
+        try writer.writeAll("],");
+        try writer.writeAll("\"body\":");
+        try writeJsonString(writer, response.body);
+        try writer.writeAll(",");
+        try writer.print("\"processing_time_us\":{d}", .{response.processing_time_us});
+        try writer.writeAll("}");
 
-        return try buf.toOwnedSlice();
+        return try buf.toOwnedSlice(allocator);
     }
 
     fn freeResponse(allocator: std.mem.Allocator, response: ipc_types.IPCResponse) void {
@@ -259,8 +266,10 @@ pub const IPCServer = struct {
 
     fn sendErrorResponse(stream: std.net.Stream, err: anyerror) !void {
         const error_msg = @errorName(err);
-        var buf: [256]u8 = undefined;
-        const json = try std.fmt.bufPrint(&buf, "{{\"error\":\"{s}\"}}", .{error_msg});
+        var buf: [512]u8 = undefined;
+        const json = try std.fmt.bufPrint(&buf,
+            \\{{"request_id":0,"status":500,"headers":[{{"name":"Content-Type","value":"text/plain"}}],"body":"{s}","processing_time_us":0}}
+        , .{error_msg});
 
         var length_buf: [4]u8 = undefined;
         std.mem.writeInt(u32, &length_buf, @intCast(json.len), .big);
@@ -269,9 +278,18 @@ pub const IPCServer = struct {
         try stream.writeAll(json);
     }
 
-    fn escapeJson(s: []const u8) []const u8 {
-        // Simplified - should properly escape JSON strings
-        // For now, just return as-is
-        return s;
+    fn writeJsonString(writer: anytype, s: []const u8) !void {
+        try writer.writeByte('"');
+        for (s) |c| {
+            switch (c) {
+                '"' => try writer.writeAll("\\\""),
+                '\\' => try writer.writeAll("\\\\"),
+                '\n' => try writer.writeAll("\\n"),
+                '\r' => try writer.writeAll("\\r"),
+                '\t' => try writer.writeAll("\\t"),
+                else => try writer.writeByte(c),
+            }
+        }
+        try writer.writeByte('"');
     }
 };

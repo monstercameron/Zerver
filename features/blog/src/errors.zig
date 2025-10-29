@@ -1,7 +1,7 @@
 // src/features/blog/errors.zig
 const std = @import("std");
-const zerver = @import("../../../src/zerver/root.zig");
-const slog = @import("../../../src/zerver/observability/slog.zig");
+const zerver = @import("zerver/root.zig");
+const slog = @import("zerver/observability/slog.zig");
 const http_status = zerver.HttpStatus;
 
 pub fn onError(ctx: *zerver.CtxBase) anyerror!zerver.Decision {

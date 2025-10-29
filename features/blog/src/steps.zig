@@ -1,11 +1,11 @@
 // src/features/blog/steps.zig
 const std = @import("std");
-const zerver = @import("../../zerver/root.zig");
-const slog = @import("../../zerver/observability/slog.zig");
+const zerver = @import("zerver/root.zig");
+const slog = @import("zerver/observability/slog.zig");
 const blog_types = @import("types.zig");
 const blog_logging = @import("logging.zig");
 const util = @import("util.zig");
-const http_util = @import("../../shared/http.zig");
+const http_util = @import("zerver/shared/http.zig");
 const http_status = zerver.HttpStatus;
 
 const Slot = blog_types.BlogSlot;

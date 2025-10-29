@@ -1,7 +1,7 @@
 // src/features/blog/page.zig
 const std = @import("std");
-const zerver = @import("../../zerver/root.zig");
-const components = @import("../../shared/components.zig");
+const zerver = @import("zerver/root.zig");
+const components = @import("zerver/shared/components.zig");
 const http_status = zerver.HttpStatus;
 
 pub fn generateHomepage() ![]const u8 {

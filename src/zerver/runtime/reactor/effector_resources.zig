@@ -1,20 +1,20 @@
-// src/zerver/runtime/reactor/resources.zig
+// src/zerver/runtime/reactor/effector_resources.zig
+/// Minimal reactor infrastructure for async effects without business logic types
+/// Used by Zupervisor and other components that only need effector capabilities
+/// Does NOT depend on core types (Step, Decision, etc.) - no circular dependency
+
 const std = @import("std");
-const config_mod = @import("../config.zig");
-const task_system = @import("task_system.zig");
+const config_mod = @import("runtime_config");
 const job_system = @import("job_system.zig");
 const effectors = @import("effectors.zig");
 const libuv = @import("libuv.zig");
-const scheduler_mod = @import("../scheduler.zig");
 
 const AtomicOrder = std.builtin.AtomicOrder;
 
-pub const ReactorResources = struct {
+pub const EffectorResources = struct {
     allocator: std.mem.Allocator = undefined,
     enabled: bool = false,
-    scheduler: scheduler_mod.Scheduler = .{},
     effector_jobs: job_system.JobSystem = undefined,
-    has_scheduler: bool = false,
     has_effector_jobs: bool = false,
     dispatcher: effectors.EffectDispatcher = effectors.EffectDispatcher.init(),
     loop: libuv.Loop = undefined,
@@ -24,14 +24,12 @@ pub const ReactorResources = struct {
     wake_handle: libuv.Async = undefined,
     wake_initialized: bool = false,
 
-    pub fn init(self: *ReactorResources, allocator: std.mem.Allocator, cfg: config_mod.ReactorConfig) !void {
+    pub fn init(self: *EffectorResources, allocator: std.mem.Allocator, cfg: config_mod.ReactorConfig) !void {
         self.* = .{
             .allocator = allocator,
             .enabled = cfg.enabled,
-            .has_scheduler = false,
-            .has_effector_jobs = false,
-            .scheduler = .{},
             .effector_jobs = undefined,
+            .has_effector_jobs = false,
             .dispatcher = effectors.EffectDispatcher.init(),
             .loop = undefined,
             .loop_initialized = false,
@@ -57,17 +55,6 @@ pub const ReactorResources = struct {
         });
         self.has_effector_jobs = true;
 
-        try self.scheduler.init(.{
-            .allocator = allocator,
-            .continuation_workers = cfg.continuation_pool.size,
-            .continuation_queue_capacity = cfg.continuation_pool.queue_capacity,
-            .compute_kind = convertComputeKind(cfg.compute_pool.kind),
-            .compute_workers = cfg.compute_pool.size,
-            .compute_queue_capacity = cfg.compute_pool.queue_capacity,
-            .label = "scheduler",
-        });
-        self.has_scheduler = true;
-
         try self.wake_handle.init(&self.loop, wakeCallback, self);
         self.wake_initialized = true;
 
@@ -75,7 +62,7 @@ pub const ReactorResources = struct {
         self.loop_thread = try std.Thread.spawn(.{}, loopThreadMain, .{self});
     }
 
-    pub fn shutdown(self: *ReactorResources) void {
+    pub fn shutdown(self: *EffectorResources) void {
         if (!self.enabled) return;
         if (self.loop_initialized) {
             self.loop_should_run.store(false, AtomicOrder.seq_cst);
@@ -101,17 +88,12 @@ pub const ReactorResources = struct {
                 self.wake_initialized = false;
             }
         }
-        if (self.has_scheduler) self.scheduler.shutdown();
         if (self.has_effector_jobs) self.effector_jobs.shutdown();
     }
 
-    pub fn deinit(self: *ReactorResources) void {
+    pub fn deinit(self: *EffectorResources) void {
         if (!self.enabled) return;
         self.shutdown();
-        if (self.has_scheduler) {
-            self.scheduler.deinit();
-            self.has_scheduler = false;
-        }
         if (self.has_effector_jobs) {
             self.effector_jobs.deinit();
             self.has_effector_jobs = false;
@@ -126,60 +108,45 @@ pub const ReactorResources = struct {
         self.loop_should_run = std.atomic.Value(bool).init(false);
     }
 
-    pub fn taskSystem(self: *ReactorResources) ?*task_system.TaskSystem {
-        if (!self.enabled) return null;
-        if (!self.has_scheduler) return null;
-        return self.scheduler.taskSystem();
-    }
-
-    pub fn effectorJobs(self: *ReactorResources) ?*job_system.JobSystem {
+    pub fn effectorJobs(self: *EffectorResources) ?*job_system.JobSystem {
         if (!self.enabled) return null;
         if (!self.has_effector_jobs) return null;
         return &self.effector_jobs;
     }
 
-    pub fn effectDispatcher(self: *ReactorResources) ?*effectors.EffectDispatcher {
+    pub fn effectDispatcher(self: *EffectorResources) ?*effectors.EffectDispatcher {
         if (!self.enabled) return null;
         return &self.dispatcher;
     }
 
-    pub fn loopPtr(self: *ReactorResources) ?*libuv.Loop {
+    pub fn loopPtr(self: *EffectorResources) ?*libuv.Loop {
         if (!self.enabled) return null;
         if (!self.loop_initialized) return null;
         return &self.loop;
     }
 
-    pub fn context(self: *ReactorResources) ?effectors.Context {
+    pub fn context(self: *EffectorResources) ?effectors.Context {
         if (!self.enabled) return null;
         if (!self.has_effector_jobs) return null;
         if (!self.loop_initialized) return null;
-        const compute_jobs = if (self.has_scheduler) self.scheduler.computeJobs() else null;
         return effectors.Context{
             .allocator = self.allocator,
             .loop = &self.loop,
             .jobs = &self.effector_jobs,
-            .compute_jobs = compute_jobs,
+            .compute_jobs = null,
             .accelerator_jobs = null,
             .kv_cache = null,
-            .task_system = if (self.has_scheduler) self.scheduler.taskSystem() else null,
+            .task_system = null,
         };
     }
 
-    pub fn triggerWake(self: *ReactorResources) void {
+    pub fn triggerWake(self: *EffectorResources) void {
         if (!self.wake_initialized) return;
         self.wake_handle.send() catch {};
     }
-
-    fn convertComputeKind(kind: config_mod.ComputePoolKind) task_system.ComputePoolKind {
-        return switch (kind) {
-            .disabled => .disabled,
-            .shared => .shared,
-            .dedicated => .dedicated,
-        };
-    }
 };
 
-fn loopThreadMain(self: *ReactorResources) void {
+fn loopThreadMain(self: *EffectorResources) void {
     while (self.loop_should_run.load(AtomicOrder.seq_cst)) {
         const active = self.loop.run(.once);
         if (!active) {
@@ -192,6 +159,6 @@ fn loopThreadMain(self: *ReactorResources) void {
 
 fn wakeCallback(async_handle: *libuv.Async) void {
     const raw = async_handle.getUserData() orelse return;
-    const resources: *ReactorResources = @ptrCast(@alignCast(raw));
+    const resources: *EffectorResources = @ptrCast(@alignCast(raw));
     _ = resources;
 }

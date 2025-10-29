@@ -7,7 +7,7 @@ const slog = @import("../observability/slog.zig");
 const DLL = @import("dll_loader.zig").DLL;
 
 /// Version state in the reload lifecycle
-pub const VersionState = enum {
+pub const VersionState = enum(u8) {
     /// Actively serving new requests
     Active,
     /// Finishing in-flight requests, no new requests
@@ -97,14 +97,14 @@ pub const DLLVersion = struct {
         const in_flight = self.in_flight.load(.monotonic);
 
         if (in_flight > 0) {
-            slog.warn("DLL version force retired with in-flight requests", .{
+            slog.warn("DLL version force retired with in-flight requests", &.{
                 slog.Attr.string("path", self.dll.path),
                 slog.Attr.string("version", self.dll.getVersion()),
                 slog.Attr.int("in_flight", in_flight),
                 slog.Attr.string("prev_state", @tagName(prev_state)),
             });
         } else {
-            slog.info("DLL version retired", .{
+            slog.info("DLL version retired", &.{
                 slog.Attr.string("path", self.dll.path),
                 slog.Attr.string("version", self.dll.getVersion()),
             });
@@ -131,7 +131,7 @@ pub const DLLVersion = struct {
     pub fn deinit(self: *DLLVersion) void {
         const in_flight = self.in_flight.load(.monotonic);
         if (in_flight > 0) {
-            slog.warn("DLL version destroyed with in-flight requests", .{
+            slog.warn("DLL version destroyed with in-flight requests", &.{
                 slog.Attr.string("path", self.dll.path),
                 slog.Attr.int("in_flight", in_flight),
             });

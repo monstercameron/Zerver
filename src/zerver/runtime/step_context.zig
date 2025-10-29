@@ -303,6 +303,7 @@ fn isEffectRequired(effect: types.Effect) bool {
         .db_get => |e| e.required,
         .db_put => |e| e.required,
         .db_del => |e| e.required,
+        .db_query => |e| e.required,
         .db_scan => |e| e.required,
         .file_json_read => |e| e.required,
         .file_json_write => |e| e.required,

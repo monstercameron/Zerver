@@ -1,5 +1,5 @@
 // src/features/blog/schema.zig
-const sql = @import("../../zerver/sql/mod.zig");
+const sql = @import("zerver/sql/mod.zig");
 
 /// Initialize the blog database schema
 pub fn initSchema(db: *sql.db.Connection) !void {

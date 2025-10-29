@@ -4,28 +4,34 @@
 
 const std = @import("std");
 const slog = @import("../observability/slog.zig");
-const Router = @import("../routes/router.zig").Router;
-const RouteMatch = @import("../routes/router.zig").RouteMatch;
-const types = @import("../core/types.zig");
+const router_mod = @import("../routes/router.zig");
+const route_types = @import("../routes/types.zig");
 
-/// Atomic router wrapper with copy-on-write semantics
-pub const AtomicRouter = struct {
-    allocator: std.mem.Allocator,
-    current: std.atomic.Value(?*Router),
-    mutex: std.Thread.Mutex, // Only for swaps, not reads
+/// Generic atomic router over handler type - breaks circular dependency
+/// HandlerType can be RouteSpec (business logic) or any other type
+pub fn AtomicRouter(comptime HandlerType: type) type {
+    const RouterImpl = router_mod.Router(HandlerType);
+    const RouteMatch = RouterImpl.RouteMatch;
 
-    pub fn init(allocator: std.mem.Allocator) !AtomicRouter {
-        const router = try allocator.create(Router);
-        router.* = try Router.init(allocator);
+    return struct {
+        const Self = @This();
+
+        allocator: std.mem.Allocator,
+        current: std.atomic.Value(?*RouterImpl),
+        mutex: std.Thread.Mutex, // Only for swaps, not reads
+
+        pub fn init(allocator: std.mem.Allocator) !Self {
+            const router = try allocator.create(RouterImpl);
+            router.* = try RouterImpl.init(allocator);
 
         return .{
             .allocator = allocator,
-            .current = std.atomic.Value(?*Router).init(router),
+            .current = std.atomic.Value(?*RouterImpl).init(router),
             .mutex = .{},
         };
     }
 
-    pub fn deinit(self: *AtomicRouter) void {
+    pub fn deinit(self: *Self) void {
         if (self.current.load(.acquire)) |router| {
             router.deinit();
             self.allocator.destroy(router);
@@ -35,29 +41,29 @@ pub const AtomicRouter = struct {
     /// Get the current router for read-only operations (lock-free)
     /// IMPORTANT: Do not hold onto this pointer across atomic swaps!
     /// Only safe for immediate use within a single request context.
-    fn getCurrent(self: *const AtomicRouter) *Router {
+    fn getCurrent(self: *const Self) *RouterImpl {
         const router = self.current.load(.acquire) orelse unreachable;
         return router;
     }
 
     /// Add a route to the current router (requires lock)
     pub fn addRoute(
-        self: *AtomicRouter,
-        method: types.Method,
+        self: *Self,
+        method: route_types.Method,
         path: []const u8,
-        spec: types.RouteSpec,
+        handler: HandlerType,
     ) !void {
         self.mutex.lock();
         defer self.mutex.unlock();
 
         const router = self.getCurrent();
-        try router.addRoute(method, path, spec);
+        try router.addRoute(method, path, handler);
     }
 
     /// Match a request against current routes (lock-free read)
     pub fn match(
-        self: *const AtomicRouter,
-        method: types.Method,
+        self: *const Self,
+        method: route_types.Method,
         path: []const u8,
         arena: std.mem.Allocator,
     ) !?RouteMatch {
@@ -67,7 +73,7 @@ pub const AtomicRouter = struct {
 
     /// Get allowed methods for a path (lock-free read)
     pub fn getAllowedMethods(
-        self: *const AtomicRouter,
+        self: *const Self,
         path: []const u8,
         arena: std.mem.Allocator,
     ) ![]const u8 {
@@ -76,20 +82,20 @@ pub const AtomicRouter = struct {
     }
 
     /// Clone the current router for building a new route table
-    pub fn clone(self: *AtomicRouter) !*Router {
+    pub fn clone(self: *Self) !*RouterImpl {
         self.mutex.lock();
         defer self.mutex.unlock();
 
         const old_router = self.getCurrent();
-        const new_router = try self.allocator.create(Router);
+        const new_router = try self.allocator.create(RouterImpl);
         errdefer self.allocator.destroy(new_router);
 
-        new_router.* = try Router.init(self.allocator);
+        new_router.* = try RouterImpl.init(self.allocator);
         errdefer new_router.deinit();
 
         // Copy all routes from old router to new router
         for (old_router.routes.items) |route| {
-            try new_router.addRoute(route.method, try self.reconstructPath(route), route.spec);
+            try new_router.addRoute(route.method, try self.reconstructPath(route), route.handler);
         }
 
         return new_router;
@@ -97,7 +103,7 @@ pub const AtomicRouter = struct {
 
     /// Atomically swap in a new router
     /// The old router is returned for cleanup after draining
-    pub fn swap(self: *AtomicRouter, new_router: *Router) *Router {
+    pub fn swap(self: *Self, new_router: *RouterImpl) *RouterImpl {
         self.mutex.lock();
         defer self.mutex.unlock();
 
@@ -113,9 +119,9 @@ pub const AtomicRouter = struct {
 
     /// Replace all routes with a new set (convenience method)
     /// Returns old router for cleanup after draining
-    pub fn replaceRoutes(self: *AtomicRouter) !*Router {
-        const new_router = try self.allocator.create(Router);
-        new_router.* = try Router.init(self.allocator);
+    pub fn replaceRoutes(self: *Self) !*RouterImpl {
+        const new_router = try self.allocator.create(RouterImpl);
+        new_router.* = try RouterImpl.init(self.allocator);
 
         return self.swap(new_router);
     }
@@ -123,13 +129,13 @@ pub const AtomicRouter = struct {
     /// Build a new router from scratch and swap it in
     /// Used during DLL reload - returns old router for draining
     pub fn rebuild(
-        self: *AtomicRouter,
-        comptime buildFn: fn (router: *Router) anyerror!void,
-    ) !*Router {
-        const new_router = try self.allocator.create(Router);
+        self: *Self,
+        comptime buildFn: fn (router: *RouterImpl) anyerror!void,
+    ) !*RouterImpl {
+        const new_router = try self.allocator.create(RouterImpl);
         errdefer self.allocator.destroy(new_router);
 
-        new_router.* = try Router.init(self.allocator);
+        new_router.* = try RouterImpl.init(self.allocator);
         errdefer new_router.deinit();
 
         // Build routes using provided function
@@ -140,7 +146,7 @@ pub const AtomicRouter = struct {
     }
 
     /// Reconstruct path string from compiled route (for cloning)
-    fn reconstructPath(self: *AtomicRouter, route: @import("../routes/router.zig").CompiledRoute) ![]const u8 {
+    fn reconstructPath(self: *Self, route: RouterImpl.CompiledRoute) ![]const u8 {
         var buf = std.ArrayList(u8).init(self.allocator);
         defer buf.deinit();
 
@@ -163,30 +169,37 @@ pub const AtomicRouter = struct {
     }
 
     /// Get current route count (for monitoring)
-    pub fn getRouteCount(self: *const AtomicRouter) usize {
+    pub fn getRouteCount(self: *const Self) usize {
         const router = self.getCurrent();
         return router.routes.items.len;
     }
 };
+}
 
 /// Router lifecycle manager for hot reload
 /// Coordinates router swaps with DLL version lifecycle
-pub const RouterLifecycle = struct {
-    allocator: std.mem.Allocator,
-    atomic_router: *AtomicRouter,
-    draining_router: ?*Router,
-    mutex: std.Thread.Mutex,
+pub fn RouterLifecycle(comptime HandlerType: type) type {
+    const AtomicRouterImpl = AtomicRouter(HandlerType);
+    const RouterImpl = router_mod.Router(HandlerType);
 
-    pub fn init(allocator: std.mem.Allocator, atomic_router: *AtomicRouter) RouterLifecycle {
-        return .{
-            .allocator = allocator,
-            .atomic_router = atomic_router,
-            .draining_router = null,
-            .mutex = .{},
-        };
-    }
+    return struct {
+        const Self = @This();
 
-    pub fn deinit(self: *RouterLifecycle) void {
+        allocator: std.mem.Allocator,
+        atomic_router: *AtomicRouterImpl,
+        draining_router: ?*RouterImpl,
+        mutex: std.Thread.Mutex,
+
+        pub fn init(allocator: std.mem.Allocator, atomic_router: *AtomicRouterImpl) Self {
+            return .{
+                .allocator = allocator,
+                .atomic_router = atomic_router,
+                .draining_router = null,
+                .mutex = .{},
+            };
+        }
+
+    pub fn deinit(self: *Self) void {
         self.mutex.lock();
         defer self.mutex.unlock();
 
@@ -198,7 +211,7 @@ pub const RouterLifecycle = struct {
     }
 
     /// Begin hot reload: swap in new router, return old for draining
-    pub fn beginReload(self: *RouterLifecycle, new_router: *Router) !void {
+    pub fn beginReload(self: *Self, new_router: *RouterImpl) !void {
         self.mutex.lock();
         defer self.mutex.unlock();
 
@@ -221,7 +234,7 @@ pub const RouterLifecycle = struct {
     }
 
     /// Complete hot reload: cleanup draining router once version is retired
-    pub fn completeReload(self: *RouterLifecycle) void {
+    pub fn completeReload(self: *Self) void {
         self.mutex.lock();
         defer self.mutex.unlock();
 
@@ -235,13 +248,14 @@ pub const RouterLifecycle = struct {
     }
 
     /// Check if a reload is in progress
-    pub fn isReloadInProgress(self: *RouterLifecycle) bool {
+    pub fn isReloadInProgress(self: *Self) bool {
         self.mutex.lock();
         defer self.mutex.unlock();
 
         return self.draining_router != null;
     }
 };
+}
 
 // ============================================================================
 // Tests
@@ -250,7 +264,9 @@ pub const RouterLifecycle = struct {
 test "AtomicRouter - basic init and deinit" {
     const testing = std.testing;
 
-    var atomic = try AtomicRouter.init(testing.allocator);
+    // Use a simple test handler type (just an integer)
+    const TestAtomicRouter = AtomicRouter(u32);
+    var atomic = try TestAtomicRouter.init(testing.allocator);
     defer atomic.deinit();
 
     try testing.expect(atomic.getRouteCount() == 0);
@@ -259,11 +275,12 @@ test "AtomicRouter - basic init and deinit" {
 test "AtomicRouter - add route and match" {
     const testing = std.testing;
 
-    var atomic = try AtomicRouter.init(testing.allocator);
+    const TestAtomicRouter = AtomicRouter(u32);
+    var atomic = try TestAtomicRouter.init(testing.allocator);
     defer atomic.deinit();
 
-    const spec = types.RouteSpec{ .steps = &.{} };
-    try atomic.addRoute(.GET, "/test", spec);
+    const handler: u32 = 42;
+    try atomic.addRoute(.GET, "/test", handler);
 
     try testing.expect(atomic.getRouteCount() == 1);
 
@@ -272,24 +289,28 @@ test "AtomicRouter - add route and match" {
 
     const match = try atomic.match(.GET, "/test", arena.allocator());
     try testing.expect(match != null);
+    try testing.expect(match.?.handler == 42);
 }
 
 test "AtomicRouter - swap operation" {
     const testing = std.testing;
 
-    var atomic = try AtomicRouter.init(testing.allocator);
+    const TestAtomicRouter = AtomicRouter(u32);
+    const TestRouter = router_mod.Router(u32);
+
+    var atomic = try TestAtomicRouter.init(testing.allocator);
     defer atomic.deinit();
 
     // Add route to initial router
-    const spec1 = types.RouteSpec{ .steps = &.{} };
-    try atomic.addRoute(.GET, "/old", spec1);
+    const handler1: u32 = 1;
+    try atomic.addRoute(.GET, "/old", handler1);
     try testing.expect(atomic.getRouteCount() == 1);
 
     // Create new router with different route
-    var new_router = try testing.allocator.create(Router);
-    new_router.* = try Router.init(testing.allocator);
-    const spec2 = types.RouteSpec{ .steps = &.{} };
-    try new_router.addRoute(.GET, "/new", spec2);
+    var new_router = try testing.allocator.create(TestRouter);
+    new_router.* = try TestRouter.init(testing.allocator);
+    const handler2: u32 = 2;
+    try new_router.addRoute(.GET, "/new", handler2);
 
     // Swap
     const old_router = atomic.swap(new_router);
@@ -306,22 +327,27 @@ test "AtomicRouter - swap operation" {
 
     const match_new = try atomic.match(.GET, "/new", arena.allocator());
     try testing.expect(match_new != null);
+    try testing.expect(match_new.?.handler == 2);
 }
 
 test "RouterLifecycle - reload flow" {
     const testing = std.testing;
 
-    var atomic = try AtomicRouter.init(testing.allocator);
+    const TestAtomicRouter = AtomicRouter(u32);
+    const TestRouter = router_mod.Router(u32);
+    const TestLifecycle = RouterLifecycle(u32);
+
+    var atomic = try TestAtomicRouter.init(testing.allocator);
     defer atomic.deinit();
 
-    var lifecycle = RouterLifecycle.init(testing.allocator, &atomic);
+    var lifecycle = TestLifecycle.init(testing.allocator, &atomic);
     defer lifecycle.deinit();
 
     try testing.expect(!lifecycle.isReloadInProgress());
 
     // Create new router for reload
-    var new_router = try testing.allocator.create(Router);
-    new_router.* = try Router.init(testing.allocator);
+    const new_router = try testing.allocator.create(TestRouter);
+    new_router.* = try TestRouter.init(testing.allocator);
 
     try lifecycle.beginReload(new_router);
     try testing.expect(lifecycle.isReloadInProgress());

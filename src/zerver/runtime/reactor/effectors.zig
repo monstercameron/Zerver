@@ -1,6 +1,6 @@
 // src/zerver/runtime/reactor/effectors.zig
 const std = @import("std");
-const types = @import("../../core/types.zig");
+const effect_interface = @import("../../core/effect_interface.zig");
 const libuv = @import("libuv.zig");
 const job = @import("job_system.zig");
 const task_system = @import("task_system.zig");
@@ -15,7 +15,7 @@ pub const DispatchError = error{
 pub const EffectCompletionCallback = *const fn (
     ctx: *anyopaque, // User context (typically StepExecutionContext)
     token: u32,
-    result: types.EffectResult,
+    result: effect_interface.EffectResult,
     required: bool,
 ) void;
 
@@ -33,36 +33,37 @@ pub const Context = struct {
     user_context: ?*anyopaque = null,
 };
 
-pub const HttpGetHandler = *const fn (*Context, types.HttpGet) DispatchError!types.EffectResult;
-pub const HttpHeadHandler = *const fn (*Context, types.HttpHead) DispatchError!types.EffectResult;
-pub const HttpPostHandler = *const fn (*Context, types.HttpPost) DispatchError!types.EffectResult;
-pub const HttpPutHandler = *const fn (*Context, types.HttpPut) DispatchError!types.EffectResult;
-pub const HttpDeleteHandler = *const fn (*Context, types.HttpDelete) DispatchError!types.EffectResult;
-pub const HttpOptionsHandler = *const fn (*Context, types.HttpOptions) DispatchError!types.EffectResult;
-pub const HttpTraceHandler = *const fn (*Context, types.HttpTrace) DispatchError!types.EffectResult;
-pub const HttpConnectHandler = *const fn (*Context, types.HttpConnect) DispatchError!types.EffectResult;
-pub const HttpPatchHandler = *const fn (*Context, types.HttpPatch) DispatchError!types.EffectResult;
-pub const DbGetHandler = *const fn (*Context, types.DbGet) DispatchError!types.EffectResult;
-pub const DbPutHandler = *const fn (*Context, types.DbPut) DispatchError!types.EffectResult;
-pub const DbDelHandler = *const fn (*Context, types.DbDel) DispatchError!types.EffectResult;
-pub const DbScanHandler = *const fn (*Context, types.DbScan) DispatchError!types.EffectResult;
-pub const FileJsonReadHandler = *const fn (*Context, types.FileJsonRead) DispatchError!types.EffectResult;
-pub const FileJsonWriteHandler = *const fn (*Context, types.FileJsonWrite) DispatchError!types.EffectResult;
-pub const ComputeTaskHandler = *const fn (*Context, types.ComputeTask) DispatchError!types.EffectResult;
-pub const AcceleratorTaskHandler = *const fn (*Context, types.AcceleratorTask) DispatchError!types.EffectResult;
-pub const KvCacheGetHandler = *const fn (*Context, types.KvCacheGet) DispatchError!types.EffectResult;
-pub const KvCacheSetHandler = *const fn (*Context, types.KvCacheSet) DispatchError!types.EffectResult;
-pub const KvCacheDeleteHandler = *const fn (*Context, types.KvCacheDelete) DispatchError!types.EffectResult;
-pub const TcpConnectHandler = *const fn (*Context, types.TcpConnect) DispatchError!types.EffectResult;
-pub const TcpSendHandler = *const fn (*Context, types.TcpSend) DispatchError!types.EffectResult;
-pub const TcpReceiveHandler = *const fn (*Context, types.TcpReceive) DispatchError!types.EffectResult;
-pub const TcpSendReceiveHandler = *const fn (*Context, types.TcpSendReceive) DispatchError!types.EffectResult;
-pub const TcpCloseHandler = *const fn (*Context, types.TcpClose) DispatchError!types.EffectResult;
-pub const GrpcUnaryCallHandler = *const fn (*Context, types.GrpcUnaryCall) DispatchError!types.EffectResult;
-pub const GrpcServerStreamHandler = *const fn (*Context, types.GrpcServerStream) DispatchError!types.EffectResult;
-pub const WebSocketConnectHandler = *const fn (*Context, types.WebSocketConnect) DispatchError!types.EffectResult;
-pub const WebSocketSendHandler = *const fn (*Context, types.WebSocketSend) DispatchError!types.EffectResult;
-pub const WebSocketReceiveHandler = *const fn (*Context, types.WebSocketReceive) DispatchError!types.EffectResult;
+pub const HttpGetHandler = *const fn (*Context, effect_interface.HttpGet) DispatchError!effect_interface.EffectResult;
+pub const HttpHeadHandler = *const fn (*Context, effect_interface.HttpHead) DispatchError!effect_interface.EffectResult;
+pub const HttpPostHandler = *const fn (*Context, effect_interface.HttpPost) DispatchError!effect_interface.EffectResult;
+pub const HttpPutHandler = *const fn (*Context, effect_interface.HttpPut) DispatchError!effect_interface.EffectResult;
+pub const HttpDeleteHandler = *const fn (*Context, effect_interface.HttpDelete) DispatchError!effect_interface.EffectResult;
+pub const HttpOptionsHandler = *const fn (*Context, effect_interface.HttpOptions) DispatchError!effect_interface.EffectResult;
+pub const HttpTraceHandler = *const fn (*Context, effect_interface.HttpTrace) DispatchError!effect_interface.EffectResult;
+pub const HttpConnectHandler = *const fn (*Context, effect_interface.HttpConnect) DispatchError!effect_interface.EffectResult;
+pub const HttpPatchHandler = *const fn (*Context, effect_interface.HttpPatch) DispatchError!effect_interface.EffectResult;
+pub const DbGetHandler = *const fn (*Context, effect_interface.DbGet) DispatchError!effect_interface.EffectResult;
+pub const DbPutHandler = *const fn (*Context, effect_interface.DbPut) DispatchError!effect_interface.EffectResult;
+pub const DbDelHandler = *const fn (*Context, effect_interface.DbDel) DispatchError!effect_interface.EffectResult;
+pub const DbQueryHandler = *const fn (*Context, effect_interface.DbQuery) DispatchError!effect_interface.EffectResult;
+pub const DbScanHandler = *const fn (*Context, effect_interface.DbScan) DispatchError!effect_interface.EffectResult;
+pub const FileJsonReadHandler = *const fn (*Context, effect_interface.FileJsonRead) DispatchError!effect_interface.EffectResult;
+pub const FileJsonWriteHandler = *const fn (*Context, effect_interface.FileJsonWrite) DispatchError!effect_interface.EffectResult;
+pub const ComputeTaskHandler = *const fn (*Context, effect_interface.ComputeTask) DispatchError!effect_interface.EffectResult;
+pub const AcceleratorTaskHandler = *const fn (*Context, effect_interface.AcceleratorTask) DispatchError!effect_interface.EffectResult;
+pub const KvCacheGetHandler = *const fn (*Context, effect_interface.KvCacheGet) DispatchError!effect_interface.EffectResult;
+pub const KvCacheSetHandler = *const fn (*Context, effect_interface.KvCacheSet) DispatchError!effect_interface.EffectResult;
+pub const KvCacheDeleteHandler = *const fn (*Context, effect_interface.KvCacheDelete) DispatchError!effect_interface.EffectResult;
+pub const TcpConnectHandler = *const fn (*Context, effect_interface.TcpConnect) DispatchError!effect_interface.EffectResult;
+pub const TcpSendHandler = *const fn (*Context, effect_interface.TcpSend) DispatchError!effect_interface.EffectResult;
+pub const TcpReceiveHandler = *const fn (*Context, effect_interface.TcpReceive) DispatchError!effect_interface.EffectResult;
+pub const TcpSendReceiveHandler = *const fn (*Context, effect_interface.TcpSendReceive) DispatchError!effect_interface.EffectResult;
+pub const TcpCloseHandler = *const fn (*Context, effect_interface.TcpClose) DispatchError!effect_interface.EffectResult;
+pub const GrpcUnaryCallHandler = *const fn (*Context, effect_interface.GrpcUnaryCall) DispatchError!effect_interface.EffectResult;
+pub const GrpcServerStreamHandler = *const fn (*Context, effect_interface.GrpcServerStream) DispatchError!effect_interface.EffectResult;
+pub const WebSocketConnectHandler = *const fn (*Context, effect_interface.WebSocketConnect) DispatchError!effect_interface.EffectResult;
+pub const WebSocketSendHandler = *const fn (*Context, effect_interface.WebSocketSend) DispatchError!effect_interface.EffectResult;
+pub const WebSocketReceiveHandler = *const fn (*Context, effect_interface.WebSocketReceive) DispatchError!effect_interface.EffectResult;
 
 pub const EffectHandlers = struct {
     http_get: HttpGetHandler = http_effects.handleHttpGet,
@@ -87,6 +88,7 @@ pub const EffectHandlers = struct {
     db_get: DbGetHandler = db_effects.handleDbGet,
     db_put: DbPutHandler = db_effects.handleDbPut,
     db_del: DbDelHandler = db_effects.handleDbDel,
+    db_query: DbQueryHandler = db_effects.handleDbQuery,
     db_scan: DbScanHandler = db_effects.handleDbScan,
     file_json_read: FileJsonReadHandler = defaultFileJsonReadHandler,
     file_json_write: FileJsonWriteHandler = defaultFileJsonWriteHandler,
@@ -184,7 +186,7 @@ pub const EffectDispatcher = struct {
         self.handlers.kv_cache_delete = handler;
     }
 
-    pub fn dispatch(self: *EffectDispatcher, ctx: *Context, effect: types.Effect) DispatchError!types.EffectResult {
+    pub fn dispatch(self: *EffectDispatcher, ctx: *Context, effect: effect_interface.Effect) DispatchError!effect_interface.EffectResult {
         return switch (effect) {
             .http_get => |payload| try self.handlers.http_get(ctx, payload),
             .http_head => |payload| try self.handlers.http_head(ctx, payload),
@@ -208,6 +210,7 @@ pub const EffectDispatcher = struct {
             .db_get => |payload| try self.handlers.db_get(ctx, payload),
             .db_put => |payload| try self.handlers.db_put(ctx, payload),
             .db_del => |payload| try self.handlers.db_del(ctx, payload),
+            .db_query => |payload| try self.handlers.db_query(ctx, payload),
             .db_scan => |payload| try self.handlers.db_scan(ctx, payload),
             .file_json_read => |payload| try self.handlers.file_json_read(ctx, payload),
             .file_json_write => |payload| try self.handlers.file_json_write(ctx, payload),
@@ -225,122 +228,122 @@ fn unsupported(comptime label: []const u8) DispatchError {
     return DispatchError.UnsupportedEffect;
 }
 
-fn defaultHttpGetHandler(_: *Context, _: types.HttpGet) DispatchError!types.EffectResult {
+fn defaultHttpGetHandler(_: *Context, _: effect_interface.HttpGet) DispatchError!effect_interface.EffectResult {
     return unsupported("http_get");
 }
 
-fn defaultHttpHeadHandler(_: *Context, _: types.HttpHead) DispatchError!types.EffectResult {
+fn defaultHttpHeadHandler(_: *Context, _: effect_interface.HttpHead) DispatchError!effect_interface.EffectResult {
     return unsupported("http_head");
 }
 
-fn defaultHttpPostHandler(_: *Context, _: types.HttpPost) DispatchError!types.EffectResult {
+fn defaultHttpPostHandler(_: *Context, _: effect_interface.HttpPost) DispatchError!effect_interface.EffectResult {
     return unsupported("http_post");
 }
 
-fn defaultHttpPutHandler(_: *Context, _: types.HttpPut) DispatchError!types.EffectResult {
+fn defaultHttpPutHandler(_: *Context, _: effect_interface.HttpPut) DispatchError!effect_interface.EffectResult {
     return unsupported("http_put");
 }
 
-fn defaultHttpDeleteHandler(_: *Context, _: types.HttpDelete) DispatchError!types.EffectResult {
+fn defaultHttpDeleteHandler(_: *Context, _: effect_interface.HttpDelete) DispatchError!effect_interface.EffectResult {
     return unsupported("http_delete");
 }
 
-fn defaultHttpOptionsHandler(_: *Context, _: types.HttpOptions) DispatchError!types.EffectResult {
+fn defaultHttpOptionsHandler(_: *Context, _: effect_interface.HttpOptions) DispatchError!effect_interface.EffectResult {
     return unsupported("http_options");
 }
 
-fn defaultHttpTraceHandler(_: *Context, _: types.HttpTrace) DispatchError!types.EffectResult {
+fn defaultHttpTraceHandler(_: *Context, _: effect_interface.HttpTrace) DispatchError!effect_interface.EffectResult {
     return unsupported("http_trace");
 }
 
-fn defaultHttpConnectHandler(_: *Context, _: types.HttpConnect) DispatchError!types.EffectResult {
+fn defaultHttpConnectHandler(_: *Context, _: effect_interface.HttpConnect) DispatchError!effect_interface.EffectResult {
     return unsupported("http_connect");
 }
 
-fn defaultHttpPatchHandler(_: *Context, _: types.HttpPatch) DispatchError!types.EffectResult {
+fn defaultHttpPatchHandler(_: *Context, _: effect_interface.HttpPatch) DispatchError!effect_interface.EffectResult {
     return unsupported("http_patch");
 }
 
-fn defaultTcpConnectHandler(_: *Context, _: types.TcpConnect) DispatchError!types.EffectResult {
+fn defaultTcpConnectHandler(_: *Context, _: effect_interface.TcpConnect) DispatchError!effect_interface.EffectResult {
     return unsupported("tcp_connect");
 }
 
-fn defaultTcpSendHandler(_: *Context, _: types.TcpSend) DispatchError!types.EffectResult {
+fn defaultTcpSendHandler(_: *Context, _: effect_interface.TcpSend) DispatchError!effect_interface.EffectResult {
     return unsupported("tcp_send");
 }
 
-fn defaultTcpReceiveHandler(_: *Context, _: types.TcpReceive) DispatchError!types.EffectResult {
+fn defaultTcpReceiveHandler(_: *Context, _: effect_interface.TcpReceive) DispatchError!effect_interface.EffectResult {
     return unsupported("tcp_receive");
 }
 
-fn defaultTcpSendReceiveHandler(_: *Context, _: types.TcpSendReceive) DispatchError!types.EffectResult {
+fn defaultTcpSendReceiveHandler(_: *Context, _: effect_interface.TcpSendReceive) DispatchError!effect_interface.EffectResult {
     return unsupported("tcp_send_receive");
 }
 
-fn defaultTcpCloseHandler(_: *Context, _: types.TcpClose) DispatchError!types.EffectResult {
+fn defaultTcpCloseHandler(_: *Context, _: effect_interface.TcpClose) DispatchError!effect_interface.EffectResult {
     return unsupported("tcp_close");
 }
 
-fn defaultGrpcUnaryCallHandler(_: *Context, _: types.GrpcUnaryCall) DispatchError!types.EffectResult {
+fn defaultGrpcUnaryCallHandler(_: *Context, _: effect_interface.GrpcUnaryCall) DispatchError!effect_interface.EffectResult {
     return unsupported("grpc_unary_call");
 }
 
-fn defaultGrpcServerStreamHandler(_: *Context, _: types.GrpcServerStream) DispatchError!types.EffectResult {
+fn defaultGrpcServerStreamHandler(_: *Context, _: effect_interface.GrpcServerStream) DispatchError!effect_interface.EffectResult {
     return unsupported("grpc_server_stream");
 }
 
-fn defaultWebSocketConnectHandler(_: *Context, _: types.WebSocketConnect) DispatchError!types.EffectResult {
+fn defaultWebSocketConnectHandler(_: *Context, _: effect_interface.WebSocketConnect) DispatchError!effect_interface.EffectResult {
     return unsupported("websocket_connect");
 }
 
-fn defaultWebSocketSendHandler(_: *Context, _: types.WebSocketSend) DispatchError!types.EffectResult {
+fn defaultWebSocketSendHandler(_: *Context, _: effect_interface.WebSocketSend) DispatchError!effect_interface.EffectResult {
     return unsupported("websocket_send");
 }
 
-fn defaultWebSocketReceiveHandler(_: *Context, _: types.WebSocketReceive) DispatchError!types.EffectResult {
+fn defaultWebSocketReceiveHandler(_: *Context, _: effect_interface.WebSocketReceive) DispatchError!effect_interface.EffectResult {
     return unsupported("websocket_receive");
 }
 
-fn defaultDbGetHandler(_: *Context, _: types.DbGet) DispatchError!types.EffectResult {
+fn defaultDbGetHandler(_: *Context, _: effect_interface.DbGet) DispatchError!effect_interface.EffectResult {
     return unsupported("db_get");
 }
 
-fn defaultDbPutHandler(_: *Context, _: types.DbPut) DispatchError!types.EffectResult {
+fn defaultDbPutHandler(_: *Context, _: effect_interface.DbPut) DispatchError!effect_interface.EffectResult {
     return unsupported("db_put");
 }
 
-fn defaultDbDelHandler(_: *Context, _: types.DbDel) DispatchError!types.EffectResult {
+fn defaultDbDelHandler(_: *Context, _: effect_interface.DbDel) DispatchError!effect_interface.EffectResult {
     return unsupported("db_del");
 }
 
-fn defaultDbScanHandler(_: *Context, _: types.DbScan) DispatchError!types.EffectResult {
+fn defaultDbScanHandler(_: *Context, _: effect_interface.DbScan) DispatchError!effect_interface.EffectResult {
     return unsupported("db_scan");
 }
 
-fn defaultFileJsonReadHandler(_: *Context, _: types.FileJsonRead) DispatchError!types.EffectResult {
+fn defaultFileJsonReadHandler(_: *Context, _: effect_interface.FileJsonRead) DispatchError!effect_interface.EffectResult {
     return unsupported("file_json_read");
 }
 
-fn defaultFileJsonWriteHandler(_: *Context, _: types.FileJsonWrite) DispatchError!types.EffectResult {
+fn defaultFileJsonWriteHandler(_: *Context, _: effect_interface.FileJsonWrite) DispatchError!effect_interface.EffectResult {
     return unsupported("file_json_write");
 }
 
-fn defaultComputeTaskHandler(_: *Context, _: types.ComputeTask) DispatchError!types.EffectResult {
+fn defaultComputeTaskHandler(_: *Context, _: effect_interface.ComputeTask) DispatchError!effect_interface.EffectResult {
     return unsupported("compute_task");
 }
 
-fn defaultAcceleratorTaskHandler(_: *Context, _: types.AcceleratorTask) DispatchError!types.EffectResult {
+fn defaultAcceleratorTaskHandler(_: *Context, _: effect_interface.AcceleratorTask) DispatchError!effect_interface.EffectResult {
     return unsupported("accelerator_task");
 }
 
-fn defaultKvCacheGetHandler(_: *Context, _: types.KvCacheGet) DispatchError!types.EffectResult {
+fn defaultKvCacheGetHandler(_: *Context, _: effect_interface.KvCacheGet) DispatchError!effect_interface.EffectResult {
     return unsupported("kv_cache_get");
 }
 
-fn defaultKvCacheSetHandler(_: *Context, _: types.KvCacheSet) DispatchError!types.EffectResult {
+fn defaultKvCacheSetHandler(_: *Context, _: effect_interface.KvCacheSet) DispatchError!effect_interface.EffectResult {
     return unsupported("kv_cache_set");
 }
 
-fn defaultKvCacheDeleteHandler(_: *Context, _: types.KvCacheDelete) DispatchError!types.EffectResult {
+fn defaultKvCacheDeleteHandler(_: *Context, _: effect_interface.KvCacheDelete) DispatchError!effect_interface.EffectResult {
     return unsupported("kv_cache_delete");
 }

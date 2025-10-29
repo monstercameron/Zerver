@@ -1,12 +1,12 @@
 // src/features/blog/list.zig
 const std = @import("std");
-const zerver = @import("../../zerver/root.zig");
-const components = @import("../../shared/components.zig");
+const zerver = @import("zerver/root.zig");
+const components = @import("zerver/shared/components.zig");
 const blog_types = @import("types.zig");
-const slog = @import("../../zerver/observability/slog.zig");
-const html_lib = @import("../../shared/html.zig");
+const slog = @import("zerver/observability/slog.zig");
+const html_lib = @import("zerver/shared/html.zig");
 const util = @import("util.zig");
-const http_util = @import("../../shared/http.zig");
+const http_util = @import("zerver/shared/http.zig");
 const http_status = zerver.HttpStatus;
 
 const Slot = blog_types.BlogSlot;
@@ -193,7 +193,12 @@ const BlogListContent = struct {
 pub fn step_load_blog_posts(ctx: *zerver.CtxBase) !zerver.Decision {
     slog.info("step_load_blog_posts", &.{});
     const effects = try util.singleEffect(ctx, .{
-        .db_get = .{ .key = "posts", .token = slotId(.PostList), .required = true },
+        .db_query = .{
+            .sql = "SELECT id, title, content, author, created_at, updated_at FROM posts ORDER BY created_at DESC",
+            .params = &.{},
+            .token = slotId(.PostList),
+            .required = true,
+        },
     });
     return .{ .need = .{ .effects = effects, .mode = .Sequential, .join = .all } };
 }

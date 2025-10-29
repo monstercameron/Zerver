@@ -6,21 +6,22 @@
 const std = @import("std");
 const root = @import("../root.zig");
 const slog = @import("../observability/slog.zig");
-const runtime_config = @import("runtime_config");
+const runtime_config = @import("../runtime/config.zig");
 const runtime_resources = @import("../runtime/resources.zig");
 const runtime_global = @import("../runtime/global.zig");
 const helpers = @import("helpers.zig");
 const effectors = @import("../runtime/reactor/effectors.zig");
 
-// Import features
-const hello = @import("../../features/hello/routes.zig");
-const blog = @import("../../features/blog/index.zig");
-const todos = @import("../../features/todos/index.zig");
-const feature_registry = @import("../features/registry.zig");
+// Import features - DISABLED: Features have been moved to external DLLs
+// const hello = @import("../../features/hello/routes.zig");
+// const blog = @import("../../features/blog/index.zig");
+// const todos = @import("../../features/todos/index.zig");
+// const feature_registry = @import("../features/registry.zig");
 
 // Create feature registry with automatic token assignment
 // Blog gets tokens 0-99, Todos gets tokens 100-199
-const FeatureRouter = feature_registry.FeatureRegistry(.{ blog, todos });
+// DISABLED: Using external DLLs instead
+// const FeatureRouter = feature_registry.FeatureRegistry(.{ blog, todos });
 
 // Reactor dispatcher handlers that route through the feature registry
 fn reactorDbGetHandler(_: *effectors.Context, payload: root.types.DbGet) effectors.DispatchError!root.types.EffectResult {
