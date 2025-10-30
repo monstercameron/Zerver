@@ -227,7 +227,7 @@ const WindowsHandle = struct {
     fn open(path: []const u8) !WindowsHandle {
         _ = path;
 
-        slog.warn("DLL loading not yet implemented for Windows", &.{});
+        slog.warn("DLL loading not yet implemented for Windows", .{});
 
         // TODO: Implement using LoadLibraryW
         // const path_w = try std.unicode.utf8ToUtf16LeAlloc(allocator, path);

@@ -3,6 +3,8 @@
 ///
 /// This module manages the TCP server socket, accepts connections,
 /// and orchestrates request handling for each connection.
+// TODO: Ops: make bind/listen options (reuse_address, backlog, ipv6) configurable via server config.
+// TODO: Graceful shutdown: add a stop signal/flag to break accept loop and drain active connections.
 const std = @import("std");
 const root = @import("../root.zig");
 const handler = @import("handler.zig");
@@ -38,6 +40,7 @@ pub fn listenAndServe(
             continue;
         };
 
+        // TODO: Performance: consider handing off to a thread pool or reactor to avoid serial accept handling under load.
         slog.info("Accepted new connection", &.{});
 
         // Handle persistent connection - RFC 9112 Section 9
@@ -63,6 +66,7 @@ fn handleConnection(
     // Connection keep-alive timeout (RFC 9112 Section 9.4)
     // Default to 60 seconds as recommended
     const keep_alive_timeout_ms = 60 * 1000;
+    // TODO: Configurability: surface keep-alive timeout via server config; consider per-connection idle vs header/body read timeouts.
     var last_activity = std.time.milliTimestamp();
 
     while (true) {
@@ -79,6 +83,7 @@ fn handleConnection(
 
         // Read request with timeout
         const req_data = handler.readRequestWithTimeout(connection, request_arena.allocator(), 5000) catch |err| {
+            // TODO: Configurability: 5s header/body read timeout should be configurable; map to 408 response when partial headers present.
             if (err == error.Timeout or err == error.ConnectionClosed) {
                 slog.debug("Request read timeout or connection closed", &.{});
                 return;
@@ -99,6 +104,7 @@ fn handleConnection(
         const preview_len = @min(req_data.len, 120);
         slog.info("Received HTTP request", &.{
             slog.Attr.uint("bytes", req_data.len),
+            // TODO: Privacy: preview may include PII/secrets; consider redaction or disabling at info level.
             slog.Attr.string("preview", req_data[0..preview_len]),
         });
 
@@ -146,6 +152,7 @@ fn handleConnection(
                 // Current: Early return skips keep-alive check (connection closes after stream ends)
                 // Ideal: Track streaming connections separately, allow proper cleanup on timeout/error
                 // Risk: Connection may not be properly recycled if stream never completes
+                // TODO: SSE: consider keep-alive comments/heartbeats and write timeouts; add cancellation hooks for client disconnect.
                 return;
             },
         }
@@ -155,6 +162,7 @@ fn handleConnection(
         // Check Connection header to determine if we should keep the connection alive
         // RFC 9112 Section 9.1: Connection header controls connection persistence
         const should_keep_alive = http_connection.shouldKeepAliveFromRaw(req_data);
+        // TODO: Version-awareness: if request is HTTP/1.0, default should be close unless keep-alive token present.
 
         if (!should_keep_alive) {
             slog.info("Connection close requested by client", &.{});

@@ -17,6 +17,7 @@ const response_sse = @import("../runtime/http/response/sse.zig");
 const response_formatter = @import("../runtime/http/response/formatter.zig");
 
 const default_content_type = "text/plain; charset=utf-8";
+// TODO: Content negotiation: defaulting to text/plain may conflict with negotiated media types; consider deriving from route/renderer.
 
 pub const Address = struct {
     ip: [4]u8,
@@ -663,6 +664,7 @@ pub const Server = struct {
         }
 
         if (headers.get("accept")) |accept_values| {
+            // TODO: Negotiation: selection hardcodes text/plain; derive from route-supported representations instead of rejecting broadly.
             if (!http_headers.acceptsTextPlain(accept_values.items, self.allocator)) {
                 return error.NotAcceptable;
             }
@@ -707,6 +709,7 @@ pub const Server = struct {
 
                     if (coding.len == 0) continue;
 
+                    // TODO: RFC 9110: 'chunked' MUST NOT appear in TE; only 'trailers' token is defined here; consider rejecting 'chunked'.
                     if (std.ascii.eqlIgnoreCase(coding, "trailers") or std.ascii.eqlIgnoreCase(coding, "chunked")) {
                         if (!http_headers.qAllowsSelection(params, self.allocator)) {
                             unsupported_te = true;
@@ -765,6 +768,7 @@ pub const Server = struct {
         }
 
         if (has_transfer_encoding and content_length != null) {
+            // TODO: Error mapping: prefer 400 Bad Request for conflicting framing vs generic parse error; ensure consistent telemetry.
             return error.TransferEncodingConflict;
         }
 
@@ -790,6 +794,7 @@ pub const Server = struct {
             if (allowed_trailer_storage.count() != 0) {
                 allowed_trailers = &allowed_trailer_storage;
             }
+            // TODO: Restrict disallowed trailer fields (e.g., Content-Length, Host, Transfer-Encoding) per RFC; enforce at parse time.
         }
 
         if (has_trailer_header and !has_transfer_encoding) {
@@ -828,6 +833,7 @@ pub const Server = struct {
                 }
             } else {
                 // For other methods (POST, PUT, PATCH), require Content-Length
+                // TODO: RFC nuance: an absent length implies zero-length body; 411 Length Required is optional, not mandatory.
                 return error.ContentLengthRequired;
             }
         }

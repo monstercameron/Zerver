@@ -180,10 +180,99 @@ fn dllAddRoute(
     return 0;
 }
 
-/// Stub callbacks for response building (not used during init)
-fn dllSetStatus(_: *anyopaque, _: c_int) callconv(.c) void {}
-fn dllSetHeader(_: *anyopaque, _: [*c]const u8, _: usize, _: [*c]const u8, _: usize) callconv(.c) c_int { return 0; }
-fn dllSetBody(_: *anyopaque, _: [*c]const u8, _: usize) callconv(.c) c_int { return 0; }
+/// Response header
+const ResponseHeader = struct {
+    name: []const u8,
+    value: []const u8,
+};
+
+/// Response builder for DLL handlers
+const ResponseBuilder = struct {
+    allocator: std.mem.Allocator,
+    status: u16,
+    headers: std.ArrayList(ResponseHeader),
+    body: std.ArrayList(u8),
+
+    fn init(allocator: std.mem.Allocator) !ResponseBuilder {
+        var builder: ResponseBuilder = undefined;
+        builder.allocator = allocator;
+        builder.status = 200;
+        builder.headers = try std.ArrayList(ResponseHeader).initCapacity(allocator, 0);
+        builder.body = try std.ArrayList(u8).initCapacity(allocator, 0);
+        return builder;
+    }
+
+    fn deinit(self: *ResponseBuilder) void {
+        for (self.headers.items) |header| {
+            self.allocator.free(header.name);
+            self.allocator.free(header.value);
+        }
+        self.headers.deinit(self.allocator);
+        self.body.deinit(self.allocator);
+    }
+};
+
+/// Callbacks for DLL handlers to build responses
+fn dllSetStatus(response: *anyopaque, status: c_int) callconv(.c) void {
+    const builder = @as(*ResponseBuilder, @ptrCast(@alignCast(response)));
+    builder.status = @intCast(status);
+}
+
+fn dllSetHeader(
+    response: *anyopaque,
+    name_ptr: [*c]const u8,
+    name_len: usize,
+    value_ptr: [*c]const u8,
+    value_len: usize,
+) callconv(.c) c_int {
+    const builder = @as(*ResponseBuilder, @ptrCast(@alignCast(response)));
+
+    const name_slice = name_ptr[0..name_len];
+    const value_slice = value_ptr[0..value_len];
+
+    const name_copy = builder.allocator.dupe(u8, name_slice) catch return 1;
+    const value_copy = builder.allocator.dupe(u8, value_slice) catch {
+        builder.allocator.free(name_copy);
+        return 1;
+    };
+
+    builder.headers.append(builder.allocator, ResponseHeader{
+        .name = name_copy,
+        .value = value_copy,
+    }) catch {
+        builder.allocator.free(name_copy);
+        builder.allocator.free(value_copy);
+        return 1;
+    };
+
+    return 0;
+}
+
+fn dllSetBody(
+    response: *anyopaque,
+    body_ptr: [*c]const u8,
+    body_len: usize,
+) callconv(.c) c_int {
+    const builder = @as(*ResponseBuilder, @ptrCast(@alignCast(response)));
+
+    const body_slice = body_ptr[0..body_len];
+    builder.body.appendSlice(builder.allocator, body_slice) catch return 1;
+
+    return 0;
+}
+
+/// Global server adapter used by all DLL handlers
+/// This stays alive for the lifetime of the program and holds stateless function pointers
+var g_runtime_resources: u8 = 0; // Placeholder for runtime resources
+
+var g_server_adapter = ServerAdapter{
+    .router = @ptrCast(&g_runtime_resources), // Unused during request handling
+    .runtime_resources = @ptrCast(&g_runtime_resources),
+    .addRoute = &dllAddRoute,
+    .setStatus = &dllSetStatus,
+    .setHeader = &dllSetHeader,
+    .setBody = &dllSetBody,
+};
 
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
@@ -351,23 +440,18 @@ fn loadInitialDLLs(
         };
         defer router_builder.deinit();
 
-        // Create server adapter for DLL initialization
-        var runtime_resources: u8 = 0; // Placeholder
-        const adapter = ServerAdapter{
-            .router = @ptrCast(&router_builder),
-            .runtime_resources = @ptrCast(&runtime_resources),
-            .addRoute = &dllAddRoute,
-            .setStatus = &dllSetStatus,
-            .setHeader = &dllSetHeader,
-            .setBody = &dllSetBody,
-        };
+        // Use global adapter for DLL initialization
+        // Temporarily update the router pointer for this DLL's registration
+        const original_router = g_server_adapter.router;
+        g_server_adapter.router = @ptrCast(&router_builder);
+        defer g_server_adapter.router = original_router;
 
         // Call featureInit to register routes
         slog.info("Calling featureInit", &.{
             slog.Attr.string("dll", entry.name),
         });
 
-        const init_result = dll.featureInit(@ptrCast(@constCast(&adapter)));
+        const init_result = dll.featureInit(@ptrCast(@constCast(&g_server_adapter)));
         if (init_result != 0) {
             slog.err("featureInit failed", &.{
                 slog.Attr.string("dll", entry.name),
@@ -414,9 +498,25 @@ fn handleIPCRequest(
     }
 
     // Route found - execute the DLL handler
-    // TODO: Call the actual DLL handler function
-    // For now, return a simple success response
-    return try buildSuccessResponse(allocator, request.request_id, start_time);
+    var response_builder = try ResponseBuilder.init(allocator);
+    defer response_builder.deinit();
+
+    // Create request context placeholder
+    var request_context: u8 = 0; // TODO: Build real request context
+
+    // Call the DLL handler with (request, response)
+    // The handler will use g_server (stored during init) to call response-building callbacks
+    const handler_result = dll_handler.?.func(@ptrCast(&request_context), @ptrCast(&response_builder));
+    if (handler_result != 0) {
+        slog.err("DLL handler failed", &.{
+            slog.Attr.string("path", request.path),
+            slog.Attr.int("result", handler_result),
+        });
+        return try build404Response(allocator, request.request_id, start_time);
+    }
+
+    // Build IPC response from collected data
+    return try buildDLLResponse(allocator, request.request_id, start_time, &response_builder);
 }
 
 /// Hot reload loop - watches for DLL changes and reloads
@@ -525,6 +625,35 @@ fn buildSuccessResponse(
     return .{
         .request_id = request_id,
         .status = 200,
+        .headers = headers,
+        .body = body,
+        .processing_time_us = duration_us,
+    };
+}
+
+fn buildDLLResponse(
+    allocator: std.mem.Allocator,
+    request_id: u128,
+    start_time: i128,
+    builder: *ResponseBuilder,
+) !ipc_types.IPCResponse {
+    // Convert headers
+    const headers = try allocator.alloc(ipc_types.Header, builder.headers.items.len);
+    for (builder.headers.items, 0..) |header, i| {
+        headers[i] = .{
+            .name = try allocator.dupe(u8, header.name),
+            .value = try allocator.dupe(u8, header.value),
+        };
+    }
+
+    // Copy body
+    const body = try allocator.dupe(u8, builder.body.items);
+
+    const duration_us: u64 = @intCast(@divTrunc(std.time.nanoTimestamp() - start_time, 1000));
+
+    return .{
+        .request_id = request_id,
+        .status = builder.status,
         .headers = headers,
         .body = body,
         .processing_time_us = duration_us,

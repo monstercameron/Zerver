@@ -1,5 +1,7 @@
 // src/zerver/runtime/http/response/formatter.zig
 /// Render complete HTTP/1.1 responses from the internal Response type.
+/// TODO: RFC 9112: Reason-phrase is obsolete; consider omitting or making it configurable in the status line.
+/// TODO: Security: allow configuring/disabling the 'Server' header and avoid exposing version information by default.
 const std = @import("std");
 const types = @import("../../../core/types.zig");
 
@@ -40,6 +42,8 @@ pub fn formatResponse(
         try w.print("Server: Zerver/1.0\r\n", .{});
     }
 
+    // TODO: Avoid duplicating 'Connection' if already present in response.headers.
+    // TODO: Consider omitting explicit 'keep-alive' for HTTP/1.1 (default); only emit 'Connection: close' when needed.
     if (options.keep_alive) {
         try w.print("Connection: keep-alive\r\n", .{});
     } else {
@@ -57,10 +61,12 @@ pub fn formatResponse(
     }
 
     if (!headerExists(response.headers, "Content-Language")) {
+        // TODO: Content negotiation: defaulting to 'en' may be incorrect; set based on actual representation/language selection.
         try w.print("Content-Language: en\r\n", .{});
     }
 
     if (!headerExists(response.headers, "Vary")) {
+        // TODO: Vary should reflect actual selection dimensions; emitting a broad default can harm cache efficiency.
         try w.print("Vary: Accept, Accept-Encoding, Accept-Charset, Accept-Language\r\n", .{});
     }
 
@@ -73,6 +79,7 @@ pub fn formatResponse(
         .complete => |body| {
             const is_sse = response.status == 200 and blk: {
                 for (response.headers) |header| {
+                    // TODO: Content-Type matching should be case-insensitive and ignore parameters (e.g., charset); parse media type.
                     if (std.ascii.eqlIgnoreCase(header.name, "content-type") and
                         std.mem.eql(u8, header.value, "text/event-stream"))
                     {
@@ -93,6 +100,7 @@ pub fn formatResponse(
             }
         },
         .streaming => |_| {
+            // TODO: Implement chunked Transfer-Encoding for streaming bodies and optional Trailer support (RFC 9112 §6).
             try w.print("\r\n", .{});
         },
     }

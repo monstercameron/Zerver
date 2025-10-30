@@ -1,5 +1,8 @@
 // src/zerver/runtime/http/request_reader.zig
 /// HTTP request reading utilities with cross-platform timeout handling.
+// TODO: Design: split raw I/O framing from higher-level parsing to avoid duplication with impure/server.zig (single source of truth).
+// TODO: Limits: make header/body size limits configurable and map violations to 431/413 (RFC 9110) instead of generic errors.
+// TODO: RFC 9110: consider handling Expect: 100-continue by sending a provisional response before reading the body.
 const std = @import("std");
 const windows_sockets = @import("../platform/windows_sockets.zig");
 const slog = @import("../../observability/slog.zig");
@@ -30,6 +33,7 @@ pub fn readRequestWithTimeout(
 
     var read_buf: [256]u8 = undefined;
     const max_size = 4096;
+    // TODO: Expose max_size as config; enforce per-request limits for headers and body (431/413) to mitigate DoS.
     const start_time = std.time.milliTimestamp();
 
     // RFC 9110 §5.5 Compliance: CTL character validation implemented via containsCtlCharacters()
@@ -84,6 +88,7 @@ pub fn readRequestWithTimeout(
         var tail_hex_buf: [8]u8 = undefined;
         const tail_hex = hexPreview(req_buf.items[tail_start..], tail_hex_buf[0..]);
         const terminator_opt = std.mem.indexOf(u8, req_buf.items, "\r\n\r\n");
+        // TODO: Harden: reject lone LF-only terminators and obs-fold; ensure strict CRLF line endings (RFC 9112 §2.1).
         const terminator_index: usize = terminator_opt orelse 0;
         const terminator_found = terminator_opt != null;
         slog.debug("Appended request bytes", &.{
@@ -106,6 +111,7 @@ pub fn readRequestWithTimeout(
     }
 
     if (!headers_complete) {
+        // TODO: Differentiate timeout vs header-too-large (431) vs malformed; consider draining and closing connection politely.
         return error.InvalidRequest;
     }
 
@@ -126,6 +132,7 @@ pub fn readRequestWithTimeout(
         if (std.mem.indexOfScalar(u8, line, ':')) |colon_idx| {
             const header_name = std.mem.trim(u8, line[0..colon_idx], " \t");
             const header_value = std.mem.trim(u8, line[colon_idx + 1 ..], " \t");
+            // TODO: Validate field-name against tchar (RFC 9110 §5.1) and reject obs-fold/leading whitespace continuation lines.
 
             // RFC 9110 Section 5.5: Reject CTL characters in field values to prevent request smuggling
             if (containsCtlCharacters(header_value)) {
@@ -182,6 +189,7 @@ fn readChunkedBody(
     var read_buf: [256]u8 = undefined;
     const headers_end = std.mem.indexOf(u8, req_buf.items, "\r\n\r\n") orelse return error.InvalidRequest;
     var chunk_start = headers_end + 4; // Track where unconsumed chunk data begins
+    // TODO: Enforce maximum total body size and per-chunk size to prevent resource exhaustion.
 
     while (true) {
         const now = std.time.milliTimestamp();
@@ -209,6 +217,7 @@ fn readChunkedBody(
             return error.InvalidChunkedEncoding;
         }
         chunk_size = std.fmt.parseInt(usize, size_str, 16) catch return error.InvalidChunkedEncoding;
+        // TODO: Chunk extensions are ignored; ensure extensions are syntactically valid and consider policy for rejecting unknowns.
 
         if (chunk_size == 0) {
             while (!std.mem.endsWith(u8, req_buf.items, "\r\n\r\n")) {
@@ -258,6 +267,7 @@ fn readContentLengthBody(
     const remaining = content_length - current_body_len;
     var read_buf: [256]u8 = undefined;
     var total_read: usize = 0;
+    // TODO: Consider streaming large bodies to application or disk; avoid buffering entire request for very large Content-Length.
 
     while (total_read < remaining) {
         const to_read = @min(read_buf.len, remaining - total_read);
@@ -312,6 +322,7 @@ fn readWithTimeout(
             if (poll_fds[0].revents & std.posix.POLL.IN != 0) {
                 const read_result = connection.stream.read(buffer) catch |err| {
                     if (err == error.WouldBlock) {
+                        // TODO: Returning Timeout on WouldBlock may be too aggressive; consider retrying until overall timeout.
                         return error.Timeout;
                     }
                     return error.ConnectionClosed;

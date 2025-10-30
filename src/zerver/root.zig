@@ -18,6 +18,7 @@ pub const tracer_module = @import("observability/tracer.zig");
 pub const telemetry = @import("observability/telemetry.zig");
 pub const otel = @import("observability/otel.zig");
 pub const reqtest_module = @import("core/reqtest.zig");
+// TODO: Build: 'src/zerver/sql/mod.zig' not found in repo snapshot; gate this import behind a feature flag or add the module to avoid build failures.
 pub const sql = @import("sql/mod.zig");
 
 // Reactor Backend Abstraction Note:
@@ -31,6 +32,7 @@ pub const sql = @import("sql/mod.zig");
 // Benefits: Backend swapping at compile time, easier testing with mock reactor
 // Tradeoff: Adds abstraction layer complexity, may incur small runtime overhead from indirection
 // Current: Directly expose libuv for simplicity until multiple backends are implemented
+// TODO: API stability: exporting backend-specific reactor types in the public API couples users to libuv; consider a trait-based reactor interface and feature-gated backends.
 pub const libuv_reactor = @import("runtime/reactor/libuv.zig");
 pub const reactor_join = @import("runtime/reactor/join.zig");
 pub const reactor_job_system = @import("runtime/reactor/job_system.zig");

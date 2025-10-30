@@ -1,5 +1,8 @@
 // src/zerver/runtime/http/response/writer.zig
 /// HTTP response writing utilities.
+// TODO: Write timeouts/backpressure: support non-blocking writes with poll/select and configurable timeouts.
+// TODO: Privacy: avoid logging full previews at info/debug for sensitive responses; add redaction/limits.
+// TODO: Transport: ensure proper half-close/flush semantics (especially under TLS) when closing after write errors.
 const std = @import("std");
 const slog = @import("../../../observability/slog.zig");
 
@@ -28,6 +31,8 @@ pub fn sendResponse(
         slog.Attr.string("preview", response[0..preview_len]),
     });
 
+    // TODO: Add write timeout and handle partial writes/backpressure for large responses.
+    // TODO: On write error, consider closing the connection and recording appropriate telemetry.
     connection.stream.writeAll(response) catch |err| {
         slog.err("Response write error", &.{
             slog.Attr.string("error", @errorName(err)),
@@ -47,6 +52,8 @@ pub fn sendStreamingResponse(
     context: *anyopaque,
 ) !void {
     try sendResponse(connection, headers);
+    // TODO: Implement chunked Transfer-Encoding framing and a streaming loop with flush semantics and backpressure handling.
+    // TODO: Detect client disconnects and propagate cancellation to writer; add write timeouts per chunk.
     _ = writer;
     _ = context;
 }
@@ -57,6 +64,7 @@ pub fn sendErrorResponse(
     status: []const u8,
     message: []const u8,
 ) !void {
+    // TODO: Consider adding Date and Connection headers per RFC 9112; centralize formatting via formatter to keep behavior consistent.
     var buf: [4096]u8 = undefined;
     const response = try std.fmt.bufPrint(&buf, "HTTP/1.1 {s}\r\nContent-Type: text/plain\r\nContent-Length: {d}\r\n\r\n{s}", .{
         status,
