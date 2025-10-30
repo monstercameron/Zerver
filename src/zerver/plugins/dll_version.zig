@@ -36,7 +36,7 @@ pub const DLLVersion = struct {
 
         dll.retain(); // Increment DLL reference count
 
-        slog.info("DLL version created", .{
+        slog.info("DLL version created", &.{
             slog.Attr.string("path", dll.path),
             slog.Attr.string("version", dll.getVersion()),
             slog.Attr.string("state", @tagName(version.state.load(.monotonic))),
@@ -64,7 +64,7 @@ pub const DLLVersion = struct {
             self.drain_started_ns.store(now, .monotonic);
 
             const in_flight = self.in_flight.load(.monotonic);
-            slog.info("DLL version draining", .{
+            slog.info("DLL version draining", &.{
                 slog.Attr.string("path", self.dll.path),
                 slog.Attr.string("version", self.dll.getVersion()),
                 slog.Attr.int("in_flight", in_flight),
@@ -118,7 +118,7 @@ pub const DLLVersion = struct {
         const duration_ms = self.drainDurationMs() orelse 0;
         self.state.store(.Retired, .release);
 
-        slog.info("DLL version retired", .{
+        slog.info("DLL version retired", &.{
             slog.Attr.string("path", self.dll.path),
             slog.Attr.string("version", self.dll.getVersion()),
             slog.Attr.int("drain_duration_ms", duration_ms),
@@ -240,7 +240,7 @@ pub const VersionManager = struct {
         self.active = new_version;
 
         const old_version_str = if (self.draining) |d| d.dll.getVersion() else "none";
-        slog.info("DLL version swapped", .{
+        slog.info("DLL version swapped", &.{
             slog.Attr.string("new_version", new_version.dll.getVersion()),
             slog.Attr.string("draining_version", old_version_str),
         });
@@ -254,14 +254,14 @@ pub const VersionManager = struct {
         defer self.mutex.unlock();
 
         if (self.active != null) {
-            slog.err("Attempted to set initial version when active version exists", .{});
+            slog.err("Attempted to set initial version when active version exists", &.{});
             version.deinit();
             return error.AlreadyInitialized;
         }
 
         self.active = version;
 
-        slog.info("Initial DLL version set", .{
+        slog.info("Initial DLL version set", &.{
             slog.Attr.string("version", version.dll.getVersion()),
         });
     }
@@ -283,7 +283,7 @@ pub const VersionManager = struct {
             // Check timeout
             if (draining.drainDurationMs()) |duration_ms| {
                 if (duration_ms > self.drain_timeout_ms) {
-                    slog.warn("DLL drain timeout exceeded", .{
+                    slog.warn("DLL drain timeout exceeded", &.{
                         slog.Attr.string("version", draining.dll.getVersion()),
                         slog.Attr.int("duration_ms", duration_ms),
                         slog.Attr.int("timeout_ms", self.drain_timeout_ms),

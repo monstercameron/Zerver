@@ -21,13 +21,169 @@ const DEFAULT_FEATURE_DIR = "zig-out/lib"; // Watch compiled DLLs, not source
 const DEFAULT_WATCH_INTERVAL_MS = 1000;
 
 /// Global context for request handling
+/// Route key for DLL handler lookup (using string for simpler HashMap usage)
+const RouteKey = struct {
+    // Format: "METHOD:path" e.g. "GET:/test"
+    key: []const u8,
+
+    fn make(allocator: std.mem.Allocator, method: types.Method, path: []const u8) !RouteKey {
+        const method_str = @tagName(method);
+        const key_str = try std.fmt.allocPrint(allocator, "{s}:{s}", .{ method_str, path });
+        return .{ .key = key_str };
+    }
+
+    fn deinit(self: RouteKey, allocator: std.mem.Allocator) void {
+        allocator.free(self.key);
+    }
+};
+
+/// DLL route handler
+const DLLHandler = struct {
+    func: *const fn (*anyopaque, *anyopaque) callconv(.c) c_int,
+    dll_version: *DLL,
+};
+
+/// Simple DLL router (replaces RouteSpec-based router for DLL handlers)
+const DLLRouter = struct {
+    allocator: std.mem.Allocator,
+    routes: std.StringHashMap(DLLHandler),
+
+    fn init(allocator: std.mem.Allocator) !DLLRouter {
+        return .{
+            .allocator = allocator,
+            .routes = std.StringHashMap(DLLHandler).init(allocator),
+        };
+    }
+
+    fn deinit(self: *DLLRouter) void {
+        var iter = self.routes.keyIterator();
+        while (iter.next()) |key| {
+            self.allocator.free(key.*);
+        }
+        self.routes.deinit();
+    }
+
+    fn addRoute(self: *DLLRouter, method: types.Method, path: []const u8, handler: DLLHandler) !void {
+        const key = try RouteKey.make(self.allocator, method, path);
+        errdefer key.deinit(self.allocator);
+
+        try self.routes.put(key.key, handler);
+    }
+
+    fn match(self: *const DLLRouter, method: types.Method, path: []const u8) ?DLLHandler {
+        // Create temporary key for lookup (no allocation needed)
+        const method_str = @tagName(method);
+        var buf: [256]u8 = undefined;
+        const key_str = std.fmt.bufPrint(&buf, "{s}:{s}", .{ method_str, path }) catch return null;
+        return self.routes.get(key_str);
+    }
+};
+
 const RequestContext = struct {
     allocator: std.mem.Allocator,
     atomic_router: *AtomicRouter,
     version_manager: *VersionManager,
+    dll_router: DLLRouter,
+    dll_router_mutex: std.Thread.Mutex,
 };
 
 var g_context: ?*RequestContext = null;
+
+/// ServerAdapter for DLL route registration
+const ServerAdapter = extern struct {
+    router: *anyopaque,
+    runtime_resources: *anyopaque,
+    addRoute: *const fn (
+        router: *anyopaque,
+        method: c_int,
+        path_ptr: [*c]const u8,
+        path_len: usize,
+        handler: *const fn (*anyopaque, *anyopaque) callconv(.c) c_int,
+    ) callconv(.c) c_int,
+    setStatus: *const fn (*anyopaque, c_int) callconv(.c) void,
+    setHeader: *const fn (*anyopaque, [*c]const u8, usize, [*c]const u8, usize) callconv(.c) c_int,
+    setBody: *const fn (*anyopaque, [*c]const u8, usize) callconv(.c) c_int,
+};
+
+/// Temporary router builder for DLL initialization
+const RouterBuilder = struct {
+    allocator: std.mem.Allocator,
+    routes: std.ArrayList(Route),
+    reg_ctx: *RouteRegistrationContext,
+
+    const Route = struct {
+        method: types.Method,
+        path: []const u8,
+        handler: *const fn (*anyopaque, *anyopaque) callconv(.c) c_int,
+    };
+
+    fn init(allocator: std.mem.Allocator, reg_ctx: *RouteRegistrationContext) !RouterBuilder {
+        return .{
+            .allocator = allocator,
+            .routes = try std.ArrayList(Route).initCapacity(allocator, 8),
+            .reg_ctx = reg_ctx,
+        };
+    }
+
+    fn deinit(self: *RouterBuilder) void {
+        for (self.routes.items) |route| {
+            self.allocator.free(route.path);
+        }
+        self.routes.deinit(self.allocator);
+    }
+};
+
+/// Callback for DLL to register routes
+fn dllAddRoute(
+    router: *anyopaque,
+    method: c_int,
+    path_ptr: [*c]const u8,
+    path_len: usize,
+    handler: *const fn (*anyopaque, *anyopaque) callconv(.c) c_int,
+) callconv(.c) c_int {
+    const builder = @as(*RouterBuilder, @ptrCast(@alignCast(router)));
+
+    const path_slice = path_ptr[0..path_len];
+    const path_copy = builder.allocator.dupe(u8, path_slice) catch return 1;
+
+    const method_enum: types.Method = @enumFromInt(method);
+
+    // Add to temporary route list for tracking
+    builder.routes.append(builder.allocator, .{
+        .method = method_enum,
+        .path = path_copy,
+        .handler = handler,
+    }) catch {
+        builder.allocator.free(path_copy);
+        return 1;
+    };
+
+    // Add to DLL router
+    const reg_ctx = builder.reg_ctx;
+    reg_ctx.dll_router_mutex.lock();
+    defer reg_ctx.dll_router_mutex.unlock();
+
+    const dll_handler = DLLHandler{
+        .func = handler,
+        .dll_version = reg_ctx.dll,
+    };
+
+    reg_ctx.dll_router.addRoute(method_enum, path_slice, dll_handler) catch {
+        return 1;
+    };
+
+    slog.info("Route registered", &.{
+        slog.Attr.int("method", method),
+        slog.Attr.string("path", path_slice),
+    });
+
+    return 0;
+}
+
+/// Stub callbacks for response building (not used during init)
+fn dllSetStatus(_: *anyopaque, _: c_int) callconv(.c) void {}
+fn dllSetHeader(_: *anyopaque, _: [*c]const u8, _: usize, _: [*c]const u8, _: usize) callconv(.c) c_int { return 0; }
+fn dllSetBody(_: *anyopaque, _: [*c]const u8, _: usize) callconv(.c) c_int { return 0; }
 
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
@@ -64,11 +220,17 @@ pub fn main() !void {
     var version_manager = VersionManager.init(allocator);
     defer version_manager.deinit();
 
+    // Initialize DLL router
+    var dll_router = try DLLRouter.init(allocator);
+    defer dll_router.deinit();
+
     // Set up global context for request handling
     var context = RequestContext{
         .allocator = allocator,
         .atomic_router = &atomic_router,
         .version_manager = &version_manager,
+        .dll_router = dll_router,
+        .dll_router_mutex = .{},
     };
     g_context = &context;
     defer g_context = null;
@@ -82,6 +244,9 @@ pub fn main() !void {
     // Initialize file watcher for hot reload
     var file_watcher = try FileWatcher.init(allocator, feature_dir);
     defer file_watcher.deinit();
+
+    // Load initial DLLs from feature directory
+    try loadInitialDLLs(allocator, feature_dir, &atomic_router, &version_manager, &context.dll_router, &context.dll_router_mutex);
 
     slog.info("Zupervisor initialized", &.{
         slog.Attr.string("status", "ready"),
@@ -101,6 +266,126 @@ pub fn main() !void {
     try server.acceptLoop();
 }
 
+/// Context for route registration (passed to RouterBuilder via adapter)
+const RouteRegistrationContext = struct {
+    dll: *DLL,
+    dll_router: *DLLRouter,
+    dll_router_mutex: *std.Thread.Mutex,
+};
+
+/// Load all DLLs from feature directory on startup
+fn loadInitialDLLs(
+    allocator: std.mem.Allocator,
+    feature_dir: []const u8,
+    atomic_router: *AtomicRouter,
+    version_manager: *VersionManager,
+    dll_router: *DLLRouter,
+    dll_router_mutex: *std.Thread.Mutex,
+) !void {
+    _ = atomic_router;
+
+    slog.info("Loading initial DLLs", &.{
+        slog.Attr.string("directory", feature_dir),
+    });
+
+    var dir = try std.fs.openDirAbsolute(feature_dir, .{ .iterate = true });
+    defer dir.close();
+
+    var iter = dir.iterate();
+    while (try iter.next()) |entry| {
+        if (entry.kind != .file) continue;
+
+        // Check if it's a DLL file
+        const is_dll = std.mem.endsWith(u8, entry.name, ".dylib") or
+            std.mem.endsWith(u8, entry.name, ".so") or
+            std.mem.endsWith(u8, entry.name, ".dll");
+
+        if (!is_dll) continue;
+
+        // Build full path
+        var path_buf: [std.fs.max_path_bytes]u8 = undefined;
+        const full_path = try std.fmt.bufPrint(&path_buf, "{s}/{s}", .{ feature_dir, entry.name });
+
+        slog.info("Loading DLL", &.{
+            slog.Attr.string("file", entry.name),
+            slog.Attr.string("path", full_path),
+        });
+
+        // Load the DLL
+        const dll = DLL.load(allocator, full_path) catch |err| {
+            slog.err("Failed to load DLL", &.{
+                slog.Attr.string("file", entry.name),
+                slog.Attr.string("error", @errorName(err)),
+            });
+            continue;
+        };
+
+        // Set as initial version in version manager
+        version_manager.setInitial(dll) catch |err| {
+            slog.err("Failed to set initial DLL version", &.{
+                slog.Attr.string("file", entry.name),
+                slog.Attr.string("error", @errorName(err)),
+            });
+            continue;
+        };
+
+        slog.info("DLL loaded successfully", &.{
+            slog.Attr.string("file", entry.name),
+            slog.Attr.string("version", dll.getVersion()),
+        });
+
+        // Create route registration context
+        var reg_ctx = RouteRegistrationContext{
+            .dll = dll,
+            .dll_router = dll_router,
+            .dll_router_mutex = dll_router_mutex,
+        };
+
+        // Create router builder for this DLL
+        var router_builder = RouterBuilder.init(allocator, &reg_ctx) catch |err| {
+            slog.err("Failed to create router builder", &.{
+                slog.Attr.string("file", entry.name),
+                slog.Attr.string("error", @errorName(err)),
+            });
+            continue;
+        };
+        defer router_builder.deinit();
+
+        // Create server adapter for DLL initialization
+        var runtime_resources: u8 = 0; // Placeholder
+        const adapter = ServerAdapter{
+            .router = @ptrCast(&router_builder),
+            .runtime_resources = @ptrCast(&runtime_resources),
+            .addRoute = &dllAddRoute,
+            .setStatus = &dllSetStatus,
+            .setHeader = &dllSetHeader,
+            .setBody = &dllSetBody,
+        };
+
+        // Call featureInit to register routes
+        slog.info("Calling featureInit", &.{
+            slog.Attr.string("dll", entry.name),
+        });
+
+        const init_result = dll.featureInit(@ptrCast(@constCast(&adapter)));
+        if (init_result != 0) {
+            slog.err("featureInit failed", &.{
+                slog.Attr.string("dll", entry.name),
+                slog.Attr.int("result", init_result),
+            });
+            continue;
+        }
+
+        slog.info("DLL initialized", &.{
+            slog.Attr.string("dll", entry.name),
+            slog.Attr.int("routes_registered", @intCast(router_builder.routes.items.len)),
+        });
+
+        // TODO: Build router with registered routes and swap atomically
+        _ = atomic_router;
+    }
+}
+
 /// Handle IPC request from Zingest
 fn handleIPCRequest(
     allocator: std.mem.Allocator,
@@ -118,18 +403,18 @@ fn handleIPCRequest(
     // Convert IPC method to internal method
     const method = convertMethod(request.method);
 
-    // Match route using atomic router
-    var arena = std.heap.ArenaAllocator.init(allocator);
-    defer arena.deinit();
+    // Match route using DLL router
+    context.dll_router_mutex.lock();
+    const dll_handler = context.dll_router.match(method, request.path);
+    context.dll_router_mutex.unlock();
 
-    const route_match = try context.atomic_router.match(method, request.path, arena.allocator());
-
-    if (route_match == null) {
+    if (dll_handler == null) {
         // No route found - return 404
         return try build404Response(allocator, request.request_id, start_time);
     }
 
-    // Route found - this would execute the pipeline
+    // Route found - execute the DLL handler
+    // TODO: Call the actual DLL handler function
     // For now, return a simple success response
     return try buildSuccessResponse(allocator, request.request_id, start_time);
 }

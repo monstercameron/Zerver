@@ -1,7 +1,9 @@
 // src/zerver/plugins/dll_loader.zig
 /// Cross-platform DLL loader for feature hot reload
 /// Uses dlopen (macOS/Linux) and LoadLibrary (Windows stub)
-
+///
+// TODO: Security: restrict DLL search paths to trusted, absolute locations; consider code signing/trust policy and sandboxing.
+// TODO: ABI compatibility: enforce plugin ABI/version contract at load and reject incompatible plugins; surface clear diagnostics.
 const std = @import("std");
 const builtin = @import("builtin");
 const slog = @import("../observability/slog.zig");
@@ -53,7 +55,7 @@ pub const DLL = struct {
 
     /// Load a DLL from the specified path
     pub fn load(allocator: std.mem.Allocator, path: []const u8) !*DLL {
-        slog.info("Loading DLL", .{
+        slog.info("Loading DLL", &.{
             slog.Attr.string("path", path),
         });
 
@@ -74,7 +76,7 @@ pub const DLL = struct {
         const version = featureVersion();
         const version_str = std.mem.sliceTo(version, 0);
 
-        slog.info("DLL loaded successfully", .{
+        slog.info("DLL loaded successfully", &.{
             slog.Attr.string("path", path),
             slog.Attr.string("version", version_str),
             slog.Attr.bool("has_health_check", featureHealthCheck != null),
@@ -105,7 +107,7 @@ pub const DLL = struct {
     /// Increment reference count (for two-version concurrency)
     pub fn retain(self: *DLL) void {
         const prev = self.ref_count.fetchAdd(1, .monotonic);
-        slog.debug("DLL retained", .{
+        slog.debug("DLL retained", &.{
             slog.Attr.string("path", self.path),
             slog.Attr.int("ref_count", prev + 1),
         });
@@ -119,6 +121,7 @@ pub const DLL = struct {
             slog.Attr.int("ref_count", prev - 1),
         });
 
+        // TODO: Lifecycle: ensure no in-flight calls; call featureShutdown() before unloading; coordinate with hot-reload orchestrator.
         if (prev == 1) {
             self.unload();
         }
@@ -130,6 +133,7 @@ pub const DLL = struct {
             slog.Attr.string("path", self.path),
         });
 
+        // TODO: Call featureShutdown() before closing handle to allow plugin cleanup; handle failures robustly.
         self.handle.close();
         self.allocator.free(self.path);
         self.allocator.destroy(self);
@@ -172,7 +176,10 @@ const PosixHandle = struct {
 
         // Use RTLD_NOW for immediate symbol resolution
         // Use RTLD_LOCAL to avoid polluting global namespace
-        const flags = std.c.RTLD.NOW | std.c.RTLD.LOCAL;
+        const RTLD_NOW: c_int = 0x2;
+        const RTLD_LOCAL: c_int = 0x4;
+        const flags_int = RTLD_NOW | RTLD_LOCAL;
+        const flags: std.c.RTLD = @bitCast(@as(u32, @intCast(flags_int)));
 
         const handle = std.c.dlopen(&path_z, flags) orelse {
             const err_msg = std.c.dlerror();
@@ -220,13 +227,14 @@ const WindowsHandle = struct {
     fn open(path: []const u8) !WindowsHandle {
         _ = path;
 
-        slog.warn("DLL loading not yet implemented for Windows", .{});
+        slog.warn("DLL loading not yet implemented for Windows", &.{});
 
         // TODO: Implement using LoadLibraryW
         // const path_w = try std.unicode.utf8ToUtf16LeAlloc(allocator, path);
         // defer allocator.free(path_w);
         // const handle = windows.LoadLibraryW(path_w.ptr);
 
+        // TODO: Build gating: fail at compile time or behind a feature flag on Windows until implemented.
         return error.NotImplemented;
     }
 
