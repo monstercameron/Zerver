@@ -218,36 +218,54 @@ const PosixHandle = struct {
 };
 
 // ============================================================================
-// Windows stub implementation
+// Windows implementation
 // ============================================================================
 
 const WindowsHandle = struct {
-    ptr: *anyopaque,
+    handle: std.os.windows.HMODULE,
 
     fn open(path: []const u8) !WindowsHandle {
-        _ = path;
+        const windows = std.os.windows;
 
-        slog.warn("DLL loading not yet implemented for Windows", .{});
+        // Convert UTF-8 path to UTF-16LE for Windows API
+        const path_w = try std.unicode.utf8ToUtf16LeWithNull(std.heap.page_allocator, path);
+        defer std.heap.page_allocator.free(path_w);
 
-        // TODO: Implement using LoadLibraryW
-        // const path_w = try std.unicode.utf8ToUtf16LeAlloc(allocator, path);
-        // defer allocator.free(path_w);
-        // const handle = windows.LoadLibraryW(path_w.ptr);
+        // Load the DLL using LoadLibraryW
+        const handle = windows.kernel32.LoadLibraryW(path_w.ptr) orelse {
+            const err = windows.kernel32.GetLastError();
 
-        // TODO: Build gating: fail at compile time or behind a feature flag on Windows until implemented.
-        return error.NotImplemented;
+            slog.err("Failed to load DLL", &.{
+                slog.Attr.string("path", path),
+                slog.Attr.int("error_code", @intFromEnum(err)),
+            });
+
+            return error.DLLLoadFailed;
+        };
+
+        return .{ .handle = handle };
     }
 
     fn close(self: WindowsHandle) void {
-        _ = self;
-        // TODO: Implement using FreeLibrary
+        const windows = std.os.windows;
+        _ = windows.kernel32.FreeLibrary(self.handle);
     }
 
     fn lookup(self: WindowsHandle, comptime T: type, name: [:0]const u8) !T {
-        _ = self;
-        _ = name;
-        // TODO: Implement using GetProcAddress
-        return error.NotImplemented;
+        const windows = std.os.windows;
+
+        const symbol = windows.kernel32.GetProcAddress(self.handle, name.ptr) orelse {
+            const err = windows.kernel32.GetLastError();
+
+            slog.warn("Failed to lookup symbol", &.{
+                slog.Attr.string("symbol", name),
+                slog.Attr.int("error_code", @intFromEnum(err)),
+            });
+
+            return error.SymbolNotFound;
+        };
+
+        return @as(T, @ptrCast(@alignCast(symbol)));
     }
 };
 
@@ -265,12 +283,15 @@ test "DLL - reference counting" {
 }
 
 test "DLL - error handling" {
-    if (builtin.os.tag == .windows) return error.SkipZigTest;
-
     const testing = std.testing;
 
-    // Try to load a non-existent DLL
-    const result = DLL.load(testing.allocator, "/nonexistent/path.so");
+    // Try to load a non-existent DLL (path varies by platform)
+    const nonexistent_path = switch (builtin.os.tag) {
+        .windows => "C:\\nonexistent\\path.dll",
+        else => "/nonexistent/path.so",
+    };
+
+    const result = DLL.load(testing.allocator, nonexistent_path);
     try testing.expectError(error.DLLLoadFailed, result);
 }
 
