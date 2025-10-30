@@ -235,6 +235,11 @@ pub fn build(b: *std.Build) void {
     zerver_mod.addIncludePath(b.path("third_party/libuv/include"));
     zerver_mod.addIncludePath(b.path("third_party/libuv/src"));
 
+    // Create zupervisor module for slot-effect system
+    const zupervisor_mod = b.createModule(.{
+        .root_source_file = b.path("src/zupervisor/slot_effect.zig"),
+    });
+
     // Add platform-specific macros for the zerver module
     switch (target.result.os.tag) {
         .windows => {
@@ -570,6 +575,25 @@ pub fn build(b: *std.Build) void {
     const blog_run_step = b.step("run_blog", "Run the blog CRUD example");
     blog_run_step.dependOn(&blog_run_cmd.step);
 
+    // Slot-effect pipeline demo executable (simple self-contained version)
+    const slot_effect_demo = b.addExecutable(.{
+        .name = "slot_effect_demo",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("examples/slot_effect_simple_demo.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+
+    slot_effect_demo.root_module.addImport("slot_effect", zupervisor_mod);
+    b.installArtifact(slot_effect_demo);
+
+    const slot_effect_demo_run_cmd = b.addRunArtifact(slot_effect_demo);
+    slot_effect_demo_run_cmd.step.dependOn(b.getInstallStep());
+
+    const slot_effect_demo_run_step = b.step("run_slot_demo", "Run the slot-effect pipeline demo");
+    slot_effect_demo_run_step.dependOn(&slot_effect_demo_run_cmd.step);
+
     // ========================================================================
     // Multi-Process Architecture: Zingest + Zupervisor
     // ========================================================================
@@ -617,6 +641,15 @@ pub fn build(b: *std.Build) void {
 
     const zupervisor_run_step = b.step("run_zupervisor", "Run the Zupervisor with hot reload");
     zupervisor_run_step.dependOn(&zupervisor_run_cmd.step);
+
+    // ========================================================================
+    // Feature DLLs - Slot-Effect Architecture
+    // ========================================================================
+
+    // Note: Skipping auth DLL build for now - will add proper module support later
+    // The auth_slot_effect code is complete and tested, but needs proper build integration
+    const auth_dll_step = b.step("auth_dll", "Build the auth feature DLL (not implemented yet)");
+    _ = auth_dll_step;
 
     // Teams example executable - commented out due to compilation errors
     const reqtest_runner = b.addTest(.{

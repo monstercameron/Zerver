@@ -3,7 +3,7 @@
 /// Enables composable request processing: [auth] → [validate] → [compute] → [respond]
 
 const std = @import("std");
-const slog = @import("../zerver/observability/slog.zig");
+// TODO: Fix slog import to avoid module conflicts
 
 /// Result from executing a step
 pub const StepResult = enum(c_int) {
@@ -34,7 +34,7 @@ pub const StepContext = extern struct {
     server: *const ServerAdapter,
 };
 
-/// Server adapter (same as before, but included here for reference)
+/// Server adapter with optional slot-effect support
 pub const ServerAdapter = extern struct {
     router: *anyopaque,
     runtime_resources: *anyopaque,
@@ -42,6 +42,12 @@ pub const ServerAdapter = extern struct {
     setStatus: *const fn (*anyopaque, c_int) callconv(.c) void,
     setHeader: *const fn (*anyopaque, [*c]const u8, usize, [*c]const u8, usize) callconv(.c) c_int,
     setBody: *const fn (*anyopaque, [*c]const u8, usize) callconv(.c) c_int,
+
+    // Optional slot-effect support (can be null for legacy step-based handlers)
+    createSlotContext: ?*const fn (*anyopaque, [*c]const u8, usize) callconv(.c) ?*anyopaque,
+    destroySlotContext: ?*const fn (*anyopaque) callconv(.c) void,
+    executeEffect: ?*const fn (*anyopaque, *anyopaque, *anyopaque) callconv(.c) c_int,
+    traceEvent: ?*const fn (*anyopaque, *anyopaque) callconv(.c) void,
 };
 
 /// A step function exported by a DLL
@@ -68,13 +74,9 @@ pub const Pipeline = struct {
     /// Execute all steps in sequence
     /// Returns true if pipeline completed successfully
     pub fn execute(self: Pipeline, ctx: *StepContext) bool {
-        for (self.steps, 0..) |step, i| {
+        for (self.steps) |step| {
             const result: StepResult = @enumFromInt(step(ctx));
 
-            slog.debug("Step executed", &.{
-                slog.Attr.int("step_index", i),
-                slog.Attr.string("result", @tagName(result)),
-            });
 
             switch (result) {
                 .Continue => continue,
@@ -144,5 +146,5 @@ test "Pipeline - basic execution" {
 
     // We can't actually execute without a real context
     // This test just verifies the API compiles
-    _ = pipeline;
+    try testing.expect(pipeline.steps.len == 2);
 }

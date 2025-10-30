@@ -16,6 +16,14 @@ const VersionManager = zerver.dll_version.VersionManager;
 const FileWatcher = zerver.file_watcher.FileWatcher;
 const types = zerver.types;
 
+// Slot-effect pipeline system
+const slot_effect = @import("slot_effect.zig");
+const slot_effect_dll = @import("slot_effect_dll.zig");
+const slot_effect_executor = @import("slot_effect_executor.zig");
+const route_registry = @import("route_registry.zig");
+const http_slot_adapter = @import("http_slot_adapter.zig");
+const effect_executors = @import("effect_executors.zig");
+
 const DEFAULT_IPC_SOCKET = "/tmp/zerver.sock";
 const DEFAULT_FEATURE_DIR = "zig-out/lib"; // Watch compiled DLLs, not source
 const DEFAULT_WATCH_INTERVAL_MS = 1000;
@@ -85,6 +93,8 @@ const RequestContext = struct {
     version_manager: *VersionManager,
     dll_router: DLLRouter,
     dll_router_mutex: std.Thread.Mutex,
+    // Slot-effect pipeline system
+    slot_effect_adapter: ?*http_slot_adapter.HttpSlotAdapter,
 };
 
 var g_context: ?*RequestContext = null;
@@ -313,6 +323,18 @@ pub fn main() !void {
     var dll_router = try DLLRouter.init(allocator);
     defer dll_router.deinit();
 
+    // Initialize slot-effect pipeline system
+    const db_path = "zerver.db"; // TODO: Make configurable via env var
+    var slot_adapter = try allocator.create(http_slot_adapter.HttpSlotAdapter);
+    defer allocator.destroy(slot_adapter);
+
+    slot_adapter.* = try http_slot_adapter.HttpSlotAdapter.init(allocator, db_path);
+    defer slot_adapter.deinit();
+
+    slog.info("Slot-effect pipeline initialized", &.{
+        slog.Attr.string("db_path", db_path),
+    });
+
     // Set up global context for request handling
     var context = RequestContext{
         .allocator = allocator,
@@ -320,6 +342,7 @@ pub fn main() !void {
         .version_manager = &version_manager,
         .dll_router = dll_router,
         .dll_router_mutex = .{},
+        .slot_effect_adapter = slot_adapter,
     };
     g_context = &context;
     defer g_context = null;
@@ -487,13 +510,68 @@ fn handleIPCRequest(
     // Convert IPC method to internal method
     const method = convertMethod(request.method);
 
-    // Match route using DLL router
+    // Try slot-effect adapter first if available
+    if (context.slot_effect_adapter) |adapter| {
+        // Convert IPC request to HttpRequest format
+        const headers = try allocator.alloc(http_slot_adapter.HttpRequest.Header, request.headers.len);
+        defer allocator.free(headers);
+
+        for (request.headers, 0..) |h, i| {
+            headers[i] = .{ .name = h.name, .value = h.value };
+        }
+
+        const http_request = http_slot_adapter.HttpRequest{
+            .method = @tagName(request.method),
+            .path = request.path,
+            .headers = headers,
+            .body = request.body,
+        };
+
+        // Try to handle via slot-effect pipeline
+        if (adapter.handleRequest(http_request)) |http_response| {
+            // Convert HttpResponse to IPCResponse
+            const ipc_headers = try allocator.alloc(ipc_types.Header, http_response.headers.len);
+            for (http_response.headers, 0..) |h, i| {
+                ipc_headers[i] = .{
+                    .name = try allocator.dupe(u8, h.name),
+                    .value = try allocator.dupe(u8, h.value),
+                };
+            }
+
+            const body_copy = try allocator.dupe(u8, http_response.body);
+            const duration_us: u64 = @intCast(@divTrunc(std.time.nanoTimestamp() - start_time, 1000));
+
+            // Free the original HttpResponse (it allocated its own memory)
+            allocator.free(http_response.headers);
+            allocator.free(http_response.body);
+
+            return .{
+                .request_id = request.request_id,
+                .status = http_response.status,
+                .headers = ipc_headers,
+                .body = body_copy,
+                .processing_time_us = duration_us,
+            };
+        } else |err| {
+            // If error is NotFound, fall through to legacy DLL router
+            if (err != error.NotFound) {
+                slog.err("Slot-effect handler error", &.{
+                    slog.Attr.string("path", request.path),
+                    slog.Attr.string("error", @errorName(err)),
+                });
+                return try build404Response(allocator, request.request_id, start_time);
+            }
+            // Fall through to legacy DLL router for NotFound
+        }
+    }
+
+    // Fall back to legacy DLL router
     context.dll_router_mutex.lock();
     const dll_handler = context.dll_router.match(method, request.path);
     context.dll_router_mutex.unlock();
 
     if (dll_handler == null) {
-        // No route found - return 404
+        // No route found in either system - return 404
         return try build404Response(allocator, request.request_id, start_time);
     }
 
