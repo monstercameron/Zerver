@@ -85,10 +85,26 @@ graph LR
 zig build
 
 # 2) Run the blog CRUD example (includes slot usage, effects, continuations)
-zig build run-blog-crud
+zig build run_blog
 
 # 3) Hit an endpoint and inspect traces (uses built-in telemetry printer)
-curl -i http://127.0.0.1:8080/posts
+curl -i http://127.0.0.1:8080/blog/posts
+```
+
+**Alternative: Run Pre-built Binaries**
+
+If you have pre-built binaries available (or if the build fails), you can run them directly:
+
+```bash
+# Run the blog CRUD example standalone
+./zig-out/bin/blog_crud_example
+
+# Or run the multi-process architecture:
+./zig-out/bin/zingest    # HTTP ingest server (port 8080)
+./zig-out/bin/zupervisor # Supervisor with hot reload
+
+# Then test with:
+curl -i http://127.0.0.1:8080/blog/posts
 ```
 
 Need more detail? See `QUICKSTART.md` for environment setup, and `examples/blog_crud.zig` for a production-style flow using steps, slots, and effects.

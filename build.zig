@@ -218,7 +218,8 @@ pub fn build(b: *std.Build) void {
     });
     exe.linkLibC();
     addLibuv(b, exe, target);
-    b.installArtifact(exe);
+    // NOTE: Disabled - main.zig uses old monolithic architecture that was replaced by DLLs
+    // b.installArtifact(exe);
 
     const run_cmd = b.addRunArtifact(exe);
     run_cmd.step.dependOn(b.getInstallStep());
@@ -252,18 +253,19 @@ pub fn build(b: *std.Build) void {
         else => {},
     }
 
-    const runtime_config_mod = b.createModule(.{
-        .root_source_file = b.path("src/zerver/runtime/config.zig"),
-    });
+    // NOTE: runtime_config module commented out - files use relative imports instead
+    // const runtime_config_mod = b.createModule(.{
+    //     .root_source_file = b.path("src/zerver/runtime/config.zig"),
+    // });
 
-    exe.root_module.addImport("runtime_config", runtime_config_mod);
+    // exe.root_module.addImport("runtime_config", runtime_config_mod);
 
-    zerver_mod.addImport("runtime_config", runtime_config_mod);
+    // zerver_mod.addImport("runtime_config", runtime_config_mod);
 
     const bootstrap_helpers_mod = b.createModule(.{
         .root_source_file = b.path("src/zerver/bootstrap_helpers.zig"),
     });
-    bootstrap_helpers_mod.addImport("runtime_config", runtime_config_mod);
+    // bootstrap_helpers_mod.addImport("runtime_config", runtime_config_mod);
 
     const timeout_runner = b.addExecutable(.{
         .name = "test_timeout_runner",
@@ -504,7 +506,7 @@ pub fn build(b: *std.Build) void {
     });
     bootstrap_init_tests.root_module.addImport("zerver", zerver_mod);
     bootstrap_init_tests.root_module.addImport("bootstrap_helpers", bootstrap_helpers_mod);
-    bootstrap_init_tests.root_module.addImport("runtime_config", runtime_config_mod);
+    // bootstrap_init_tests.root_module.addImport("runtime_config", runtime_config_mod);
     _ = addTimedTestRun(b, timeout_runner, bootstrap_init_tests, &.{test_step});
 
     const saga_tests = b.addTest(.{

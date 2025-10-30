@@ -238,7 +238,6 @@ const WindowsHandle = struct {
     fn lookup(self: WindowsHandle, comptime T: type, name: [:0]const u8) !T {
         _ = self;
         _ = name;
-        _ = T;
         // TODO: Implement using GetProcAddress
         return error.NotImplemented;
     }
