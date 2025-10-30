@@ -319,10 +319,10 @@ fn buildBlogListHTML(allocator: std.mem.Allocator, posts: []const BlogPost) ![]c
     const navbar_config = components.NavbarDynamicConfig{
         .title = "Earl Cameron",
         .links = &[_]components.NavLinkDynamic{
-            .{ .label = "Home", .href = "/", .hx_get = "/", .hx_target = "#main-content", .hx_swap = "innerHTML" },
+            .{ .label = "Home", .href = "/blogs", .hx_get = "/blogs", .hx_target = "#main-content", .hx_swap = "innerHTML" },
             .{ .label = "Resume", .href = "/#resume" },
             .{ .label = "Portfolio", .href = "/#portfolio" },
-            .{ .label = "Blog", .href = "/blogs/list", .hx_get = "/blogs/list", .hx_target = "#main-content", .hx_swap = "innerHTML", .class = "text-orange-500 font-bold" },
+            .{ .label = "Blogs", .href = "/blogs/list", .hx_get = "/blogs/list", .hx_target = "#main-content", .hx_swap = "innerHTML", .class = "text-orange-500 font-bold" },
             .{ .label = "Playground", .href = "/#playground" },
             .{ .label = "RSS", .href = "/rss" },
         },
@@ -405,7 +405,9 @@ fn buildBlogListHTML(allocator: std.mem.Allocator, posts: []const BlogPost) ![]c
         }),
         html.body(components.Attrs{ .class = "bg-gradient-to-b from-sky-50 to-sky-100 min-h-screen" }, .{
             navbar,
-            blog_section,
+            html.div(components.Attrs{ .id = "main-content" }, .{
+                blog_section,
+            }),
             footer,
         }),
     });
@@ -555,10 +557,10 @@ fn buildHomepageHTML(allocator: std.mem.Allocator) ![]const u8 {
             .navbar = .{
                 .title = "Earl Cameron",
                 .links = &[_]components.NavLinkDynamic{
-                    .{ .label = "Home", .href = "/", .hx_get = "/", .hx_target = "#main-content", .hx_swap = "innerHTML" },
+                    .{ .label = "Home", .href = "/blogs", .hx_get = "/blogs", .hx_target = "#main-content", .hx_swap = "innerHTML" },
                     .{ .label = "Resume", .href = "/#resume" },
                     .{ .label = "Portfolio", .href = "/#portfolio" },
-                    .{ .label = "Blog", .href = "/blogs/list", .hx_get = "/blogs/list", .hx_target = "#main-content", .hx_swap = "innerHTML" },
+                    .{ .label = "Blogs", .href = "/blogs/list", .hx_get = "/blogs/list", .hx_target = "#main-content", .hx_swap = "innerHTML" },
                     .{ .label = "Playground", .href = "/#playground" },
                     .{ .label = "RSS", .href = "/rss" },
                 },
@@ -572,7 +574,7 @@ fn buildHomepageHTML(allocator: std.mem.Allocator) ![]const u8 {
                 .cta_href = "#portfolio",
             },
             .resume_section = .{
-                .image_src = "/static/profile.jpg",
+                .image_src = "https://earlcameron.com/profile.jpg",
                 .image_alt = "Earl Cameron",
                 .description = "Over a decade of experience building high-performance backend systems, cloud infrastructure, and developer tools.",
                 .resume_url = "/static/resume.pdf",
@@ -680,7 +682,7 @@ fn handleBlogsRedirect(
             return 0;
 }
 
-/// Handle GET /blogs route (full page)
+/// Handle GET /blogs route (homepage with all sections)
 fn handleBlogsPage(
     request: *RequestContext,
     response: *ResponseBuilder,
@@ -693,20 +695,10 @@ fn handleBlogsPage(
     defer arena.deinit();
     const allocator = arena.allocator();
 
-    // Query blog posts from database
-    const posts = queryBlogPosts(allocator) catch |err| {
-        std.debug.print("Failed to query blog posts: {}\n", .{err});
-        const error_html = "<html><body><h1>Error loading blogs</h1></body></html>";
-        server.setStatus(response, 500);
-        _ = server.setHeader(response, "Content-Type", 12, "text/html; charset=utf-8", 24);
-        _ = server.setBody(response, error_html.ptr, error_html.len);
-        return 0;
-    };
-
-    // Build full HTML page with navbar and footer
-    const html = buildBlogListHTML(allocator, posts) catch |err| {
-        std.debug.print("Failed to build blog page HTML: {}\n", .{err});
-        const error_html = "<html><body><h1>Error rendering blog page</h1></body></html>";
+    // Build homepage with all components (hero, resume, portfolio, blog preview, etc.)
+    const html = buildHomepageHTML(allocator) catch |err| {
+        std.debug.print("Failed to build homepage HTML: {}\n", .{err});
+        const error_html = "<html><body><h1>Error rendering homepage</h1></body></html>";
         server.setStatus(response, 500);
         _ = server.setHeader(response, "Content-Type", 12, "text/html; charset=utf-8", 24);
         _ = server.setBody(response, error_html.ptr, error_html.len);
