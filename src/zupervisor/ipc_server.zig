@@ -150,6 +150,20 @@ pub const IPCServer = struct {
         const response_data = try serializeResponse(allocator, &response);
         defer allocator.free(response_data);
 
+        // Debug: Log first AND last 500 chars of JSON response
+        const preview_len = @min(response_data.len, 500);
+        std.debug.print("[IPC DEBUG] Response JSON ({d} bytes, START): {s}\n", .{
+            response_data.len,
+            response_data[0..preview_len],
+        });
+        if (response_data.len > 500) {
+            const end_start = response_data.len - 500;
+            std.debug.print("[IPC DEBUG] Response JSON ({d} bytes, END): {s}\n", .{
+                response_data.len,
+                response_data[end_start..],
+            });
+        }
+
         // Send response length + payload
         var response_length_buf: [4]u8 = undefined;
         std.mem.writeInt(u32, &response_length_buf, @intCast(response_data.len), .big);

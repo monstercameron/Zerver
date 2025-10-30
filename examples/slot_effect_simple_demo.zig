@@ -105,7 +105,7 @@ fn formatStep(ctx: *slot_effect.CtxBase) !slot_effect.Decision {
     const result = try view.require(.result);
 
     const formatted = try std.fmt.allocPrint(
-        ctx.allocator,
+        ctx.arenaAllocator(),
         "{d} {s} {d} = {d}",
         .{ a, op, b, result },
     );
@@ -116,7 +116,7 @@ fn formatStep(ctx: *slot_effect.CtxBase) !slot_effect.Decision {
 
     // Build HTTP response
     const json_body = try std.fmt.allocPrint(
-        ctx.allocator,
+        ctx.arenaAllocator(),
         "{{\"result\":{d},\"expression\":\"{s}\"}}",
         .{ result, formatted },
     );

@@ -94,7 +94,7 @@ fn testHandler(
 // ============================================================================
 
 test "SlotEffectBridge - full lifecycle" {
-    var bridge = try slot_effect_dll.SlotEffectBridge.init(testing.allocator);
+    var bridge = try slot_effect_dll.SlotEffectBridge.init(testing.allocator, ":memory:");
     defer bridge.deinit();
 
     // Create context
@@ -107,7 +107,7 @@ test "SlotEffectBridge - full lifecycle" {
 }
 
 test "SlotEffectBridge - context initialization via adapter" {
-    var bridge = try slot_effect_dll.SlotEffectBridge.init(testing.allocator);
+    var bridge = try slot_effect_dll.SlotEffectBridge.init(testing.allocator, ":memory:");
     defer bridge.deinit();
 
     var dummy_router: u32 = 0;
@@ -197,7 +197,7 @@ test "Dispatcher - route dispatch" {
     var registry = route_registry.RouteRegistry.init(testing.allocator);
     defer registry.deinit();
 
-    var bridge = try slot_effect_dll.SlotEffectBridge.init(testing.allocator);
+    var bridge = try slot_effect_dll.SlotEffectBridge.init(testing.allocator, ":memory:");
     defer bridge.deinit();
 
     var dispatcher = route_registry.Dispatcher.init(testing.allocator, &registry, &bridge);
@@ -228,7 +228,7 @@ test "Dispatcher - 404 handling" {
     var registry = route_registry.RouteRegistry.init(testing.allocator);
     defer registry.deinit();
 
-    var bridge = try slot_effect_dll.SlotEffectBridge.init(testing.allocator);
+    var bridge = try slot_effect_dll.SlotEffectBridge.init(testing.allocator, ":memory:");
     defer bridge.deinit();
 
     var dispatcher = route_registry.Dispatcher.init(testing.allocator, &registry, &bridge);
@@ -247,7 +247,7 @@ test "Dispatcher - 404 handling" {
 }
 
 test "Integration - pipeline execution with bridge" {
-    var bridge = try slot_effect_dll.SlotEffectBridge.init(testing.allocator);
+    var bridge = try slot_effect_dll.SlotEffectBridge.init(testing.allocator, ":memory:");
     defer bridge.deinit();
 
     const ctx = try bridge.createContext("test-pipeline-001");
@@ -279,7 +279,7 @@ test "Integration - pipeline execution with bridge" {
 }
 
 test "Integration - error handling in pipeline" {
-    var bridge = try slot_effect_dll.SlotEffectBridge.init(testing.allocator);
+    var bridge = try slot_effect_dll.SlotEffectBridge.init(testing.allocator, ":memory:");
     defer bridge.deinit();
 
     const ctx = try bridge.createContext("test-error-001");
@@ -291,7 +291,7 @@ test "Integration - error handling in pipeline" {
 }
 
 test "Integration - multiple request contexts" {
-    var bridge = try slot_effect_dll.SlotEffectBridge.init(testing.allocator);
+    var bridge = try slot_effect_dll.SlotEffectBridge.init(testing.allocator, ":memory:");
     defer bridge.deinit();
 
     // Create multiple contexts

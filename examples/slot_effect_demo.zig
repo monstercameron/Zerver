@@ -147,7 +147,7 @@ pub fn main() !void {
     std.debug.print("✓ Schema verified: all slots have types\n\n", .{});
 
     // Initialize bridge and executor
-    var bridge = try slot_effect_dll.SlotEffectBridge.init(allocator);
+    var bridge = try slot_effect_dll.SlotEffectBridge.init(allocator, ":memory:");
     defer bridge.deinit();
 
     var executor = slot_effect_executor.PipelineExecutor.init(allocator, &bridge);

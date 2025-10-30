@@ -26,7 +26,7 @@ pub const ResponseBuilder = struct {
     pub fn init(allocator: std.mem.Allocator) ResponseBuilder {
         return .{
             .allocator = allocator,
-            .headers = std.ArrayList(Header).init(allocator),
+            .headers = std.ArrayList(Header){},
         };
     }
 
@@ -35,7 +35,7 @@ pub const ResponseBuilder = struct {
             self.allocator.free(header.name);
             self.allocator.free(header.value);
         }
-        self.headers.deinit();
+        self.headers.deinit(self.allocator);
         if (self.body) |b| {
             self.allocator.free(b);
         }
@@ -112,7 +112,7 @@ pub fn createBridgeStep(handler_fn: dll_abi.HandlerFn, allocator: std.mem.Alloca
 }
 
 /// Internal step handler that calls DLL handler and captures response
-fn bridgeStepHandler(ctx: *types.CtxBase) !types.Decision {
+fn bridgeStepHandler(_: *types.CtxBase) !types.Decision {
     // This is a stub - in full implementation, would:
     // 1. Extract request data from ctx
     // 2. Create ResponseBuilder

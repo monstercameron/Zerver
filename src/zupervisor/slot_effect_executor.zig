@@ -3,7 +3,8 @@
 /// Handles pipeline execution, effect processing, and response building
 
 const std = @import("std");
-// TODO: Fix slog import to avoid module conflicts
+const zerver = @import("zerver");
+const slog = zerver.slog;
 const slot_effect = @import("slot_effect.zig");
 const slot_effect_dll = @import("slot_effect_dll.zig");
 

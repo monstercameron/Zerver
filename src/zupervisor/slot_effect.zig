@@ -58,6 +58,7 @@ pub const CtxBase = struct {
     allocator: std.mem.Allocator,
     request_id: []const u8,
     slots: std.StringHashMap(*anyopaque),
+    slot_arena: std.heap.ArenaAllocator,
     assertion_policy: AssertionPolicy,
 
     // Debug-only field
@@ -68,6 +69,7 @@ pub const CtxBase = struct {
             .allocator = allocator,
             .request_id = request_id,
             .slots = std.StringHashMap(*anyopaque).init(allocator),
+            .slot_arena = std.heap.ArenaAllocator.init(allocator),
             .assertion_policy = .{},
             .debug_slot_usage = if (builtin.mode == .Debug)
                 DebugSlotUsage{
@@ -81,7 +83,14 @@ pub const CtxBase = struct {
     }
 
     pub fn deinit(self: *CtxBase) void {
+        self.slot_arena.deinit();
         self.slots.deinit();
+    }
+
+    /// Get arena allocator for slot-related allocations
+    /// Use this for any data that should be automatically freed with the context
+    pub fn arenaAllocator(self: *CtxBase) std.mem.Allocator {
+        return self.slot_arena.allocator();
     }
 };
 
@@ -176,7 +185,7 @@ pub fn CtxView(comptime config: anytype) type {
             }
 
             const slot_id_str = std.fmt.comptimePrint("{d}", .{@intFromEnum(slot)});
-            const value_ptr = try self.base.allocator.create(slotTypeFn(slot));
+            const value_ptr = try self.base.slot_arena.allocator().create(slotTypeFn(slot));
             value_ptr.* = value;
             try self.base.slots.put(slot_id_str, @ptrCast(value_ptr));
         }
@@ -303,10 +312,19 @@ pub const HttpCallEffect = struct {
     timeout_ms: ?u32,
 };
 
+/// Compute task types
+pub const ComputeTaskType = enum {
+    hash,       // SHA-256 hashing
+    encrypt,    // ChaCha20-Poly1305 encryption
+    decrypt,    // ChaCha20-Poly1305 decryption
+    compress,   // Data compression (future)
+    decompress, // Data decompression (future)
+};
+
 /// Compute task effect (for CPU-bound work)
 pub const ComputeTask = struct {
-    task_type: []const u8,
-    input: []const u8,
+    task_type: ComputeTaskType,
+    input: ?[]const u8,
     result_slot: u32,
 };
 

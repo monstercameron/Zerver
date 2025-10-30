@@ -167,13 +167,30 @@ pub const IPCClient = struct {
     ) !IPCResponse {
         _ = self;
 
+        // DEBUG: Write JSON to file for inspection
+        {
+            const file = std.fs.cwd().createFile("/tmp/zingest_response.json", .{}) catch |err| {
+                std.debug.print("[DEBUG] Failed to create debug file: {}\n", .{err});
+                return error.DebugFileFailed;
+            };
+            defer file.close();
+            file.writeAll(data) catch |err| {
+                std.debug.print("[DEBUG] Failed to write debug file: {}\n", .{err});
+            };
+            std.debug.print("[DEBUG] Wrote {d} bytes to /tmp/zingest_response.json\n", .{data.len});
+        }
+
         // Simplified JSON deserialization (would use MessagePack in production)
-        const parsed = try std.json.parseFromSlice(
+        const parsed = std.json.parseFromSlice(
             std.json.Value,
             allocator,
             data,
             .{},
-        );
+        ) catch |err| {
+            std.debug.print("[DEBUG] JSON parse error: {}\n", .{err});
+            std.debug.print("[DEBUG] First 500 bytes: {s}\n", .{data[0..@min(500, data.len)]});
+            return err;
+        };
         defer parsed.deinit();
 
         const root = parsed.value.object;

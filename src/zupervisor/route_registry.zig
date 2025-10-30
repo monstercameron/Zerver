@@ -3,7 +3,8 @@
 /// Manages route registration, dispatch, and lifecycle
 
 const std = @import("std");
-// TODO: Fix slog import to avoid module conflicts
+const zerver = @import("zerver");
+const slog = zerver.slog;
 const step_pipeline = @import("step_pipeline.zig");
 const slot_effect_dll = @import("slot_effect_dll.zig");
 
@@ -86,7 +87,7 @@ pub const RouteRegistry = struct {
         const path_copy = try self.allocator.dupe(u8, path);
         errdefer self.allocator.free(path_copy);
 
-        try self.routes.append(.{
+        try self.routes.append(self.allocator, .{
             .method = method,
             .path = path_copy,
             .handler = .{ .step_pipeline = .{ .handler = handler } },
@@ -121,7 +122,7 @@ pub const RouteRegistry = struct {
             };
         }
 
-        try self.routes.append(.{
+        try self.routes.append(self.allocator, .{
             .method = method,
             .path = path_copy,
             .handler = .{ .slot_effect = .{ .handler = handler } },
@@ -153,6 +154,27 @@ pub const RouteRegistry = struct {
         }
     }
 
+    /// Path parameter storage
+    pub const PathParams = struct {
+        names: []const []const u8,
+        values: []const []const u8,
+
+        pub fn get(self: *const PathParams, name: []const u8) ?[]const u8 {
+            for (self.names, 0..) |param_name, i| {
+                if (std.mem.eql(u8, param_name, name)) {
+                    return self.values[i];
+                }
+            }
+            return null;
+        }
+    };
+
+    /// Route match result with extracted path parameters
+    pub const RouteMatch = struct {
+        route: *const Route,
+        params: PathParams,
+    };
+
     /// Find a matching route for the given method and path
     pub fn findRoute(self: *RouteRegistry, method: HttpMethod, path: []const u8) ?*const Route {
         self.mutex.lock();
@@ -165,6 +187,86 @@ pub const RouteRegistry = struct {
         }
 
         return null;
+    }
+
+    /// Find a matching route with path parameters
+    pub fn findRouteWithParams(
+        self: *RouteRegistry,
+        allocator: std.mem.Allocator,
+        method: HttpMethod,
+        path: []const u8,
+    ) !?RouteMatch {
+        self.mutex.lock();
+        defer self.mutex.unlock();
+
+        for (self.routes.items) |*route| {
+            if (route.method != method) continue;
+
+            // Try exact match first (faster)
+            if (std.mem.eql(u8, route.path, path)) {
+                return RouteMatch{
+                    .route = route,
+                    .params = .{ .names = &.{}, .values = &.{} },
+                };
+            }
+
+            // Try pattern match with parameters
+            if (try matchPathPattern(allocator, route.path, path)) |params| {
+                return RouteMatch{
+                    .route = route,
+                    .params = params,
+                };
+            }
+        }
+
+        return null;
+    }
+
+    /// Match a path pattern against an actual path and extract parameters
+    /// Pattern: "/blogs/{id}" matches "/blogs/123" and extracts id=123
+    fn matchPathPattern(
+        allocator: std.mem.Allocator,
+        pattern: []const u8,
+        path: []const u8,
+    ) !?PathParams {
+        var pattern_parts = std.mem.splitScalar(u8, pattern, '/');
+        var path_parts = std.mem.splitScalar(u8, path, '/');
+
+        var param_names = std.ArrayList([]const u8){};
+        defer param_names.deinit(allocator);
+        var param_values = std.ArrayList([]const u8){};
+        defer param_values.deinit(allocator);
+
+        while (pattern_parts.next()) |pattern_part| {
+            const path_part = path_parts.next() orelse return null;
+
+            if (pattern_part.len > 2 and pattern_part[0] == '{' and pattern_part[pattern_part.len - 1] == '}') {
+                // This is a parameter
+                const param_name = pattern_part[1 .. pattern_part.len - 1];
+                try param_names.append(allocator, try allocator.dupe(u8, param_name));
+                try param_values.append(allocator, try allocator.dupe(u8, path_part));
+            } else {
+                // This must be an exact match
+                if (!std.mem.eql(u8, pattern_part, path_part)) {
+                    // Free allocated memory before returning
+                    for (param_names.items) |name| allocator.free(name);
+                    for (param_values.items) |value| allocator.free(value);
+                    return null;
+                }
+            }
+        }
+
+        // Check that both iterators are exhausted (same number of parts)
+        if (path_parts.next() != null) {
+            for (param_names.items) |name| allocator.free(name);
+            for (param_values.items) |value| allocator.free(value);
+            return null;
+        }
+
+        return PathParams{
+            .names = try param_names.toOwnedSlice(allocator),
+            .values = try param_values.toOwnedSlice(allocator),
+        };
     }
 
     /// Get all routes (for debugging/monitoring)

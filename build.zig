@@ -634,6 +634,15 @@ pub fn build(b: *std.Build) void {
     zupervisor_exe.linkLibC();
     addLibuv(b, zupervisor_exe, target);
 
+    // Add SQLite for database effect executors
+    zupervisor_exe.addCSourceFile(.{
+        .file = b.path("src/zerver/sql/dialects/sqlite/c/sqlite3.c"),
+        .flags = &[_][]const u8{
+            "-DSQLITE_ENABLE_JSON1",
+            "-DSQLITE_THREADSAFE=1",
+        },
+    });
+
     b.installArtifact(zupervisor_exe);
 
     const zupervisor_run_cmd = b.addRunArtifact(zupervisor_exe);

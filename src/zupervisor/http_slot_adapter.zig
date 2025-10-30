@@ -3,7 +3,8 @@
 /// Bridges Zingest HTTP requests with Zupervisor slot-effect handlers
 
 const std = @import("std");
-// TODO: Fix slog import to avoid module conflicts
+const zerver = @import("zerver");
+const slog = zerver.slog;
 const slot_effect = @import("slot_effect.zig");
 const slot_effect_dll = @import("slot_effect_dll.zig");
 const slot_effect_executor = @import("slot_effect_executor.zig");
@@ -44,33 +45,49 @@ pub const HttpResponse = struct {
     }
 };
 
+/// Thread-local storage for current request's path parameters
+threadlocal var current_path_params: ?*const route_registry.RouteRegistry.PathParams = null;
+
+/// Get path parameter by name from current request
+/// This is exposed to DLLs with C ABI
+pub export fn getPathParam(name_ptr: [*c]const u8, name_len: usize) callconv(.c) ?[*:0]const u8 {
+    if (current_path_params) |params| {
+        const name = name_ptr[0..name_len];
+        if (params.get(name)) |value| {
+            // Need to return a null-terminated string
+            // For now, we'll rely on the value already being null-terminated
+            // (which it should be since it comes from the URL)
+            return @ptrCast(value.ptr);
+        }
+    }
+    return null;
+}
+
 /// Main HTTP to slot-effect adapter
 pub const HttpSlotAdapter = struct {
     allocator: std.mem.Allocator,
     bridge: slot_effect_dll.SlotEffectBridge,
     registry: route_registry.RouteRegistry,
     executor: slot_effect_executor.PipelineExecutor,
-    effect_executor: effect_executors.UnifiedEffectExecutor,
     request_counter: std.atomic.Value(u64),
 
     pub fn init(allocator: std.mem.Allocator, db_path: []const u8) !HttpSlotAdapter {
-        var bridge = try slot_effect_dll.SlotEffectBridge.init(allocator);
+        var bridge = try slot_effect_dll.SlotEffectBridge.init(allocator, db_path);
         errdefer bridge.deinit();
 
-        const effect_executor = try effect_executors.UnifiedEffectExecutor.init(allocator, db_path);
+        // Bridge now has its own effect executor, so we don't need a separate one
+        _ = effect_executors;
 
         return .{
             .allocator = allocator,
             .bridge = bridge,
             .registry = route_registry.RouteRegistry.init(allocator),
             .executor = slot_effect_executor.PipelineExecutor.init(allocator, &bridge),
-            .effect_executor = effect_executor,
             .request_counter = std.atomic.Value(u64).init(0),
         };
     }
 
     pub fn deinit(self: *HttpSlotAdapter) void {
-        self.effect_executor.deinit();
         self.registry.deinit();
         self.bridge.deinit();
     }
@@ -93,15 +110,22 @@ pub const HttpSlotAdapter = struct {
         // Convert HTTP method to enum
         const method = try self.parseMethod(request.method);
 
-        // Look up route
-        const route = self.registry.findRoute(method, request.path) orelse {
+        // Look up route with path parameter support
+        const route_match = try self.registry.findRouteWithParams(self.allocator, method, request.path) orelse {
             return self.build404Response();
         };
+        defer {
+            // Free path parameter memory
+            for (route_match.params.names) |name| self.allocator.free(name);
+            for (route_match.params.values) |value| self.allocator.free(value);
+            self.allocator.free(route_match.params.names);
+            self.allocator.free(route_match.params.values);
+        }
 
         // Handle based on route type
-        return switch (route.handler) {
-            .step_pipeline => self.handleStepPipeline(request_id, request, route),
-            .slot_effect => self.handleSlotEffect(request_id, request, route),
+        return switch (route_match.route.handler) {
+            .step_pipeline => self.handleStepPipeline(request_id, request, route_match.route, &route_match.params),
+            .slot_effect => self.handleSlotEffect(request_id, request, route_match.route),
         };
     }
 
@@ -110,15 +134,77 @@ pub const HttpSlotAdapter = struct {
         request_id: []const u8,
         request: HttpRequest,
         route: *const route_registry.Route,
+        params: *const route_registry.RouteRegistry.PathParams,
     ) !HttpResponse {
-        _ = self;
         _ = request_id;
-        _ = request;
-        _ = route;
 
-        // Legacy step-based handler
-        // Would call route.handler.step_pipeline.handler()
-        return error.NotImplemented;
+        // Store path parameters in thread-local storage for DLL access
+        current_path_params = params;
+        defer current_path_params = null;
+
+        // Response builder compatible with main.zig's dllSetStatus/dllSetHeader/dllSetBody
+        const ResponseHeader = struct {
+            name: []const u8,
+            value: []const u8,
+        };
+
+        const ResponseBuilder = struct {
+            allocator: std.mem.Allocator,
+            status: u16,
+            headers: std.ArrayList(ResponseHeader),
+            body: std.ArrayList(u8),
+
+            fn init(allocator: std.mem.Allocator) !@This() {
+                return .{
+                    .allocator = allocator,
+                    .status = 200,
+                    .headers = std.ArrayList(ResponseHeader){},
+                    .body = std.ArrayList(u8){},
+                };
+            }
+
+            fn deinit(s: *@This()) void {
+                for (s.headers.items) |header| {
+                    s.allocator.free(header.name);
+                    s.allocator.free(header.value);
+                }
+                s.headers.deinit(s.allocator);
+                s.body.deinit(s.allocator);
+            }
+        };
+
+        // Create response builder
+        var response_builder = try ResponseBuilder.init(self.allocator);
+        defer response_builder.deinit();
+
+        // Cast request and response to opaque pointers for C ABI
+        // Note: request is not actually used by simple handlers like test.dylib
+        const request_opaque: *anyopaque = @ptrCast(@constCast(&request));
+        const response_opaque: *anyopaque = @ptrCast(&response_builder);
+
+        // Call the DLL handler
+        const result = route.handler.step_pipeline.handler(request_opaque, response_opaque);
+
+        if (result != 0) {
+            return self.buildErrorResponse(500, "Handler execution failed");
+        }
+
+        // Convert ResponseBuilder to HttpResponse
+        const body = try self.allocator.dupe(u8, response_builder.body.items);
+
+        const headers = try self.allocator.alloc(HttpResponse.Header, response_builder.headers.items.len);
+        for (response_builder.headers.items, 0..) |h, i| {
+            headers[i] = .{
+                .name = try self.allocator.dupe(u8, h.name),
+                .value = try self.allocator.dupe(u8, h.value),
+            };
+        }
+
+        return HttpResponse{
+            .status = response_builder.status,
+            .headers = headers,
+            .body = body,
+        };
     }
 
     fn handleSlotEffect(
@@ -153,20 +239,27 @@ pub const HttpSlotAdapter = struct {
             self.allocator.destroy(ctx);
         }
 
-        // Call the slot-effect handler
-        // For now, we'll simulate the handler execution
-        // In reality, the DLL handler would be called via C ABI
-
-        _ = route;
-
-        // Build a mock response for demonstration
-        // In production, this would come from pipeline execution
+        // Create response object that handler will populate
         var response = slot_effect.Response.init(
             200,
-            slot_effect.Body{ .complete = "{\"status\":\"ok\"}" },
+            slot_effect.Body{ .complete = "" },
         );
 
-        try response.addHeader(self.allocator, "Content-Type", "application/json");
+        // Build adapter for DLL handler
+        const adapter = self.bridge.buildAdapter(@ptrCast(&self.registry));
+
+        // Call the DLL handler via C ABI
+        const handler_result = route.handler.slot_effect.handler(
+            &adapter,
+            @ptrCast(ctx),
+            @ptrCast(&response),
+        );
+
+        // Check handler result
+        if (handler_result != 0) {
+            // Handler failed, return error response
+            return self.buildErrorResponse(500, "Handler execution failed");
+        }
 
         // Serialize response
         var serializer = slot_effect_executor.ResponseSerializer.init(self.allocator);
@@ -203,7 +296,15 @@ pub const HttpSlotAdapter = struct {
     }
 
     fn build404Response(self: *HttpSlotAdapter) !HttpResponse {
-        const body = try self.allocator.dupe(u8, "{\"error\":\"Not Found\",\"code\":404}");
+        return self.buildErrorResponse(404, "Not Found");
+    }
+
+    fn buildErrorResponse(self: *HttpSlotAdapter, status: u16, message: []const u8) !HttpResponse {
+        const body = try std.fmt.allocPrint(
+            self.allocator,
+            "{{\"error\":\"{s}\",\"code\":{d}}}",
+            .{ message, status },
+        );
 
         const headers = try self.allocator.alloc(HttpResponse.Header, 1);
         headers[0] = .{
@@ -212,7 +313,7 @@ pub const HttpSlotAdapter = struct {
         };
 
         return HttpResponse{
-            .status = 404,
+            .status = status,
             .headers = headers,
             .body = body,
         };

@@ -3,7 +3,8 @@
 /// Enables composable request processing: [auth] → [validate] → [compute] → [respond]
 
 const std = @import("std");
-// TODO: Fix slog import to avoid module conflicts
+const zerver = @import("zerver");
+const slog = zerver.slog;
 
 /// Result from executing a step
 pub const StepResult = enum(c_int) {

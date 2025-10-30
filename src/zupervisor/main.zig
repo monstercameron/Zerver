@@ -182,6 +182,14 @@ fn dllAddRoute(
         return 1;
     };
 
+    // Also register to slot-effect adapter if available
+    if (reg_ctx.slot_effect_adapter) |adapter| {
+        const http_method: route_registry.HttpMethod = @enumFromInt(method);
+        adapter.registry.registerStepRoute(http_method, path_slice, handler) catch {
+            return 1;
+        };
+    }
+
     slog.info("Route registered", &.{
         slog.Attr.int("method", method),
         slog.Attr.string("path", path_slice),
@@ -358,7 +366,7 @@ pub fn main() !void {
     defer file_watcher.deinit();
 
     // Load initial DLLs from feature directory
-    try loadInitialDLLs(allocator, feature_dir, &atomic_router, &version_manager, &context.dll_router, &context.dll_router_mutex);
+    try loadInitialDLLs(allocator, feature_dir, &atomic_router, &version_manager, &context.dll_router, &context.dll_router_mutex, slot_adapter);
 
     slog.info("Zupervisor initialized", &.{
         slog.Attr.string("status", "ready"),
@@ -383,6 +391,7 @@ const RouteRegistrationContext = struct {
     dll: *DLL,
     dll_router: *DLLRouter,
     dll_router_mutex: *std.Thread.Mutex,
+    slot_effect_adapter: ?*http_slot_adapter.HttpSlotAdapter,
 };
 
 /// Load all DLLs from feature directory on startup
@@ -393,6 +402,7 @@ fn loadInitialDLLs(
     version_manager: *VersionManager,
     dll_router: *DLLRouter,
     dll_router_mutex: *std.Thread.Mutex,
+    slot_effect_adapter: ?*http_slot_adapter.HttpSlotAdapter,
 ) !void {
     _ = atomic_router;
 
@@ -433,12 +443,16 @@ fn loadInitialDLLs(
         };
 
         // Set as initial version in version manager
+        // Note: Skip AlreadyInitialized error to support multiple DLLs
         version_manager.setInitial(dll) catch |err| {
-            slog.err("Failed to set initial DLL version", &.{
-                slog.Attr.string("file", entry.name),
-                slog.Attr.string("error", @errorName(err)),
-            });
-            continue;
+            if (err != error.AlreadyInitialized) {
+                slog.err("Failed to set initial DLL version", &.{
+                    slog.Attr.string("file", entry.name),
+                    slog.Attr.string("error", @errorName(err)),
+                });
+                continue;
+            }
+            // AlreadyInitialized is OK - this is the second+ DLL being loaded
         };
 
         slog.info("DLL loaded successfully", &.{
@@ -451,6 +465,7 @@ fn loadInitialDLLs(
             .dll = dll,
             .dll_router = dll_router,
             .dll_router_mutex = dll_router_mutex,
+            .slot_effect_adapter = slot_effect_adapter,
         };
 
         // Create router builder for this DLL
