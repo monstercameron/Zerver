@@ -5,26 +5,26 @@
 /// Provides crash isolation - feature crashes don't bring down ingress
 
 const std = @import("std");
-const slog = @import("../zerver/observability/slog.zig");
+const zerver = @import("zerver");
+const slog = zerver.slog;
 const ipc_server = @import("ipc_server.zig");
-const ipc_types = @import("../zingest/ipc_client.zig");
-const AtomicRouter = @import("../zerver/plugins/atomic_router.zig").AtomicRouter;
-const RouterLifecycle = @import("../zerver/plugins/atomic_router.zig").RouterLifecycle;
-const DLLLoader = @import("../zerver/plugins/dll_loader.zig").DLLLoader;
-const DLLVersionManager = @import("../zerver/plugins/dll_version.zig").DLLVersionManager;
-const FileWatcher = @import("../zerver/plugins/file_watcher.zig").FileWatcher;
-const types = @import("../zerver/core/types.zig");
+const ipc_types = zerver.ipc_types;
+const AtomicRouter = zerver.AtomicRouter;
+const RouterLifecycle = zerver.RouterLifecycle;
+const DLL = zerver.dll_loader.DLL;
+const VersionManager = zerver.dll_version.VersionManager;
+const FileWatcher = zerver.file_watcher.FileWatcher;
+const types = zerver.types;
 
 const DEFAULT_IPC_SOCKET = "/tmp/zerver.sock";
-const DEFAULT_FEATURE_DIR = "./features";
+const DEFAULT_FEATURE_DIR = "zig-out/lib"; // Watch compiled DLLs, not source
 const DEFAULT_WATCH_INTERVAL_MS = 1000;
 
 /// Global context for request handling
 const RequestContext = struct {
     allocator: std.mem.Allocator,
     atomic_router: *AtomicRouter,
-    version_manager: *DLLVersionManager,
-    dll_loader: *DLLLoader,
+    version_manager: *VersionManager,
 };
 
 var g_context: ?*RequestContext = null;
@@ -37,10 +37,16 @@ pub fn main() !void {
     const socket_path = try getSocketPath(allocator);
     defer allocator.free(socket_path);
 
-    const feature_dir = try getFeatureDir(allocator);
+    const feature_dir_relative = try getFeatureDir(allocator);
+    defer allocator.free(feature_dir_relative);
+
+    // Convert to absolute path for FileWatcher
+    const cwd = try std.fs.cwd().realpathAlloc(allocator, ".");
+    defer allocator.free(cwd);
+    const feature_dir = try std.fs.path.join(allocator, &.{ cwd, feature_dir_relative });
     defer allocator.free(feature_dir);
 
-    slog.info("Zupervisor starting", .{
+    slog.info("Zupervisor starting", &.{
         slog.Attr.string("ipc_socket", socket_path),
         slog.Attr.string("feature_dir", feature_dir),
     });
@@ -53,12 +59,9 @@ pub fn main() !void {
     var router_lifecycle = RouterLifecycle.init(allocator, &atomic_router);
     defer router_lifecycle.deinit();
 
-    // Initialize DLL loader
-    var dll_loader = try DLLLoader.init(allocator);
-    defer dll_loader.deinit();
-
-    // Initialize version manager
-    var version_manager = try DLLVersionManager.init(allocator, &dll_loader);
+    // Note: We'll load DLLs on demand when discovered by FileWatcher
+    // For now, initialize empty version manager
+    var version_manager = VersionManager.init(allocator);
     defer version_manager.deinit();
 
     // Set up global context for request handling
@@ -66,7 +69,6 @@ pub fn main() !void {
         .allocator = allocator,
         .atomic_router = &atomic_router,
         .version_manager = &version_manager,
-        .dll_loader = &dll_loader,
     };
     g_context = &context;
     defer g_context = null;
@@ -78,12 +80,10 @@ pub fn main() !void {
     try server.start();
 
     // Initialize file watcher for hot reload
-    var file_watcher = try FileWatcher.init(allocator);
+    var file_watcher = try FileWatcher.init(allocator, feature_dir);
     defer file_watcher.deinit();
 
-    try file_watcher.watch(feature_dir);
-
-    slog.info("Zupervisor initialized", .{
+    slog.info("Zupervisor initialized", &.{
         slog.Attr.string("status", "ready"),
     });
 
@@ -110,8 +110,7 @@ fn handleIPCRequest(
 
     const context = g_context orelse return error.ContextNotInitialized;
 
-    slog.debug("Handling IPC request", .{
-        slog.Attr.int("request_id", request.request_id),
+    slog.debug("Handling IPC request", &.{
         slog.Attr.string("path", request.path),
         slog.Attr.int("method", @intFromEnum(request.method)),
     });
@@ -140,62 +139,50 @@ fn hotReloadLoop(
     allocator: std.mem.Allocator,
     file_watcher: *FileWatcher,
     feature_dir: []const u8,
-    version_manager: *DLLVersionManager,
+    version_manager: *VersionManager,
     router_lifecycle: *RouterLifecycle,
 ) !void {
-    _ = feature_dir;
-
-    slog.info("Hot reload loop started", .{});
+    slog.info("Hot reload loop started", &.{});
 
     while (true) {
-        std.time.sleep(DEFAULT_WATCH_INTERVAL_MS * std.time.ns_per_ms);
+        std.Thread.sleep(DEFAULT_WATCH_INTERVAL_MS * std.time.ns_per_ms);
 
         // Check for file changes
-        const events = file_watcher.pollEvents(allocator) catch |err| {
-            slog.err("File watcher poll failed", .{
+        const changed_file = file_watcher.poll() catch |err| {
+            slog.err("File watcher poll failed", &.{
                 slog.Attr.string("error", @errorName(err)),
             });
             continue;
         };
-        defer allocator.free(events);
 
-        if (events.len == 0) continue;
+        if (changed_file) |filename| {
+            defer allocator.free(filename);
 
-        slog.info("File changes detected", .{
-            slog.Attr.int("event_count", events.len),
-        });
-
-        // For each changed DLL, reload it
-        for (events) |event| {
-            if (!std.mem.endsWith(u8, event.path, ".so")) continue;
-
-            slog.info("Reloading DLL", .{
-                slog.Attr.string("path", event.path),
+            slog.info("File change detected", &.{
+                slog.Attr.string("file", filename),
             });
 
-            // Load new DLL version
-            const new_version_id = version_manager.loadNewVersion(event.path) catch |err| {
-                slog.err("Failed to load new DLL version", .{
-                    slog.Attr.string("error", @errorName(err)),
-                    slog.Attr.string("path", event.path),
+            // Build full path
+            var path_buf: [std.fs.max_path_bytes]u8 = undefined;
+            const full_path = std.fmt.bufPrint(&path_buf, "{s}/{s}", .{ feature_dir, filename }) catch {
+                slog.err("Path too long", &.{
+                    slog.Attr.string("file", filename),
                 });
                 continue;
             };
 
-            slog.info("New DLL version loaded", .{
-                slog.Attr.int("version_id", new_version_id),
-                slog.Attr.string("path", event.path),
-            });
+            // TODO: Implement full DLL hot reload
+            // 1. Load new DLL using DLL.load()
+            // 2. Create new DLLVersion using DLLVersion.init()
+            // 3. Rebuild router with new DLL's routes
+            // 4. Swap router atomically using router_lifecycle
+            // 5. Drain old version and unload when safe
 
-            // TODO: Rebuild router with new DLL routes
-            // This would call into the DLL's route registration function
-            // and build a new router, then swap it atomically
-
+            _ = version_manager;
             _ = router_lifecycle;
 
-            // For now, just log the reload
-            slog.info("Hot reload completed", .{
-                slog.Attr.int("version_id", new_version_id),
+            slog.info("Hot reload triggered (not yet implemented)", &.{
+                slog.Attr.string("path", full_path),
             });
         }
     }
@@ -216,7 +203,7 @@ fn convertMethod(ipc_method: ipc_types.HttpMethod) types.Method {
 fn build404Response(
     allocator: std.mem.Allocator,
     request_id: u128,
-    start_time: i64,
+    start_time: i128,
 ) !ipc_types.IPCResponse {
     const body = try allocator.dupe(u8, "Not Found");
     const headers = try allocator.alloc(ipc_types.Header, 1);
@@ -239,7 +226,7 @@ fn build404Response(
 fn buildSuccessResponse(
     allocator: std.mem.Allocator,
     request_id: u128,
-    start_time: i64,
+    start_time: i128,
 ) !ipc_types.IPCResponse {
     const body = try allocator.dupe(u8, "{\"message\":\"OK\"}");
     const headers = try allocator.alloc(ipc_types.Header, 1);

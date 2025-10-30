@@ -570,6 +570,54 @@ pub fn build(b: *std.Build) void {
     const blog_run_step = b.step("run_blog", "Run the blog CRUD example");
     blog_run_step.dependOn(&blog_run_cmd.step);
 
+    // ========================================================================
+    // Multi-Process Architecture: Zingest + Zupervisor
+    // ========================================================================
+
+    // Zingest executable (HTTP Ingest Server - Process 1)
+    const zingest_exe = b.addExecutable(.{
+        .name = "zingest",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/zingest/main.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+
+    zingest_exe.root_module.addImport("zerver", zerver_mod);
+    zingest_exe.linkLibC();
+    addLibuv(b, zingest_exe, target);
+
+    b.installArtifact(zingest_exe);
+
+    const zingest_run_cmd = b.addRunArtifact(zingest_exe);
+    zingest_run_cmd.step.dependOn(b.getInstallStep());
+
+    const zingest_run_step = b.step("run_zingest", "Run the Zingest HTTP ingest server");
+    zingest_run_step.dependOn(&zingest_run_cmd.step);
+
+    // Zupervisor executable (Supervisor with Hot Reload - Process 2)
+    const zupervisor_exe = b.addExecutable(.{
+        .name = "zupervisor",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/zupervisor/main.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+
+    zupervisor_exe.root_module.addImport("zerver", zerver_mod);
+    zupervisor_exe.linkLibC();
+    addLibuv(b, zupervisor_exe, target);
+
+    b.installArtifact(zupervisor_exe);
+
+    const zupervisor_run_cmd = b.addRunArtifact(zupervisor_exe);
+    zupervisor_run_cmd.step.dependOn(b.getInstallStep());
+
+    const zupervisor_run_step = b.step("run_zupervisor", "Run the Zupervisor with hot reload");
+    zupervisor_run_step.dependOn(&zupervisor_run_cmd.step);
+
     // Teams example executable - commented out due to compilation errors
     const reqtest_runner = b.addTest(.{
         .root_module = b.createModule(.{

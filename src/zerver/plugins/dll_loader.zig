@@ -6,20 +6,20 @@ const std = @import("std");
 const builtin = @import("builtin");
 const slog = @import("../observability/slog.zig");
 
-/// Function signature for featureInit
-pub const FeatureInitFn = *const fn (server: *anyopaque) callconv(.C) ErrorCode!void;
+/// Function signature for featureInit (returns 0 on success, non-zero on failure)
+pub const FeatureInitFn = *const fn (server: *anyopaque) callconv(.c) c_int;
 
 /// Function signature for featureShutdown
-pub const FeatureShutdownFn = *const fn () callconv(.C) void;
+pub const FeatureShutdownFn = *const fn () callconv(.c) void;
 
 /// Function signature for featureVersion
-pub const FeatureVersionFn = *const fn () callconv(.C) [*:0]const u8;
+pub const FeatureVersionFn = *const fn () callconv(.c) [*:0]const u8;
 
 /// Function signature for optional featureHealthCheck
-pub const FeatureHealthCheckFn = *const fn () callconv(.C) bool;
+pub const FeatureHealthCheckFn = *const fn () callconv(.c) bool;
 
 /// Function signature for optional featureMetadata
-pub const FeatureMetadataFn = *const fn () callconv(.C) [*:0]const u8;
+pub const FeatureMetadataFn = *const fn () callconv(.c) [*:0]const u8;
 
 /// Error codes that can be returned by feature functions
 pub const ErrorCode = error{
@@ -114,7 +114,7 @@ pub const DLL = struct {
     /// Decrement reference count and unload if zero
     pub fn release(self: *DLL) void {
         const prev = self.ref_count.fetchSub(1, .monotonic);
-        slog.debug("DLL released", .{
+        slog.debug("DLL released", &.{
             slog.Attr.string("path", self.path),
             slog.Attr.int("ref_count", prev - 1),
         });
@@ -126,7 +126,7 @@ pub const DLL = struct {
 
     /// Unload the DLL and free resources
     fn unload(self: *DLL) void {
-        slog.info("Unloading DLL", .{
+        slog.info("Unloading DLL", &.{
             slog.Attr.string("path", self.path),
         });
 
@@ -178,7 +178,7 @@ const PosixHandle = struct {
             const err_msg = std.c.dlerror();
             const err_str = if (err_msg) |msg| std.mem.sliceTo(msg, 0) else "unknown error";
 
-            slog.err("Failed to load DLL", .{
+            slog.err("Failed to load DLL", &.{
                 slog.Attr.string("path", path),
                 slog.Attr.string("error", err_str),
             });
@@ -198,7 +198,7 @@ const PosixHandle = struct {
             const err_msg = std.c.dlerror();
             const err_str = if (err_msg) |msg| std.mem.sliceTo(msg, 0) else "unknown error";
 
-            slog.warn("Failed to lookup symbol", .{
+            slog.warn("Failed to lookup symbol", &.{
                 slog.Attr.string("symbol", name),
                 slog.Attr.string("error", err_str),
             });
