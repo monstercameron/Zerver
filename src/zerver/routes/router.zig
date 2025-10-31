@@ -4,16 +4,8 @@
 /// Routes are matched longest-literal first, then by number of params,
 /// then declaration order (stable).
 const std = @import("std");
-const types = @import("../core/types.zig");
+const route_types = @import("types.zig");
 const slog = @import("../observability/slog.zig");
-
-/// A compiled route pattern with segments.
-pub const CompiledRoute = struct {
-    method: types.Method,
-    pattern: Pattern,
-    spec: types.RouteSpec,
-    order: usize,
-};
 
 /// A route pattern broken into segments.
 pub const Pattern = struct {
@@ -29,21 +21,45 @@ pub const Segment = union(enum) {
     wildcard: []const u8, // greedy parameter name
 };
 
-/// RouteMatch represents a successful match with extracted params.
-pub const RouteMatch = struct {
-    spec: types.RouteSpec,
-    params: std.StringHashMap([]const u8), // param_name -> path_segment_value
-};
+/// Generic Router over handler type - breaks circular dependency
+/// HandlerType can be RouteSpec (business logic) or any other type (e.g., DLL function pointer)
+pub fn Router(comptime HandlerType: type) type {
+    return struct {
+        const Self = @This();
 
-/// Router stores compiled routes and performs matching.
-pub const Router = struct {
+        /// A compiled route pattern with segments.
+        pub const CompiledRoute = struct {
+            method: route_types.Method,
+            pattern: Pattern,
+            handler: HandlerType,
+            order: usize,
+        };
+
+        /// RouteMatch represents a successful match with extracted params.
+        pub const RouteMatch = struct {
+            handler: HandlerType,
+            params: std.StringHashMap([]const u8), // param_name -> path_segment_value
+        };
+
     allocator: std.mem.Allocator,
     routes: std.ArrayList(CompiledRoute),
     next_order: usize,
 
-    // TODO: RFC 9110 - Consider implementing URI normalization (Section 4.2.3) and defining consistent behavior for trailing slashes in paths.
+    // URI Normalization Note (RFC 9110 §4.2.3):
+    // Current: Routes match paths exactly as received (after URL decoding)
+    // Trailing slash handling: "/foo" and "/foo/" are different routes
+    // RFC Guidelines for normalization:
+    //   - Remove dot segments: /foo/./bar → /foo/bar, /foo/../bar → /bar
+    //   - Normalize percent-encoding: %7E → ~ (unreserved chars)
+    //   - Case normalization: scheme/host are case-insensitive, path is case-sensitive
+    // Current implementation: server.zig performs basic normalization (removes /./ and /../)
+    // Trailing slash policy options:
+    //   1. Strict: /foo != /foo/ (current - explicit, no surprises)
+    //   2. Redirect: /foo/ → 301 to /foo (or vice versa)
+    //   3. Canonical: Register both, prefer one as canonical
+    // Recommendation: Keep current strict behavior; apps can explicitly handle both if needed.
 
-    pub fn init(allocator: std.mem.Allocator) !Router {
+    pub fn init(allocator: std.mem.Allocator) !Self {
         return .{
             .allocator = allocator,
             .routes = try std.ArrayList(CompiledRoute).initCapacity(allocator, 32),
@@ -51,7 +67,7 @@ pub const Router = struct {
         };
     }
 
-    pub fn deinit(self: *Router) void {
+    pub fn deinit(self: *Self) void {
         for (self.routes.items) |route| {
             // Free individual segment strings; param names reuse the same slices
             for (route.pattern.segments) |seg| {
@@ -67,21 +83,21 @@ pub const Router = struct {
         self.routes.deinit(self.allocator);
     }
 
-    /// Add a route: method + path pattern -> RouteSpec
+    /// Add a route: method + path pattern -> handler
     /// Path patterns use :param_name for path parameters.
     /// Example: "/todos/:id/items/:item_id"
     pub fn addRoute(
-        self: *Router,
-        method: types.Method,
+        self: *Self,
+        method: route_types.Method,
         path: []const u8,
-        spec: types.RouteSpec,
+        handler: HandlerType,
     ) !void {
         const pattern = try self.compilePattern(path);
 
         try self.routes.append(self.allocator, .{
             .method = method,
             .pattern = pattern,
-            .spec = spec,
+            .handler = handler,
             .order = self.next_order,
         });
         self.next_order += 1;
@@ -93,8 +109,8 @@ pub const Router = struct {
     /// Match a request (method + path) against registered routes.
     /// Returns RouteMatch with extracted params if successful, null otherwise.
     pub fn match(
-        self: *Router,
-        method: types.Method,
+        self: *Self,
+        method: route_types.Method,
         path: []const u8,
         arena: std.mem.Allocator,
     ) !?RouteMatch {
@@ -165,7 +181,7 @@ pub const Router = struct {
 
             if (take_match) {
                 best_match = RouteMatch{
-                    .spec = route.spec,
+                    .handler = route.handler,
                     .params = params,
                 };
                 best_literal_count = literal_count;
@@ -177,9 +193,112 @@ pub const Router = struct {
         return best_match;
     }
 
+    /// Get allowed methods for a given path (RFC 9110 Section 9.3.7).
+    /// Returns a comma-separated string of allowed HTTP methods for the path.
+    pub fn getAllowedMethods(self: *Self, path: []const u8, arena: std.mem.Allocator) ![]const u8 {
+        var allowed = try std.ArrayList(u8).initCapacity(arena, 64);
+
+        // Check each method to see if there's a route for it
+        const methods = [_]route_types.Method{ .GET, .HEAD, .POST, .PUT, .DELETE, .PATCH, .OPTIONS };
+        // CONNECT and TRACE (RFC 9110 Sections 9.3.6, 9.3.8) demand bespoke behaviors,
+        // so we intentionally omit them from the generic Allow synthesis.
+
+        for (methods) |method| {
+            var match_found = self.match(method, path, arena) catch null;
+            if (match_found == null and method == .HEAD) {
+                match_found = self.match(.GET, path, arena) catch null;
+            }
+
+            if (match_found != null) {
+                if (allowed.items.len > 0) try allowed.appendSlice(arena, ", ");
+                const method_str = switch (method) {
+                    .GET => "GET",
+                    .HEAD => "HEAD",
+                    .POST => "POST",
+                    .PUT => "PUT",
+                    .DELETE => "DELETE",
+                    .PATCH => "PATCH",
+                    .OPTIONS => "OPTIONS",
+                    else => continue,
+                };
+                try allowed.appendSlice(arena, method_str);
+            }
+        }
+
+        // Always allow OPTIONS
+        if (allowed.items.len == 0) {
+            try allowed.appendSlice(arena, "OPTIONS");
+        } else if (!std.mem.containsAtLeast(u8, allowed.items, 1, "OPTIONS")) {
+            try allowed.appendSlice(arena, ", OPTIONS");
+        }
+
+        return allowed.items;
+    }
+
+    /// Route information for introspection
+    pub const RouteInfo = struct {
+        method: []const u8,
+        path: []const u8,
+    };
+
+    /// Get all registered routes (for introspection/debugging)
+    pub fn getAllRoutes(self: *Self, allocator: std.mem.Allocator) ![]RouteInfo {
+        var result = try std.ArrayList(RouteInfo).initCapacity(allocator, self.routes.items.len);
+        errdefer result.deinit(allocator);
+
+        for (self.routes.items) |route| {
+            const method_str = switch (route.method) {
+                .GET => "GET",
+                .POST => "POST",
+                .PUT => "PUT",
+                .DELETE => "DELETE",
+                .PATCH => "PATCH",
+                .HEAD => "HEAD",
+                .OPTIONS => "OPTIONS",
+                .TRACE => "TRACE",
+                .CONNECT => "CONNECT",
+            };
+
+            const path = try self.reconstructPath(route.pattern, allocator);
+            try result.append(allocator, .{
+                .method = method_str,
+                .path = path,
+            });
+        }
+
+        return result.toOwnedSlice(allocator);
+    }
+
+    /// Reconstruct path pattern from compiled segments
+    fn reconstructPath(self: *Self, pattern: Pattern, allocator: std.mem.Allocator) ![]const u8 {
+        _ = self;
+        var result = try std.ArrayList(u8).initCapacity(allocator, 128);
+        errdefer result.deinit(allocator);
+
+        try result.append(allocator, '/');
+
+        for (pattern.segments, 0..) |segment, i| {
+            if (i > 0) try result.append(allocator, '/');
+
+            switch (segment) {
+                .literal => |lit| try result.appendSlice(allocator, lit),
+                .param => |param| {
+                    try result.append(allocator, ':');
+                    try result.appendSlice(allocator, param);
+                },
+                .wildcard => |param| {
+                    try result.append(allocator, '*');
+                    try result.appendSlice(allocator, param);
+                },
+            }
+        }
+
+        return result.toOwnedSlice(allocator);
+    }
+
     /// Compile a path pattern into segments.
     /// "/todos/:id/items" → [literal("todos"), param("id"), literal("items")]
-    fn compilePattern(self: *Router, path: []const u8) !Pattern {
+    fn compilePattern(self: *Self, path: []const u8) !Pattern {
         var segments = try std.ArrayList(Segment).initCapacity(self.allocator, 16);
         defer segments.deinit(self.allocator);
 
@@ -226,7 +345,7 @@ pub const Router = struct {
     }
 
     /// Split a path into segments by "/", filtering empty segments.
-    fn splitPath(_: *Router, path: []const u8, arena: std.mem.Allocator) ![][]const u8 {
+    fn splitPath(_: *Self, path: []const u8, arena: std.mem.Allocator) ![][]const u8 {
         var segments = try std.ArrayList([]const u8).initCapacity(arena, 16);
         defer segments.deinit(arena);
 
@@ -265,7 +384,7 @@ pub const Router = struct {
     }
 
     /// Sort routes by priority: longest-literal first, then fewer params, then order.
-    fn sortRoutes(self: *Router) void {
+    fn sortRoutes(self: *Self) void {
         const routes = self.routes.items;
         std.mem.sort(CompiledRoute, routes, {}, compareRoutes);
     }
@@ -286,20 +405,25 @@ pub const Router = struct {
         // Preserve declaration order for ties.
         return a.order < b.order;
     }
-};
+    };  // End of generic Router function
+}
 
-/// Tests
+/// Tests for generic Router using core types.RouteSpec
 pub fn testRouter() !void {
+    // Import core types for testing
+    const core_types = @import("../core/types.zig");
+    const TestRouter = Router(core_types.RouteSpec);
+
     const gpa = std.heap.GeneralPurposeAllocator(.{}){};
     const allocator = gpa.allocator();
 
-    var router = try Router.init(allocator);
+    var router = try TestRouter.init(allocator);
     defer router.deinit();
 
     // Add some test routes
-    const spec1 = types.RouteSpec{ .steps = &.{} };
-    const spec2 = types.RouteSpec{ .steps = &.{} };
-    const spec3 = types.RouteSpec{ .steps = &.{} };
+    const spec1 = core_types.RouteSpec{ .steps = &.{} };
+    const spec2 = core_types.RouteSpec{ .steps = &.{} };
+    const spec3 = core_types.RouteSpec{ .steps = &.{} };
 
     try router.addRoute(.GET, "/todos", spec1);
     try router.addRoute(.GET, "/todos/:id", spec2);

@@ -78,5 +78,29 @@ pub const HttpStatus = struct {
     pub fn isValid(code: u16) bool {
         return code >= 100 and code <= 599;
     }
-    // TODO: Perf - Consider switching to an enum-backed lookup so branch prediction can short-circuit common status classes.
+
+    /// Determine if status code is informational (1xx).
+    pub inline fn isInformational(code: u16) bool {
+        return code >= 100 and code < 200;
+    }
+
+    /// Determine if status code is success (2xx).
+    pub inline fn isSuccess(code: u16) bool {
+        return code >= 200 and code < 300;
+    }
+
+    /// Determine if status code is redirection (3xx).
+    pub inline fn isRedirection(code: u16) bool {
+        return code >= 300 and code < 400;
+    }
+
+    /// Determine if status code is client error (4xx).
+    pub inline fn isClientError(code: u16) bool {
+        return code >= 400 and code < 500;
+    }
+
+    /// Determine if status code is server error (5xx).
+    pub inline fn isServerError(code: u16) bool {
+        return code >= 500 and code < 600;
+    }
 };

@@ -24,11 +24,19 @@ pub const Loop = struct {
     inner: c.uv_loop_t,
 
     pub fn init() Error!Loop {
-        var instance = Loop{ .inner = undefined };
+        var instance = Loop{ .inner = std.mem.zeroes(c.uv_loop_t) };
         if (c.uv_loop_init(&instance.inner) != 0) {
             return Error.LoopInitFailed;
         }
         return instance;
+    }
+
+    /// Initialize a loop in place (preferred for avoiding copy issues)
+    pub fn initInPlace(self: *Loop) Error!void {
+        self.inner = std.mem.zeroes(c.uv_loop_t);
+        if (c.uv_loop_init(&self.inner) != 0) {
+            return Error.LoopInitFailed;
+        }
     }
 
     pub fn deinit(self: *Loop) Error!void {
@@ -67,7 +75,7 @@ pub const Async = struct {
 
     pub fn init(self: *Async, loop: *Loop, callback: Callback, user_data: ?*anyopaque) Error!void {
         self.* = .{
-            .handle = undefined,
+            .handle = std.mem.zeroes(c.uv_async_t),
             .callback = callback,
             .user_data = user_data,
             .initialized = false,
@@ -118,7 +126,7 @@ pub const Timer = struct {
 
     pub fn init(self: *Timer, loop: *Loop, callback: Callback, user_data: ?*anyopaque) Error!void {
         self.* = .{
-            .handle = undefined,
+            .handle = std.mem.zeroes(c.uv_timer_t),
             .callback = callback,
             .user_data = user_data,
             .initialized = false,
@@ -176,7 +184,7 @@ pub const Work = struct {
 
     pub fn submit(self: *Work, loop: *Loop, work_cb: WorkCallback, after_cb: AfterWorkCallback, user_data: ?*anyopaque) Error!void {
         self.* = .{
-            .request = undefined,
+            .request = std.mem.zeroes(c.uv_work_t),
             .work_cb = work_cb,
             .after_cb = after_cb,
             .user_data = user_data,

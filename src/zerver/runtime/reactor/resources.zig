@@ -1,6 +1,6 @@
 // src/zerver/runtime/reactor/resources.zig
 const std = @import("std");
-const config_mod = @import("runtime_config");
+const config_mod = @import("../config.zig");
 const task_system = @import("task_system.zig");
 const job_system = @import("job_system.zig");
 const effectors = @import("effectors.zig");
@@ -10,6 +10,7 @@ const scheduler_mod = @import("../scheduler.zig");
 const AtomicOrder = std.builtin.AtomicOrder;
 
 pub const ReactorResources = struct {
+    allocator: std.mem.Allocator = undefined,
     enabled: bool = false,
     scheduler: scheduler_mod.Scheduler = .{},
     effector_jobs: job_system.JobSystem = undefined,
@@ -25,6 +26,7 @@ pub const ReactorResources = struct {
 
     pub fn init(self: *ReactorResources, allocator: std.mem.Allocator, cfg: config_mod.ReactorConfig) !void {
         self.* = .{
+            .allocator = allocator,
             .enabled = cfg.enabled,
             .has_scheduler = false,
             .has_effector_jobs = false,
@@ -43,7 +45,8 @@ pub const ReactorResources = struct {
 
         errdefer self.deinit();
 
-        self.loop = try libuv.Loop.init();
+        // Initialize loop in place to avoid copy issues with internal pointers
+        try self.loop.initInPlace();
         self.loop_initialized = true;
 
         try self.effector_jobs.init(.{
@@ -152,6 +155,7 @@ pub const ReactorResources = struct {
         if (!self.loop_initialized) return null;
         const compute_jobs = if (self.has_scheduler) self.scheduler.computeJobs() else null;
         return effectors.Context{
+            .allocator = self.allocator,
             .loop = &self.loop,
             .jobs = &self.effector_jobs,
             .compute_jobs = compute_jobs,

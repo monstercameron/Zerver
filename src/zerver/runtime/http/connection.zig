@@ -1,5 +1,6 @@
 // src/zerver/runtime/http/connection.zig
 /// Helpers for HTTP/1.1 connection persistence decisions (RFC 9112 Section 9).
+// TODO: Version-awareness: HTTP/1.0 defaults to close; consider inspecting request line version to decide persistence behavior.
 const std = @import("std");
 
 /// Determine if the connection should be kept alive based on the raw HTTP/1.1 request.
@@ -19,6 +20,8 @@ pub fn shouldKeepAliveFromRaw(request_data: []const u8) bool {
             if (value_start >= line.len) continue;
 
             const value = std.mem.trim(u8, line[value_start..], " \t");
+            // TODO: Robustness: parse comma-separated tokens and honor any occurrence of "close"; handle multiple Connection headers.
+            // TODO: Consider interaction with "upgrade" token (RFC 9110 §7.8); presence of Upgrade may change connection semantics.
 
             if (std.ascii.eqlIgnoreCase(value, "close")) {
                 return false;
@@ -47,6 +50,8 @@ pub fn shouldKeepAliveFromHeaders(headers: *const std.StringHashMap(std.ArrayLis
             var it = std.mem.splitSequence(u8, value, ",");
             while (it.next()) |token| {
                 const trimmed = std.mem.trim(u8, token, " \t");
+                // TODO: Multiple Connection headers: ensure all tokens across headers are considered; any "close" should win.
+                // TODO: Consider ignoring unknown tokens safely; handle "upgrade" token interaction with Upgrade header.
                 if (std.ascii.eqlIgnoreCase(trimmed, "close")) {
                     return false;
                 }

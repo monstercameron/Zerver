@@ -1,6 +1,8 @@
 // examples/advanced/02_request_tracing.zig
 /// This example demonstrates how to use the Zerver tracer for recording and exporting request traces.
-// TODO: Logging - Replace std.debug.print with slog for consistent structured logging.
+//
+// Note: This example uses std.debug.print for simplicity and immediate console output.
+// Production code should use zerver.slog for structured logging with proper log levels.
 const std = @import("std");
 const zerver = @import("zerver");
 

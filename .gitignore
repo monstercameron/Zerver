@@ -50,6 +50,13 @@ yarn-error.log*
 .env.production.local
 config.local.*
 
+# Database Files
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3
+
 # Temporary Files
 *.tmp
 *.temp

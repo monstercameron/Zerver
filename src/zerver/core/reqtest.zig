@@ -29,12 +29,27 @@ pub const ReqTest = struct {
             .arena = arena,
             .ctx = ctx,
         };
-        // TODO: Perf - Allow recycling a single ReqTest instance across multiple assertions to amortize arena setup costs.
     }
 
     pub fn deinit(self: *ReqTest) void {
         self.ctx.deinit();
         self.arena.deinit();
+    }
+
+    /// Reset the test instance for reuse across multiple test cases.
+    /// This amortizes arena setup costs when running large test suites.
+    pub fn reset(self: *ReqTest) !void {
+        // Clear the context state
+        self.ctx.params.clearRetainingCapacity();
+        self.ctx.query.clearRetainingCapacity();
+        self.ctx.headers.clearRetainingCapacity();
+        self.ctx.slots.clearRetainingCapacity();
+
+        // Reset arena - frees all allocations but keeps the arena allocator alive
+        _ = self.arena.reset(.retain_capacity);
+
+        // Re-initialize context with fresh state
+        self.ctx = try ctx_module.CtxBase.init(self.allocator);
     }
 
     /// Set a path parameter.
@@ -59,14 +74,27 @@ pub const ReqTest = struct {
         const name_dup = try self.arena.allocator().dupe(u8, name);
         const value_dup = try self.arena.allocator().dupe(u8, value);
         try self.ctx.headers.put(name_dup, value_dup);
-        // TODO: Perf - Cache common test header names/values to avoid allocator hits in large suites.
+
+        // Performance Note: Could add a static cache for common test headers like:
+        //   "Content-Type" => "application/json"
+        //   "Authorization" => "Bearer test-token"
+        // If name+value match a cached pair, return that instead of allocating.
+        // Benefits: In a 1000-test suite with 80% header reuse, saves ~800 allocations.
+        // Tradeoff: Adds complexity for test infrastructure. Current approach is simpler.
     }
 
-    /// Seed a slot with a string value for testing.
+    /// Seed a slot with a string value for testing (duplicates the value).
     pub fn seedSlotString(self: *ReqTest, token: u32, value: []const u8) !void {
         try self.ctx.slotPutString(token, value);
     }
-    // TODO: Perf - Support seeding by moving ownership instead of always duplicating strings for large fixtures.
+
+    /// Seed a slot by moving ownership of an already-allocated string.
+    /// Use this for large fixtures to avoid duplication overhead.
+    /// The caller must ensure the string was allocated with the arena allocator.
+    pub fn seedSlotStringMove(self: *ReqTest, token: u32, value: []const u8) !void {
+        // Directly put the value without duplication - caller owns the allocation
+        try self.ctx.slots.put(token, .{ .string = value });
+    }
 
     /// Call a step directly.
     pub fn callStep(self: *ReqTest, step_fn: *const fn (*anyopaque) anyerror!types.Decision) !types.Decision {

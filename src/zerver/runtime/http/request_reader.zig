@@ -1,8 +1,23 @@
 // src/zerver/runtime/http/request_reader.zig
 /// HTTP request reading utilities with cross-platform timeout handling.
+// TODO: Design: split raw I/O framing from higher-level parsing to avoid duplication with impure/server.zig (single source of truth).
+// TODO: Limits: make header/body size limits configurable and map violations to 431/413 (RFC 9110) instead of generic errors.
+// TODO: RFC 9110: consider handling Expect: 100-continue by sending a provisional response before reading the body.
 const std = @import("std");
 const windows_sockets = @import("../platform/windows_sockets.zig");
 const slog = @import("../../observability/slog.zig");
+
+/// Check if a string contains CTL characters (control characters 0x00-0x1F, 0x7F).
+/// Per RFC 9110 Section 5.5, these should be rejected in header field values.
+fn containsCtlCharacters(value: []const u8) bool {
+    for (value) |byte| {
+        // CTL = 0x00-0x1F or 0x7F (DEL)
+        if (byte <= 0x1F or byte == 0x7F) {
+            return true;
+        }
+    }
+    return false;
+}
 
 /// Read an HTTP request from a connection with timeout.
 /// Implements robust HTTP/1.1 message framing per RFC 9110/9112.
@@ -18,9 +33,11 @@ pub fn readRequestWithTimeout(
 
     var read_buf: [256]u8 = undefined;
     const max_size = 4096;
+    // TODO: Expose max_size as config; enforce per-request limits for headers and body (431/413) to mitigate DoS.
     const start_time = std.time.milliTimestamp();
 
-    // TODO: RFC 9110 Section 5.5 - The parser should reject messages containing CTL characters like CR, LF, or NUL within field values to prevent request smuggling attacks.
+    // RFC 9110 §5.5 Compliance: CTL character validation implemented via containsCtlCharacters()
+    // Header values containing control characters (0x00-0x1F, 0x7F) are rejected to prevent request smuggling
     // Phase 1: Read headers until \r\n\r\n
     var headers_complete = false;
     while (req_buf.items.len < max_size and !headers_complete) {
@@ -71,6 +88,7 @@ pub fn readRequestWithTimeout(
         var tail_hex_buf: [8]u8 = undefined;
         const tail_hex = hexPreview(req_buf.items[tail_start..], tail_hex_buf[0..]);
         const terminator_opt = std.mem.indexOf(u8, req_buf.items, "\r\n\r\n");
+        // TODO: Harden: reject lone LF-only terminators and obs-fold; ensure strict CRLF line endings (RFC 9112 §2.1).
         const terminator_index: usize = terminator_opt orelse 0;
         const terminator_found = terminator_opt != null;
         slog.debug("Appended request bytes", &.{
@@ -93,6 +111,7 @@ pub fn readRequestWithTimeout(
     }
 
     if (!headers_complete) {
+        // TODO: Differentiate timeout vs header-too-large (431) vs malformed; consider draining and closing connection politely.
         return error.InvalidRequest;
     }
 
@@ -113,6 +132,15 @@ pub fn readRequestWithTimeout(
         if (std.mem.indexOfScalar(u8, line, ':')) |colon_idx| {
             const header_name = std.mem.trim(u8, line[0..colon_idx], " \t");
             const header_value = std.mem.trim(u8, line[colon_idx + 1 ..], " \t");
+            // TODO: Validate field-name against tchar (RFC 9110 §5.1) and reject obs-fold/leading whitespace continuation lines.
+
+            // RFC 9110 Section 5.5: Reject CTL characters in field values to prevent request smuggling
+            if (containsCtlCharacters(header_value)) {
+                slog.warn("Invalid header value contains CTL characters", &.{
+                    slog.Attr.string("header_name", header_name),
+                });
+                return error.InvalidRequest;
+            }
 
             if (std.ascii.eqlIgnoreCase(header_name, "content-length")) {
                 content_length = std.fmt.parseInt(usize, header_value, 10) catch null;
@@ -161,6 +189,7 @@ fn readChunkedBody(
     var read_buf: [256]u8 = undefined;
     const headers_end = std.mem.indexOf(u8, req_buf.items, "\r\n\r\n") orelse return error.InvalidRequest;
     var chunk_start = headers_end + 4; // Track where unconsumed chunk data begins
+    // TODO: Enforce maximum total body size and per-chunk size to prevent resource exhaustion.
 
     while (true) {
         const now = std.time.milliTimestamp();
@@ -188,6 +217,7 @@ fn readChunkedBody(
             return error.InvalidChunkedEncoding;
         }
         chunk_size = std.fmt.parseInt(usize, size_str, 16) catch return error.InvalidChunkedEncoding;
+        // TODO: Chunk extensions are ignored; ensure extensions are syntactically valid and consider policy for rejecting unknowns.
 
         if (chunk_size == 0) {
             while (!std.mem.endsWith(u8, req_buf.items, "\r\n\r\n")) {
@@ -237,6 +267,7 @@ fn readContentLengthBody(
     const remaining = content_length - current_body_len;
     var read_buf: [256]u8 = undefined;
     var total_read: usize = 0;
+    // TODO: Consider streaming large bodies to application or disk; avoid buffering entire request for very large Content-Length.
 
     while (total_read < remaining) {
         const to_read = @min(read_buf.len, remaining - total_read);
@@ -270,30 +301,37 @@ fn readWithTimeout(
             };
             return result;
         } else {
-            const timeout_val = std.posix.timeval{
-                .tv_sec = @intCast((timeout_ms) / 1000),
-                .tv_usec = @intCast(((timeout_ms) % 1000) * 1000),
+            // Use poll() for POSIX systems (Linux, macOS, BSD)
+            var poll_fds = [_]std.posix.pollfd{
+                .{
+                    .fd = connection.stream.handle,
+                    .events = std.posix.POLL.IN,
+                    .revents = 0,
+                },
             };
 
-            var set: std.posix.fd_set = undefined;
-            std.posix.FD_ZERO(&set);
-            std.posix.FD_SET(connection.stream.handle, &set);
-
-            const select_result = std.posix.select(connection.stream.handle + 1, &set, null, null, &timeout_val) catch {
+            const poll_result = std.posix.poll(&poll_fds, @intCast(per_attempt_timeout_ms)) catch {
                 return error.ConnectionClosed;
             };
 
-            if (select_result == 0) {
-                return error.Timeout;
+            if (poll_result == 0) {
+                // Timeout
+                continue;
             }
 
-            const read_result = connection.stream.read(buffer) catch |err| {
-                if (err == error.WouldBlock) {
-                    return error.Timeout;
-                }
+            if (poll_fds[0].revents & std.posix.POLL.IN != 0) {
+                const read_result = connection.stream.read(buffer) catch |err| {
+                    if (err == error.WouldBlock) {
+                        // TODO: Returning Timeout on WouldBlock may be too aggressive; consider retrying until overall timeout.
+                        return error.Timeout;
+                    }
+                    return error.ConnectionClosed;
+                };
+                return read_result;
+            } else {
+                // Error or HUP
                 return error.ConnectionClosed;
-            };
-            return read_result;
+            }
         }
     }
 }

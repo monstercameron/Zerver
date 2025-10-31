@@ -10,7 +10,9 @@
 /// - Progressive response rendering
 /// - Memory-efficient streaming
 /// This example demonstrates memory-efficient JSON serialization for large datasets.
-// TODO: Logging - Replace std.debug.print with slog for consistent structured logging.
+//
+// Note: This example uses std.debug.print for simplicity and immediate console output.
+// Production code should use zerver.slog for structured logging with proper log levels.
 const std = @import("std");
 const zerver = @import("../src/zerver/root.zig");
 

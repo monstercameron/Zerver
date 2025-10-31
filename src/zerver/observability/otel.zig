@@ -37,6 +37,10 @@ pub const OtelConfig = struct {
     headers: []const Header = &.{},
     instrumentation_scope_name: []const u8 = "zerver.telemetry",
     instrumentation_scope_version: []const u8 = "0.1.0",
+    /// Minimum queue wait time (ms) before promoting job to a dedicated span
+    promote_queue_threshold_ms: i64 = 5,
+    /// Minimum park duration (ms) before promoting job to a dedicated span
+    promote_park_threshold_ms: i64 = 5,
 };
 
 /// Status code for exported spans.
@@ -395,8 +399,15 @@ const RequestRecord = struct {
     effect_spans: std.AutoHashMap(usize, *ChildSpan),
     step_stack: std.ArrayList(*ChildSpan),
     job_states: std.AutoHashMap(usize, JobState),
+    promote_queue_threshold_ms: i64,
+    promote_park_threshold_ms: i64,
 
-    fn create(allocator: std.mem.Allocator, event: telemetry.RequestStartEvent) !*RequestRecord {
+    fn create(
+        allocator: std.mem.Allocator,
+        event: telemetry.RequestStartEvent,
+        promote_queue_threshold_ms: i64,
+        promote_park_threshold_ms: i64,
+    ) !*RequestRecord {
         var record = try allocator.create(RequestRecord);
         errdefer allocator.destroy(record);
         record.* = .{
@@ -422,6 +433,8 @@ const RequestRecord = struct {
             .effect_spans = std.AutoHashMap(usize, *ChildSpan).init(allocator),
             .step_stack = try std.ArrayList(*ChildSpan).initCapacity(allocator, 4),
             .job_states = std.AutoHashMap(usize, JobState).init(allocator),
+            .promote_queue_threshold_ms = promote_queue_threshold_ms,
+            .promote_park_threshold_ms = promote_park_threshold_ms,
         };
         errdefer {
             record.deinit();
@@ -549,7 +562,9 @@ const RequestRecord = struct {
         else
             self.span_id;
         const start_ns = event.timestamp_ms * std.time.ns_per_ms;
-        var span = try ChildSpan.create(self.allocator, event.name, .internal, parent_span_id, start_ns);
+        const span_name = try std.fmt.allocPrint(self.allocator, "zerver.step.{s}", .{event.name});
+        defer self.allocator.free(span_name);
+        var span = try ChildSpan.create(self.allocator, span_name, .internal, parent_span_id, start_ns);
         errdefer {
             span.deinit();
             self.allocator.destroy(span);
@@ -605,7 +620,9 @@ const RequestRecord = struct {
         else
             self.span_id;
         const start_ns = event.timestamp_ms * std.time.ns_per_ms;
-        var span = try ChildSpan.create(self.allocator, event.kind, .client, parent_span_id, start_ns);
+        const span_name = try std.fmt.allocPrint(self.allocator, "zerver.effect.{s}", .{event.kind});
+        defer self.allocator.free(span_name);
+        var span = try ChildSpan.create(self.allocator, span_name, .client, parent_span_id, start_ns);
         errdefer {
             span.deinit();
             self.allocator.destroy(span);
@@ -620,6 +637,45 @@ const RequestRecord = struct {
         try span.pushAttribute(try Attribute.initString(self.allocator, "effect.mode", @tagName(event.mode)));
         try span.pushAttribute(try Attribute.initString(self.allocator, "effect.join", @tagName(event.join)));
         try span.pushAttribute(try Attribute.initInt(self.allocator, "effect.timeout_ms", @as(i64, @intCast(event.timeout_ms))));
+
+        // Add domain-specific OTEL semantic attributes based on effect kind
+        if (std.mem.startsWith(u8, event.kind, "http_")) {
+            // HTTP semantic conventions (OTEL spec)
+            try span.pushAttribute(try Attribute.initString(self.allocator, "http.url", event.target));
+            try span.pushAttribute(try Attribute.initString(self.allocator, "http.method", event.kind[5..])); // Extract method from "http_get" etc
+        } else if (std.mem.startsWith(u8, event.kind, "tcp_")) {
+            // TCP semantic conventions
+            try span.pushAttribute(try Attribute.initString(self.allocator, "network.transport", "tcp"));
+            try span.pushAttribute(try Attribute.initString(self.allocator, "network.operation", event.kind[4..])); // Extract op from "tcp_connect" etc
+            try span.pushAttribute(try Attribute.initString(self.allocator, "network.peer.address", event.target));
+        } else if (std.mem.startsWith(u8, event.kind, "grpc_")) {
+            // gRPC semantic conventions (OTEL spec)
+            try span.pushAttribute(try Attribute.initString(self.allocator, "rpc.system", "grpc"));
+            try span.pushAttribute(try Attribute.initString(self.allocator, "rpc.service", event.target));
+            try span.pushAttribute(try Attribute.initString(self.allocator, "rpc.method", event.kind[5..])); // Extract method type
+        } else if (std.mem.startsWith(u8, event.kind, "websocket_")) {
+            // WebSocket semantic conventions
+            try span.pushAttribute(try Attribute.initString(self.allocator, "network.protocol.name", "websocket"));
+            try span.pushAttribute(try Attribute.initString(self.allocator, "websocket.operation", event.kind[10..])); // Extract op
+            try span.pushAttribute(try Attribute.initString(self.allocator, "websocket.url", event.target));
+        } else if (std.mem.startsWith(u8, event.kind, "db_")) {
+            // Database semantic conventions (OTEL spec)
+            try span.pushAttribute(try Attribute.initString(self.allocator, "db.system", "zerver"));
+            try span.pushAttribute(try Attribute.initString(self.allocator, "db.operation", event.kind[3..])); // Extract op from "db_get" etc
+            try span.pushAttribute(try Attribute.initString(self.allocator, "db.statement", event.target)); // key/prefix
+        } else if (std.mem.startsWith(u8, event.kind, "kv_cache_")) {
+            // Cache semantic conventions
+            try span.pushAttribute(try Attribute.initString(self.allocator, "cache.system", "kv"));
+            try span.pushAttribute(try Attribute.initString(self.allocator, "cache.operation", event.kind[9..])); // Extract op
+            try span.pushAttribute(try Attribute.initString(self.allocator, "cache.key", event.target));
+        } else if (std.mem.startsWith(u8, event.kind, "file_")) {
+            // File I/O semantic conventions
+            try span.pushAttribute(try Attribute.initString(self.allocator, "file.path", event.target));
+            try span.pushAttribute(try Attribute.initString(self.allocator, "file.operation", event.kind[5..])); // Extract op
+        } else if (std.mem.startsWith(u8, event.kind, "compute_") or std.mem.startsWith(u8, event.kind, "accelerator_")) {
+            // Compute semantic conventions
+            try span.pushAttribute(try Attribute.initString(self.allocator, "compute.operation", event.target));
+        }
 
         self.child_spans.append(self.allocator, span) catch |err| {
             span.deinit();
@@ -841,12 +897,9 @@ const RequestRecord = struct {
             // Compute durations for threshold decision
             const durations = computeJobDurations(state);
 
-            // Threshold-based promotion: create span if queue_wait >= 5ms OR park_wait >= 5ms
-            // TODO: Replace hardcoded thresholds with OtelConfig values
-            const promote_queue_threshold_ms: i64 = 5;
-            const promote_park_threshold_ms: i64 = 5;
-            const should_promote = durations.queue_wait_ms >= promote_queue_threshold_ms or
-                durations.park_wait_ms_total >= promote_park_threshold_ms;
+            // Threshold-based promotion: create span if queue_wait or park_wait exceeds configured thresholds
+            const should_promote = durations.queue_wait_ms >= self.promote_queue_threshold_ms or
+                durations.park_wait_ms_total >= self.promote_park_threshold_ms;
 
             if (should_promote) {
                 // Create job span for promotion
@@ -854,7 +907,7 @@ const RequestRecord = struct {
                 if (effect_parent) |parent_span| {
                     const job_span = try ChildSpan.create(
                         self.allocator,
-                        "effect_job",
+                        "zerver.job.effect",
                         .internal,
                         parent_span.span_id,
                         @as(u64, @intCast(state.enqueue_ts)) * std.time.ns_per_ms,
@@ -903,11 +956,8 @@ const RequestRecord = struct {
                         event.timestamp_ms * std.time.ns_per_ms,
                     ));
 
-                    // Store job span for later export
-                    // For now, we'll immediately add it to a collection
-                    // TODO: Properly manage job span lifecycle
-                    job_span.deinit();
-                    self.allocator.destroy(job_span);
+                    // Store job span for export
+                    try self.child_spans.append(self.allocator, job_span);
                 }
             }
 
@@ -1004,19 +1054,16 @@ const RequestRecord = struct {
             // Compute durations for threshold decision
             const durations = computeJobDurations(state);
 
-            // Threshold-based promotion: create span if queue_wait >= 5ms OR park_wait >= 5ms
-            // TODO: Replace hardcoded thresholds with OtelConfig values
-            const promote_queue_threshold_ms: i64 = 5;
-            const promote_park_threshold_ms: i64 = 5;
-            const should_promote = durations.queue_wait_ms >= promote_queue_threshold_ms or
-                durations.park_wait_ms_total >= promote_park_threshold_ms;
+            // Threshold-based promotion: create span if queue_wait or park_wait exceeds configured thresholds
+            const should_promote = durations.queue_wait_ms >= self.promote_queue_threshold_ms or
+                durations.park_wait_ms_total >= self.promote_park_threshold_ms;
 
             if (should_promote) {
                 // Create job span for promotion
                 // Step jobs are children of root request span since they may not have a parent step span
                 const job_span = try ChildSpan.create(
                     self.allocator,
-                    "step_job",
+                    "zerver.job.step",
                     .internal,
                     self.span_id,
                     @as(u64, @intCast(state.enqueue_ts)) * std.time.ns_per_ms,
@@ -1058,10 +1105,8 @@ const RequestRecord = struct {
                     event.timestamp_ms * std.time.ns_per_ms,
                 ));
 
-                // Clean up promoted job span
-                // TODO: Properly manage job span lifecycle
-                job_span.deinit();
-                self.allocator.destroy(job_span);
+                // Store job span for export
+                try self.child_spans.append(self.allocator, job_span);
             }
 
             // Clean up JobState
@@ -1289,6 +1334,24 @@ const RequestRecord = struct {
         try self.pushEvent(request_event);
     }
 
+    fn recordComputeBudgetRegistered(self: *RequestRecord, event: telemetry.ComputeBudgetRegisteredEvent) !void {
+        _ = self;
+        _ = event;
+        // TODO: Implement compute budget tracking
+    }
+
+    fn recordComputeBudgetExceeded(self: *RequestRecord, event: telemetry.ComputeBudgetExceededEvent) !void {
+        _ = self;
+        _ = event;
+        // TODO: Implement compute budget tracking
+    }
+
+    fn recordComputeBudgetYield(self: *RequestRecord, event: telemetry.ComputeBudgetYieldEvent) !void {
+        _ = self;
+        _ = event;
+        // TODO: Implement compute budget tracking
+    }
+
     fn removeActiveStep(self: *RequestRecord, span: *ChildSpan) void {
         var i: usize = self.step_stack.items.len;
         while (i > 0) {
@@ -1347,12 +1410,17 @@ const RequestRecord = struct {
 
         if (event.error_ctx) |ctx| {
             self.error_ctx = try ErrorCtxCopy.init(self.allocator, ctx);
+            try self.pushAttribute(try Attribute.initString(self.allocator, "error.type", ctx.what));
             try self.pushAttribute(try Attribute.initString(self.allocator, "zerver.error.what", ctx.what));
             try self.pushAttribute(try Attribute.initString(self.allocator, "zerver.error.key", ctx.key));
             try self.setStatus(.@"error", ctx.what);
         } else if (self.status != .@"error") {
             if (event.status_code >= 500) {
-                try self.setStatus(.@"error", "server error");
+                try self.setStatus(.@"error", "server_error");
+                try self.pushAttribute(try Attribute.initString(self.allocator, "error.type", "server_error"));
+            } else if (event.status_code >= 400) {
+                try self.setStatus(.@"error", "client_error");
+                try self.pushAttribute(try Attribute.initString(self.allocator, "error.type", "client_error"));
             } else if (event.status_code < 400) {
                 self.status = .ok;
             }
@@ -1432,6 +1500,8 @@ pub const OtelExporter = struct {
     headers: std.ArrayList(http.Header),
     requests: std.StringHashMap(*RequestRecord),
     mutex: std.Thread.Mutex = .{},
+    promote_queue_threshold_ms: i64,
+    promote_park_threshold_ms: i64,
 
     pub fn create(allocator: std.mem.Allocator, config: OtelConfig) !*OtelExporter {
         if (config.endpoint.len == 0) return error.MissingEndpoint;
@@ -1451,6 +1521,8 @@ pub const OtelExporter = struct {
         self.headers = try std.ArrayList(http.Header).initCapacity(allocator, 0);
         self.requests = std.StringHashMap(*RequestRecord).init(allocator);
         self.mutex = .{};
+        self.promote_queue_threshold_ms = config.promote_queue_threshold_ms;
+        self.promote_park_threshold_ms = config.promote_park_threshold_ms;
 
         try self.addResourceAttribute(Attribute.initString(allocator, "service.name", config.service_name));
         try self.addResourceAttribute(Attribute.initString(allocator, "service.version", config.service_version));
@@ -1551,7 +1623,12 @@ pub const OtelExporter = struct {
                         });
                         break :blk null;
                     }
-                    var record = try RequestRecord.create(self.allocator, start);
+                    var record = try RequestRecord.create(
+                        self.allocator,
+                        start,
+                        self.promote_queue_threshold_ms,
+                        self.promote_park_threshold_ms,
+                    );
                     errdefer {
                         record.deinit();
                         self.allocator.destroy(record);
@@ -1667,6 +1744,21 @@ pub const OtelExporter = struct {
                 .step_job_resumed => |payload| {
                     if (self.requests.get(payload.request_id)) |record| {
                         try record.recordStepJobResumed(payload);
+                    }
+                },
+                .compute_budget_registered => |payload| {
+                    if (self.requests.get(payload.request_id)) |record| {
+                        try record.recordComputeBudgetRegistered(payload);
+                    }
+                },
+                .compute_budget_exceeded => |payload| {
+                    if (self.requests.get(payload.request_id)) |record| {
+                        try record.recordComputeBudgetExceeded(payload);
+                    }
+                },
+                .compute_budget_yield => |payload| {
+                    if (self.requests.get(payload.request_id)) |record| {
+                        try record.recordComputeBudgetYield(payload);
                     }
                 },
             }

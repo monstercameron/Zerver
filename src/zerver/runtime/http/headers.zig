@@ -1,5 +1,7 @@
 // src/zerver/runtime/http/headers.zig
 /// Header parsing utilities for HTTP/1.1 requests.
+// TODO: Scope: Only apply sanitization (comments/quotes handling) to header fields that permit comments per RFC; avoid altering semantics for structured fields.
+// TODO: Robustness: Add unit tests for obs-fold rejection, nested comments depth limits, quoted-pair edge cases, large header segments, and UTF-8 casing.
 const std = @import("std");
 
 fn charIsEscaped(segment: []const u8, index: usize) bool {
@@ -19,6 +21,7 @@ fn charIsEscaped(segment: []const u8, index: usize) bool {
 }
 
 pub fn sanitizeHeaderSegment(segment: []const u8, buffer: *std.ArrayList(u8), allocator: std.mem.Allocator) ![]const u8 {
+    // TODO: Limit maximum comment nesting depth and segment length to mitigate resource exhaustion.
     buffer.clearRetainingCapacity();
     try buffer.ensureTotalCapacity(allocator, segment.len);
 
@@ -90,6 +93,7 @@ pub fn normalizeQuotedString(value: []const u8, buffer: *std.ArrayList(u8), allo
 }
 
 pub fn parseQValue(raw: []const u8) ?u16 {
+    // TODO: Error reporting: return richer error info for invalid tokens to improve diagnostics; accept surrounding whitespace at call sites.
     if (raw.len == 0) return null;
     const first = raw[0];
     if (first != '0' and first != '1') return null;
@@ -127,6 +131,7 @@ pub fn parseQValue(raw: []const u8) ?u16 {
 }
 
 pub fn qAllowsSelection(params: []const u8, allocator: std.mem.Allocator) bool {
+    // TODO: RFC nuance: if multiple q parameters appear, last one wins; current logic treats any invalid as disqualifying — confirm desired policy.
     if (params.len == 0) return true;
 
     var token_buffer = std.ArrayList(u8).initCapacity(allocator, 0) catch return false;
@@ -188,6 +193,7 @@ pub fn mediaMatchesTextPlain(media: []const u8) bool {
 }
 
 pub fn acceptsTextPlain(values: []const []const u8, allocator: std.mem.Allocator) bool {
+    // TODO: Preference ordering is ignored; we only check allow/deny. Consider returning a quality score for selection.
     var token_buffer = std.ArrayList(u8).initCapacity(allocator, 0) catch return false;
     defer token_buffer.deinit(allocator);
 
@@ -265,6 +271,7 @@ pub fn acceptLanguageAllowsEnglish(values: []const []const u8, allocator: std.me
 }
 
 pub fn contentTypeMatchesTextPlain(value: []const u8, quoted_buffer: *std.ArrayList(u8), allocator: std.mem.Allocator) bool {
+    // TODO: Grammar: parse media type per RFC BNF; handle parameters order-insensitively and ignore unknown params safely.
     const semicolon_idx = std.mem.indexOfScalar(u8, value, ';');
     const media_token = if (semicolon_idx) |idx| std.mem.trim(u8, value[0..idx], " \t") else std.mem.trim(u8, value, " \t");
 
@@ -305,6 +312,7 @@ pub fn contentTypeMatchesTextPlain(value: []const u8, quoted_buffer: *std.ArrayL
 }
 
 pub fn contentTypeAllowsTextPlain(values: []const []const u8, allocator: std.mem.Allocator) bool {
+    // TODO: Multiple Content-Type values are invalid; current code rejects them — add explicit error path at call sites (415/400).
     var saw_token = false;
     var token_buffer = std.ArrayList(u8).initCapacity(allocator, 0) catch return false;
     defer token_buffer.deinit(allocator);
@@ -336,6 +344,7 @@ pub fn contentTypeAllowsTextPlain(values: []const []const u8, allocator: std.mem
 }
 
 pub fn acceptCharsetAllowsUtf8(values: []const []const u8, allocator: std.mem.Allocator) bool {
+    // TODO: We only check for utf-8 and wildcard; consider supporting aliases (utf8) and case-insensitive normalization fully.
     var token_buffer = std.ArrayList(u8).initCapacity(allocator, 0) catch return false;
     defer token_buffer.deinit(allocator);
 
@@ -382,6 +391,8 @@ pub fn acceptCharsetAllowsUtf8(values: []const []const u8, allocator: std.mem.Al
 }
 
 pub fn acceptEncodingAllowsIdentity(values: []const []const u8, allocator: std.mem.Allocator) bool {
+    // TODO: RFC check: identity is acceptable by default unless q=0; verify behavior when header is present but lacks identity explicitly.
+    // TODO: Consider returning selected encoding instead of bool to support gzip/br in future.
     var token_buffer = std.ArrayList(u8).initCapacity(allocator, 0) catch return false;
     defer token_buffer.deinit(allocator);
 

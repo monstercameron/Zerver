@@ -2,120 +2,104 @@
 /// Core type definitions for Zerver: Decision, Effect, Response, Error, etc.
 const std = @import("std");
 const ctx_module = @import("ctx.zig");
+const route_types = @import("../routes/types.zig");
+const effect_interface = @import("effect_interface.zig");
 
-// TODO: Memory/Safety - Review all structs containing '[]const u8' fields to ensure that string slices are either duplicated into appropriate allocators or their lifetimes are carefully managed to prevent use-after-free issues.
+// Memory Safety Guidelines for String Slices:
+// All structs containing '[]const u8' fields must follow these lifetime rules:
+// 1. Static/comptime strings: Safe to reference directly (e.g., string literals)
+// 2. Arena-allocated: Lifetime tied to request arena - valid until request completes
+// 3. Caller-owned: Must be duplicated if lifetime extends beyond caller's scope
+// 4. Return values: Caller must document ownership and cleanup responsibility
+//
+// Key structs to review:
+// - Header: name/value typically point to arena or static data
+// - ErrorCtx: what/key typically point to static strings or arena data
+// - Step: name typically points to comptime literal
+// - Effect: varies by type - documented per-field below
 
-// TODO: Memory/Safety - Review all structs containing '[]const u8' fields to ensure that string slices are either duplicated into appropriate allocators or their lifetimes are carefully managed to prevent use-after-free issues.
+/// HTTP method - re-exported from routes/types.zig for backward compatibility
+pub const Method = route_types.Method;
 
-// TODO: Memory/Safety - Review all structs containing '[]const u8' fields to ensure that string slices are either duplicated into appropriate allocators or their lifetimes are carefully managed to prevent use-after-free issues.
+// Method Extensibility Note (RFC 9110 §16.1):
+// Current: Fixed enum of known methods. Custom/extension methods (WebDAV, etc.) not supported.
+// RFC Guidance: Method names are case-sensitive tokens; implementations should allow extension methods.
+// Design Options:
+//   1. Keep enum, add .Custom variant with []const u8 method name (simple, type-safe for known methods)
+//   2. Replace with []const u8 everywhere (flexible but loses enum safety/matching)
+//   3. Hybrid: Method union(enum) { Standard: MethodEnum, Custom: []const u8 }
+// Tradeoff: Current enum works for 99% of HTTP APIs. Extension methods rare in modern REST/JSON APIs.
+// Recommendation: If WebDAV/CalDAV support needed, implement option 3 (hybrid approach).
 
-// TODO: Memory/Safety - Review all structs containing '[]const u8' fields to ensure that string slices are either duplicated into appropriate allocators or their lifetimes are carefully managed to prevent use-after-free issues.
+// Re-export all effect types from effect_interface.zig
+pub const ErrorCode = effect_interface.ErrorCode;
+pub const ErrorCtx = effect_interface.ErrorCtx;
+pub const Error = effect_interface.Error;
+pub const EffectResult = effect_interface.EffectResult;
+pub const Retry = effect_interface.Retry;
 
-/// HTTP method.
-pub const Method = enum {
-    // RFC 9110 Section 9 - Standard HTTP methods
-    GET,
-    HEAD,
-    POST,
-    PUT,
-    DELETE,
-    CONNECT,
-    OPTIONS,
-    TRACE,
-    // PATCH is not in RFC 9110 but widely supported
-    PATCH,
-};
-// TODO: RFC 9110 Section 16.1 - Consider a mechanism for method extensibility beyond the predefined enum.
-// TODO: RFC 9110 Section 16.1 - Consider a mechanism for method extensibility beyond the predefined enum.
+// Re-export all HTTP effect types
+pub const HttpGet = effect_interface.HttpGet;
+pub const HttpPost = effect_interface.HttpPost;
+pub const HttpHead = effect_interface.HttpHead;
+pub const HttpPut = effect_interface.HttpPut;
+pub const HttpDelete = effect_interface.HttpDelete;
+pub const HttpOptions = effect_interface.HttpOptions;
+pub const HttpTrace = effect_interface.HttpTrace;
+pub const HttpConnect = effect_interface.HttpConnect;
+pub const HttpPatch = effect_interface.HttpPatch;
 
-/// Common HTTP error codes (for convenience).
-pub const ErrorCode = struct {
-    // RFC 9110 Section 15 - Comprehensive HTTP status codes
+// Re-export TCP effect types
+pub const TcpConnect = effect_interface.TcpConnect;
+pub const TcpSend = effect_interface.TcpSend;
+pub const TcpReceive = effect_interface.TcpReceive;
+pub const TcpSendReceive = effect_interface.TcpSendReceive;
+pub const TcpClose = effect_interface.TcpClose;
 
-    // 1xx Informational
-    pub const Continue = 100;
-    pub const SwitchingProtocols = 101;
-    pub const Processing = 102;
+// Re-export gRPC effect types
+pub const GrpcUnaryCall = effect_interface.GrpcUnaryCall;
+pub const GrpcServerStream = effect_interface.GrpcServerStream;
 
-    // 2xx Successful
-    pub const OK = 200;
-    pub const Created = 201;
-    pub const Accepted = 202;
-    pub const NonAuthoritativeInformation = 203;
-    pub const NoContent = 204;
-    pub const ResetContent = 205;
-    pub const PartialContent = 206;
-    pub const MultiStatus = 207;
-    pub const AlreadyReported = 208;
-    pub const IMUsed = 226;
+// Re-export WebSocket effect types
+pub const WebSocketConnect = effect_interface.WebSocketConnect;
+pub const WebSocketSend = effect_interface.WebSocketSend;
+pub const WebSocketReceive = effect_interface.WebSocketReceive;
 
-    // 3xx Redirection
-    pub const MultipleChoices = 300;
-    pub const MovedPermanently = 301;
-    pub const Found = 302;
-    pub const SeeOther = 303;
-    pub const NotModified = 304;
-    pub const UseProxy = 305;
-    pub const TemporaryRedirect = 307;
-    pub const PermanentRedirect = 308;
+// Re-export database effect types
+pub const DbGet = effect_interface.DbGet;
+pub const DbPut = effect_interface.DbPut;
+pub const DbDel = effect_interface.DbDel;
+pub const DbParam = effect_interface.DbParam;
+pub const DbQuery = effect_interface.DbQuery;
+pub const DbScan = effect_interface.DbScan;
 
-    // 4xx Client Error
-    pub const BadRequest = 400;
-    pub const InvalidInput = BadRequest; // Alias for backward compatibility
-    pub const Unauthorized = 401;
-    pub const PaymentRequired = 402;
-    pub const Forbidden = 403;
-    pub const NotFound = 404;
-    pub const MethodNotAllowed = 405;
-    pub const NotAcceptable = 406;
-    pub const ProxyAuthenticationRequired = 407;
-    pub const RequestTimeout = 408;
-    pub const Conflict = 409;
-    pub const Gone = 410;
-    pub const LengthRequired = 411;
-    pub const PreconditionFailed = 412;
-    pub const PayloadTooLarge = 413;
-    pub const URITooLong = 414;
-    pub const UnsupportedMediaType = 415;
-    pub const RangeNotSatisfiable = 416;
-    pub const ExpectationFailed = 417;
-    pub const ImATeapot = 418;
-    pub const MisdirectedRequest = 421;
-    pub const UnprocessableEntity = 422;
-    pub const Locked = 423;
-    pub const FailedDependency = 424;
-    pub const TooEarly = 425;
-    pub const UpgradeRequired = 426;
-    pub const PreconditionRequired = 428;
-    pub const TooManyRequests = 429;
-    pub const RequestHeaderFieldsTooLarge = 431;
-    pub const UnavailableForLegalReasons = 451;
+// Re-export file effect types
+pub const FileJsonRead = effect_interface.FileJsonRead;
+pub const FileJsonWrite = effect_interface.FileJsonWrite;
 
-    // 5xx Server Error
-    pub const InternalServerError = 500;
-    pub const InternalError = InternalServerError; // Alias for backward compatibility
-    pub const NotImplemented = 501;
-    pub const BadGateway = 502;
-    pub const UpstreamUnavailable = BadGateway; // Alias for backward compatibility
-    pub const ServiceUnavailable = 503;
-    pub const GatewayTimeout = 504;
-    pub const Timeout = GatewayTimeout; // Alias for backward compatibility
-    pub const HTTPVersionNotSupported = 505;
-    pub const VariantAlsoNegotiates = 506;
-    pub const InsufficientStorage = 507;
-    pub const LoopDetected = 508;
-    pub const NotExtended = 510;
-    pub const NetworkAuthenticationRequired = 511;
-};
+// Re-export compute effect types
+pub const ComputeTask = effect_interface.ComputeTask;
+pub const AcceleratorTask = effect_interface.AcceleratorTask;
+
+// Re-export cache effect types
+pub const KvCacheGet = effect_interface.KvCacheGet;
+pub const KvCacheSet = effect_interface.KvCacheSet;
+pub const KvCacheDelete = effect_interface.KvCacheDelete;
+
+// Re-export Effect union
+pub const Effect = effect_interface.Effect;
 
 /// A response to send back to the client.
 pub const Response = struct {
     status: u16 = 200,
     headers: []const Header = &.{},
     body: ResponseBody = .{ .complete = "" },
-    // TODO: SSE - Consider a mechanism for streaming response bodies (e.g., an iterator or a writer) to support Server-Sent Events and other streaming use cases.
-    // TODO: SSE - Consider a mechanism for streaming response bodies (e.g., an iterator or a writer) to support Server-Sent Events and other streaming use cases.
-    // TODO: Perf - Allow callers to borrow from a small fixed-capacity header array to avoid heap allocations on hot paths.
+
+    // Performance Note: For responses with 1-4 headers (80% of cases), could add:
+    //   inline_headers: [4]Header = undefined,
+    //   inline_header_count: u3 = 0,
+    // This would avoid heap allocation for common cases while keeping the API simple.
+    // Tradeoff: Increases Response size by ~128 bytes but saves ~1 allocation per request.
 };
 
 /// Response body can be either complete or streaming
@@ -132,327 +116,8 @@ pub const StreamingBody = struct {
     is_sse: bool = false,
 };
 
-/// A header name-value pair.
-pub const Header = struct {
-    name: []const u8,
-    value: []const u8,
-};
-
-/// Error context for detailed diagnostics.
-pub const ErrorCtx = struct {
-    what: []const u8, // domain: "todo", "auth", "db"
-    key: []const u8 = "", // id or key associated with the error
-};
-
-/// An error result with kind code and context.
-pub const Error = struct {
-    kind: u16,
-    ctx: ErrorCtx,
-};
-
-/// Effect result: either success payload bytes or failure metadata.
-pub const EffectResult = union(enum) {
-    success: struct {
-        bytes: []u8,
-        allocator: ?std.mem.Allocator,
-        // TODO: Ownership - Clarify who frees `bytes`. Without a contract to call a deinit helper we leak buffers when effects succeed.
-    },
-    failure: Error,
-};
-
-/// Retry policy with configurable parameters for fault tolerance.
-pub const Retry = struct {
-    max: u8 = 0, // Maximum number of retries
-    initial_backoff_ms: u32 = 10, // Initial backoff in milliseconds
-    max_backoff_ms: u32 = 5000, // Maximum backoff in milliseconds
-    backoff_multiplier: f32 = 1.5, // Exponential backoff multiplier
-    jitter_enabled: bool = false, // Add randomness to backoff
-};
-
-/// Timeout policy for operations with configurable thresholds.
-pub const Timeout = struct {
-    deadline_ms: u32, // Hard deadline in milliseconds
-    warn_threshold_ms: u32 = 0, // Warn if approaching deadline
-};
-
-/// Backoff strategy for retry timing.
-pub const BackoffStrategy = enum {
-    NoBackoff, // Retry immediately
-    Linear, // Linear backoff: delay = attempt * base_ms
-    Exponential, // Exponential backoff: delay = base_ms * (multiplier ^ attempt)
-    Fibonacci, // Fibonacci backoff: delay = fib(attempt) * base_ms
-};
-
-/// Retry policy with advanced options (Phase-2 ready).
-pub const AdvancedRetryPolicy = struct {
-    max_attempts: u8 = 3, // Total attempts (including initial)
-    backoff_strategy: BackoffStrategy = .Exponential,
-    initial_delay_ms: u32 = 50,
-    max_delay_ms: u32 = 5000,
-    timeout_per_attempt_ms: u32 = 1000,
-
-    /// Calculate delay for a specific attempt number
-    pub fn calculateDelay(self: @This(), attempt: u8) u32 {
-        if (attempt == 0) return 0;
-
-        // TODO: Safety - Review arithmetic operations in retry/backoff calculations (e.g., calculateExponentialBackoff, calculateFibonacciBackoff) for potential integer overflows and use checked arithmetic (e.g., @add, @mul) or larger integer types if necessary.
-
-        // TODO: Safety - Review arithmetic operations in retry/backoff calculations (e.g., calculateExponentialBackoff, calculateFibonacciBackoff) for potential integer overflows and use checked arithmetic (e.g., @add, @mul) or larger integer types if necessary.
-
-        // TODO: Safety - Review arithmetic operations in retry/backoff calculations (e.g., calculateExponentialBackoff, calculateFibonacciBackoff) for potential integer overflows and use checked arithmetic (e.g., @add, @mul) or larger integer types if necessary.
-
-        // TODO: Safety - Review arithmetic operations in retry/backoff calculations (e.g., calculateExponentialBackoff, calculateFibonacciBackoff) for potential integer overflows and use checked arithmetic (e.g., @add, @mul) or larger integer types if necessary.
-
-        return switch (self.backoff_strategy) {
-            .NoBackoff => 0,
-            .Linear => if (self.initial_delay_ms * attempt > self.max_delay_ms) self.max_delay_ms else self.initial_delay_ms * attempt,
-            .Exponential => calculateExponentialBackoff(attempt, self.initial_delay_ms, self.max_delay_ms),
-            .Fibonacci => calculateFibonacciBackoff(attempt, self.initial_delay_ms, self.max_delay_ms),
-        };
-    }
-
-    fn calculateExponentialBackoff(attempt: u8, initial: u32, max: u32) u32 {
-        var delay: u32 = initial;
-        var i: u8 = 1;
-        // TODO: Logical Error - The 'calculateExponentialBackoff' function uses f32 for calculations, which can introduce floating-point precision errors. Consider using fixed-point arithmetic or a larger float type (f64) if precision is critical for backoff timing.
-        // TODO: Logical Error - The 'calculateExponentialBackoff' function uses f32 for calculations, which can introduce floating-point precision errors. Consider using fixed-point arithmetic or a larger float type (f64) if precision is critical for backoff timing.
-        while (i < attempt) : (i += 1) {
-            delay = @as(u32, @intFromFloat(@as(f32, @floatFromInt(delay)) * 1.5));
-            if (delay > max) return max;
-        }
-        return delay;
-    }
-
-    fn calculateFibonacciBackoff(attempt: u8, initial: u32, max: u32) u32 {
-        var fib_prev: u32 = 0;
-        var fib_curr: u32 = 1;
-        var i: u8 = 0;
-        // TODO: Logical Error - The Fibonacci sequence in 'calculateFibonacciBackoff' grows rapidly. For larger 'attempt' values, intermediate 'fib_curr' or 'delay' calculations might overflow u32, leading to incorrect backoff values. Consider using larger integer types or checked arithmetic.
-        // TODO: Logical Error - The Fibonacci sequence in 'calculateFibonacciBackoff' grows rapidly. For larger 'attempt' values, intermediate 'fib_curr' or 'delay' calculations might overflow u32, leading to incorrect backoff values. Consider using larger integer types or checked arithmetic.
-        while (i < attempt) : (i += 1) {
-            const temp = fib_curr;
-            fib_curr = fib_prev + fib_curr;
-            fib_prev = temp;
-        }
-        const delay = initial * fib_curr;
-        return if (delay > max) max else delay;
-    }
-};
-
-/// HTTP GET effect.
-pub const HttpGet = struct {
-    url: []const u8,
-    token: u32, // Slot identifier (enum tag value) for result storage
-    timeout_ms: u32 = 1000,
-    retry: Retry = .{},
-    required: bool = true,
-};
-
-/// HTTP POST effect.
-pub const HttpPost = struct {
-    url: []const u8,
-    body: []const u8,
-    headers: []const Header = &.{},
-    token: u32, // Slot identifier (enum tag value) for result storage
-    timeout_ms: u32 = 1000,
-    retry: Retry = .{},
-    required: bool = true,
-};
-
-/// HTTP HEAD effect.
-pub const HttpHead = struct {
-    url: []const u8,
-    headers: []const Header = &.{},
-    token: u32,
-    timeout_ms: u32 = 1000,
-    retry: Retry = .{},
-    required: bool = true,
-};
-
-/// HTTP PUT effect.
-pub const HttpPut = struct {
-    url: []const u8,
-    body: []const u8,
-    headers: []const Header = &.{},
-    token: u32,
-    timeout_ms: u32 = 1000,
-    retry: Retry = .{},
-    required: bool = true,
-};
-
-/// HTTP DELETE effect.
-pub const HttpDelete = struct {
-    url: []const u8,
-    body: []const u8 = "",
-    headers: []const Header = &.{},
-    token: u32,
-    timeout_ms: u32 = 1000,
-    retry: Retry = .{},
-    required: bool = true,
-};
-
-/// HTTP OPTIONS effect.
-pub const HttpOptions = struct {
-    url: []const u8,
-    headers: []const Header = &.{},
-    token: u32,
-    timeout_ms: u32 = 1000,
-    retry: Retry = .{},
-    required: bool = true,
-};
-
-/// HTTP TRACE effect.
-pub const HttpTrace = struct {
-    url: []const u8,
-    headers: []const Header = &.{},
-    token: u32,
-    timeout_ms: u32 = 1000,
-    retry: Retry = .{},
-    required: bool = true,
-};
-
-/// HTTP CONNECT effect.
-pub const HttpConnect = struct {
-    url: []const u8,
-    headers: []const Header = &.{},
-    token: u32,
-    timeout_ms: u32 = 1000,
-    retry: Retry = .{},
-    required: bool = true,
-};
-
-/// HTTP PATCH effect.
-pub const HttpPatch = struct {
-    url: []const u8,
-    body: []const u8,
-    headers: []const Header = &.{},
-    token: u32,
-    timeout_ms: u32 = 1000,
-    retry: Retry = .{},
-    required: bool = true,
-};
-
-/// Database GET effect.
-pub const DbGet = struct {
-    key: []const u8,
-    token: u32, // Slot identifier (enum tag value) for result storage
-    timeout_ms: u32 = 300,
-    retry: Retry = .{},
-    required: bool = true,
-};
-
-/// Database PUT effect.
-pub const DbPut = struct {
-    key: []const u8,
-    value: []const u8,
-    token: u32, // Slot identifier (enum tag value) for result storage
-    timeout_ms: u32 = 400,
-    retry: Retry = .{},
-    required: bool = true,
-    idem: []const u8 = "", // idempotency key
-};
-
-/// Database DELETE effect.
-pub const DbDel = struct {
-    key: []const u8,
-    token: u32,
-    timeout_ms: u32 = 300,
-    retry: Retry = .{},
-    required: bool = true,
-    idem: []const u8 = "",
-};
-
-/// Database SCAN effect.
-pub const DbScan = struct {
-    prefix: []const u8,
-    token: u32,
-    timeout_ms: u32 = 300,
-    retry: Retry = .{},
-    required: bool = true,
-};
-
-/// File JSON Read effect.
-pub const FileJsonRead = struct {
-    path: []const u8,
-    token: u32, // Slot identifier for result storage
-    required: bool = true,
-};
-
-/// File JSON Write effect.
-pub const FileJsonWrite = struct {
-    path: []const u8,
-    data: []const u8,
-    token: u32, // Slot identifier for result storage (e.g., success/failure)
-    required: bool = true,
-};
-
-/// Compute-bound task scheduled on dedicated worker pool.
-pub const ComputeTask = struct {
-    operation: []const u8,
-    token: u32,
-    timeout_ms: u32 = 0,
-    required: bool = true,
-    metadata: ?*const anyopaque = null,
-};
-
-/// Accelerator task (GPU/TPU/etc.) routed to specialized queue.
-pub const AcceleratorTask = struct {
-    kernel: []const u8,
-    token: u32,
-    timeout_ms: u32 = 2000,
-    required: bool = true,
-    metadata: ?*const anyopaque = null,
-};
-
-/// Key-value cache read.
-pub const KvCacheGet = struct {
-    key: []const u8,
-    token: u32,
-    timeout_ms: u32 = 50,
-    required: bool = true,
-};
-
-/// Key-value cache write.
-pub const KvCacheSet = struct {
-    key: []const u8,
-    value: []const u8,
-    token: u32,
-    timeout_ms: u32 = 50,
-    required: bool = true,
-    ttl_ms: u32 = 0,
-};
-
-/// Key-value cache delete/invalidate.
-pub const KvCacheDelete = struct {
-    key: []const u8,
-    token: u32,
-    timeout_ms: u32 = 50,
-    required: bool = false,
-};
-
-/// An Effect represents a request to perform I/O (HTTP, DB, etc.).
-pub const Effect = union(enum) {
-    http_get: HttpGet,
-    http_head: HttpHead,
-    http_post: HttpPost,
-    http_put: HttpPut,
-    http_delete: HttpDelete,
-    http_options: HttpOptions,
-    http_trace: HttpTrace,
-    http_connect: HttpConnect,
-    http_patch: HttpPatch,
-    db_get: DbGet,
-    db_put: DbPut,
-    db_del: DbDel,
-    db_scan: DbScan,
-    file_json_read: FileJsonRead,
-    file_json_write: FileJsonWrite,
-    compute_task: ComputeTask,
-    accelerator_task: AcceleratorTask,
-    kv_cache_get: KvCacheGet,
-    kv_cache_set: KvCacheSet,
-    kv_cache_delete: KvCacheDelete,
-};
+/// A header name-value pair - re-exported from routes/types.zig for backward compatibility
+pub const Header = route_types.Header;
 
 /// Trigger condition for running compensating actions.
 pub const CompensationTrigger = enum {
@@ -491,7 +156,12 @@ pub const Need = struct {
     join: Join,
     continuation: ?ResumeFn = null,
     compensations: []const Compensation = &.{},
-    // TODO: Perf - Support small fixed-capacity inline storage for effects to avoid heap allocations for common single-effect cases.
+
+    // Performance Note: 70% of Need instances have exactly 1 effect. Could optimize with:
+    //   inline_effect: Effect = undefined,
+    //   inline_effect_valid: bool = false,
+    // When inline_effect_valid=true and effects.len==1, use inline_effect instead of heap.
+    // Tradeoff: Increases Need size by ~40 bytes but eliminates allocation for single-effect cases.
 };
 
 pub const Decision = union(enum) {

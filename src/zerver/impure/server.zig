@@ -9,11 +9,15 @@ const tracer_module = @import("../observability/tracer.zig");
 const slog = @import("../observability/slog.zig");
 const http_status = @import("../core/http_status.zig").HttpStatus;
 const telemetry = @import("../observability/telemetry.zig");
+const correlation = @import("../observability/correlation.zig");
 const net_handler = @import("../runtime/handler.zig");
 const http_connection = @import("../runtime/http/connection.zig");
 const http_headers = @import("../runtime/http/headers.zig");
+const response_sse = @import("../runtime/http/response/sse.zig");
+const response_formatter = @import("../runtime/http/response/formatter.zig");
 
 const default_content_type = "text/plain; charset=utf-8";
+// TODO: Content negotiation: defaulting to text/plain may conflict with negotiated media types; consider deriving from route/renderer.
 
 pub const Address = struct {
     ip: [4]u8,
@@ -27,19 +31,9 @@ pub const Config = struct {
     telemetry: telemetry.RequestTelemetryOptions = .{},
 };
 
-const CorrelationSource = enum {
-    traceparent,
-    x_request_id,
-    x_correlation_id,
-    generated,
-};
-
-const CorrelationContext = struct {
-    id: []const u8,
-    header_name: []const u8,
-    header_value: []const u8,
-    source: CorrelationSource,
-};
+// Re-export correlation types from correlation module
+const CorrelationSource = correlation.CorrelationSource;
+const CorrelationContext = correlation.CorrelationContext;
 
 /// Flow stores slug and spec.
 const Flow = struct {
@@ -72,79 +66,26 @@ pub const StreamingResponse = struct {
 pub const Server = struct {
     allocator: std.mem.Allocator,
     config: Config,
-    router: router_module.Router,
+    router: router_module.Router(types.RouteSpec),
     executor: executor_module.Executor,
     flows: std.ArrayList(Flow),
     global_before: std.ArrayList(types.Step),
     telemetry_options: telemetry.RequestTelemetryOptions,
 
-    /// SSE event structure per HTML Living Standard
-    pub const SSEEvent = struct {
-        data: ?[]const u8 = null,
-        event: ?[]const u8 = null,
-        id: ?[]const u8 = null,
-        retry: ?u32 = null,
-    };
+    // Re-export SSE types and functions from response_sse module
+    pub const SSEEvent = response_sse.SSEEvent;
 
     /// Format an SSE event according to HTML Living Standard
+    /// Note: For SSE performance optimization notes, see src/zerver/runtime/http/response/sse.zig
     pub fn formatSSEEvent(self: *Server, event: SSEEvent, arena: std.mem.Allocator) ![]const u8 {
         _ = self;
-        var buf = std.ArrayList(u8).initCapacity(arena, 256) catch unreachable;
-        // TODO: Safety - Propagate allocator failure instead of unreachable; a missed OOM here will crash the whole server.
-        // TODO: Perf - Reuse a scratch buffer or stream directly to the client to avoid per-event allocations when broadcasting SSE.
-        const w = buf.writer(arena);
-
-        // Event type (optional)
-        if (event.event) |event_type| {
-            try w.print("event: {s}\n", .{event_type});
-        }
-
-        // Event data (required for most events)
-        if (event.data) |data| {
-            // Split multi-line data
-            var lines = std.mem.splitSequence(u8, data, "\n");
-            while (lines.next()) |line| {
-                try w.print("data: {s}\n", .{line});
-            }
-        }
-
-        // Event ID (optional)
-        if (event.id) |id| {
-            try w.print("id: {s}\n", .{id});
-        }
-
-        // Retry delay (optional)
-        if (event.retry) |retry_ms| {
-            try w.print("retry: {d}\n", .{retry_ms});
-        }
-
-        // Double newline to end the event
-        try w.writeAll("\n");
-
-        return buf.items;
+        return response_sse.formatEvent(arena, event);
     }
 
     /// Create an SSE streaming response
     pub fn createSSEResponse(self: *Server, writer: *const fn (*anyopaque, []const u8) anyerror!void, context: *anyopaque) types.Response {
         _ = self;
-        return .{
-            .status = http_status.ok,
-            .headers = &.{
-                .{ .name = "Content-Type", .value = "text/event-stream" },
-                .{ .name = "Cache-Control", .value = "no-cache" },
-                .{ .name = "Connection", .value = "keep-alive" },
-                .{ .name = "Access-Control-Allow-Origin", .value = "*" },
-                .{ .name = "Access-Control-Allow-Headers", .value = "Cache-Control" },
-            },
-            .body = .{
-                .streaming = .{
-                    .content_type = "text/event-stream",
-                    .writer = writer,
-                    .context = context,
-                    .is_sse = true,
-                },
-            },
-        };
+        return response_sse.createResponse(writer, context);
     }
 
     pub fn init(
@@ -155,7 +96,7 @@ pub const Server = struct {
         return Server{
             .allocator = allocator,
             .config = cfg,
-            .router = try router_module.Router.init(allocator),
+            .router = try router_module.Router(types.RouteSpec).init(allocator),
             .executor = executor_module.Executor.init(allocator, effect_handler),
             .flows = try std.ArrayList(Flow).initCapacity(allocator, 16),
             .global_before = try std.ArrayList(types.Step).initCapacity(allocator, 8),
@@ -185,6 +126,12 @@ pub const Server = struct {
             .slug = spec.slug,
             .spec = spec,
         });
+    }
+
+    /// Get all registered routes (for introspection/debugging)
+    /// Caller owns the returned slice and must free it
+    pub fn getAllRoutes(self: *Server, allocator: std.mem.Allocator) ![]router_module.Router.RouteInfo {
+        return self.router.getAllRoutes(allocator);
     }
 
     /// Execute a pipeline for a request context.
@@ -397,24 +344,24 @@ pub const Server = struct {
             try ctx.query.put(entry.key_ptr.*, entry.value_ptr.*);
         }
 
-        const correlation = try self.resolveCorrelation(parsed.headers, arena);
-        ctx.setRequestId(correlation.id);
+        const correlation_ctx = try correlation.resolveCorrelation(parsed.headers, arena);
+        ctx.setRequestId(correlation_ctx.id);
 
         slog.debug("Correlation resolved", &.{
-            slog.Attr.string("correlation_id", correlation.id),
-            slog.Attr.string("correlation_source", @tagName(correlation.source)),
+            slog.Attr.string("correlation_id", correlation_ctx.id),
+            slog.Attr.string("correlation_source", @tagName(correlation_ctx.source)),
         });
 
-        if (correlation.header_name.len != 0 and correlation.header_value.len != 0) {
-            if (ctx.headers.get(correlation.header_name) != null) {
-                ctx.headers.put(correlation.header_name, correlation.header_value) catch {};
+        if (correlation_ctx.header_name.len != 0 and correlation_ctx.header_value.len != 0) {
+            if (ctx.headers.get(correlation_ctx.header_name) != null) {
+                ctx.headers.put(correlation_ctx.header_name, correlation_ctx.header_value) catch {};
             } else {
-                const header_name_owned = ctx.allocator.dupe(u8, correlation.header_name) catch null;
+                const header_name_owned = ctx.allocator.dupe(u8, correlation_ctx.header_name) catch null;
                 const header_name_slice: []const u8 = if (header_name_owned) |owned|
                     @as([]const u8, owned)
                 else
-                    correlation.header_name;
-                ctx.headers.put(header_name_slice, correlation.header_value) catch {};
+                    correlation_ctx.header_name;
+                ctx.headers.put(header_name_slice, correlation_ctx.header_value) catch {};
             }
         }
 
@@ -431,7 +378,7 @@ pub const Server = struct {
 
         if (parsed.method == .OPTIONS) {
             telemetry_ctx.stepStart(.system, "options_handler");
-            const allowed_methods = try self.getAllowedMethods(parsed.path, arena);
+            const allowed_methods = try self.router.getAllowedMethods(parsed.path, arena);
             telemetry_ctx.stepEnd(.system, "options_handler", "Continue");
 
             const response_body = try std.fmt.allocPrint(arena, "Allow: {s}", .{allowed_methods});
@@ -449,7 +396,7 @@ pub const Server = struct {
                 .error_ctx = null,
             }, arena) catch "";
 
-            return ResponseResult{ .complete = try self.httpResponse(response, arena, false, keep_alive, trace_header, correlation) };
+            return ResponseResult{ .complete = try self.httpResponse(response, arena, false, keep_alive, trace_header, correlation_ctx) };
         }
 
         if (parsed.method == .CONNECT or parsed.method == .TRACE) {
@@ -475,7 +422,7 @@ pub const Server = struct {
             };
             const trace_header = telemetry_ctx.finish(outcome, arena) catch "";
 
-            return ResponseResult{ .complete = try self.httpResponse(response, arena, false, keep_alive, trace_header, correlation) };
+            return ResponseResult{ .complete = try self.httpResponse(response, arena, false, keep_alive, trace_header, correlation_ctx) };
         }
 
         var route_match_opt = try self.router.match(parsed.method, parsed.path, arena);
@@ -491,7 +438,7 @@ pub const Server = struct {
             }
             telemetry_ctx.stepEnd(.system, "route_match", "Continue");
 
-            const decision = try self.executePipeline(&ctx, &telemetry_ctx, route_match.spec.before, route_match.spec.steps);
+            const decision = try self.executePipeline(&ctx, &telemetry_ctx, route_match.handler.before, route_match.handler.steps);
 
             var outcome = telemetry.RequestOutcome{
                 .status_code = ctx.status(),
@@ -507,11 +454,11 @@ pub const Server = struct {
                 else => {},
             }
 
-            return try self.renderResponse(&ctx, &telemetry_ctx, decision, outcome, arena, keep_alive, correlation);
+            return try self.renderResponse(&ctx, &telemetry_ctx, decision, outcome, arena, keep_alive, correlation_ctx);
         }
 
         if (route_match_opt == null) {
-            const allowed_methods = try self.getAllowedMethods(parsed.path, arena);
+            const allowed_methods = try self.router.getAllowedMethods(parsed.path, arena);
             if (!std.mem.eql(u8, allowed_methods, "OPTIONS")) {
                 const headers = [_]types.Header{
                     .{ .name = "Allow", .value = allowed_methods },
@@ -534,7 +481,7 @@ pub const Server = struct {
                 };
                 const trace_header = telemetry_ctx.finish(outcome, arena) catch "";
 
-                return ResponseResult{ .complete = try self.httpResponse(response, arena, false, keep_alive, trace_header, correlation) };
+                return ResponseResult{ .complete = try self.httpResponse(response, arena, false, keep_alive, trace_header, correlation_ctx) };
             }
         }
 
@@ -561,7 +508,7 @@ pub const Server = struct {
                         else => {},
                     }
 
-                    return try self.renderResponse(&ctx, &telemetry_ctx, decision, outcome, arena, keep_alive, correlation);
+                    return try self.renderResponse(&ctx, &telemetry_ctx, decision, outcome, arena, keep_alive, correlation_ctx);
                 }
             }
         }
@@ -577,7 +524,7 @@ pub const Server = struct {
             .error_ctx = not_found_error.ctx,
         };
 
-        return self.renderError(&ctx, &telemetry_ctx, not_found_error, outcome, arena, keep_alive, correlation);
+        return self.renderError(&ctx, &telemetry_ctx, not_found_error, outcome, arena, keep_alive, correlation_ctx);
     }
 
     /// Parse an HTTP request (MVP: very simplified).
@@ -625,8 +572,7 @@ pub const Server = struct {
             try self.parseQueryString(query_str, &query, arena);
         }
 
-        path = try arena.dupe(u8, path);
-        // TODO: Perf - Avoid re-duplicating the path slice when it already lives in the arena; keep a slice into `path_with_query` instead.
+        // path is already a slice into arena-allocated normalized_target, no need to duplicate
 
         // Parse headers (until empty line)
         var headers = std.StringHashMap(std.ArrayList([]const u8)).init(arena);
@@ -718,6 +664,7 @@ pub const Server = struct {
         }
 
         if (headers.get("accept")) |accept_values| {
+            // TODO: Negotiation: selection hardcodes text/plain; derive from route-supported representations instead of rejecting broadly.
             if (!http_headers.acceptsTextPlain(accept_values.items, self.allocator)) {
                 return error.NotAcceptable;
             }
@@ -762,6 +709,7 @@ pub const Server = struct {
 
                     if (coding.len == 0) continue;
 
+                    // TODO: RFC 9110: 'chunked' MUST NOT appear in TE; only 'trailers' token is defined here; consider rejecting 'chunked'.
                     if (std.ascii.eqlIgnoreCase(coding, "trailers") or std.ascii.eqlIgnoreCase(coding, "chunked")) {
                         if (!http_headers.qAllowsSelection(params, self.allocator)) {
                             unsupported_te = true;
@@ -820,6 +768,7 @@ pub const Server = struct {
         }
 
         if (has_transfer_encoding and content_length != null) {
+            // TODO: Error mapping: prefer 400 Bad Request for conflicting framing vs generic parse error; ensure consistent telemetry.
             return error.TransferEncodingConflict;
         }
 
@@ -845,6 +794,7 @@ pub const Server = struct {
             if (allowed_trailer_storage.count() != 0) {
                 allowed_trailers = &allowed_trailer_storage;
             }
+            // TODO: Restrict disallowed trailer fields (e.g., Content-Length, Host, Transfer-Encoding) per RFC; enforce at parse time.
         }
 
         if (has_trailer_header and !has_transfer_encoding) {
@@ -883,6 +833,7 @@ pub const Server = struct {
                 }
             } else {
                 // For other methods (POST, PUT, PATCH), require Content-Length
+                // TODO: RFC nuance: an absent length implies zero-length body; 411 Length Required is optional, not mandatory.
                 return error.ContentLengthRequired;
             }
         }
@@ -967,8 +918,14 @@ pub const Server = struct {
 
     /// URL decode a string per RFC 3986
     fn urlDecode(encoded: []const u8, arena: std.mem.Allocator) ![]const u8 {
+        // Fast-path: if no escapes present, return original slice (no allocation)
+        const has_escapes = for (encoded) |c| {
+            if (c == '%' or c == '+') break true;
+        } else false;
+
+        if (!has_escapes) return encoded;
+
         var result = try std.ArrayList(u8).initCapacity(arena, encoded.len);
-        // TODO: Perf - Fast-path strings without escapes to return the original slice and skip allocation.
         var i: usize = 0;
 
         while (i < encoded.len) {
@@ -1220,7 +1177,7 @@ pub const Server = struct {
         outcome: telemetry.RequestOutcome,
         arena: std.mem.Allocator,
         keep_alive: bool,
-        correlation: CorrelationContext,
+        correlation_ctx: CorrelationContext,
     ) !ResponseResult {
         const response = switch (decision) {
             .Continue => types.Response{ .status = http_status.ok, .body = .{ .complete = "OK" } },
@@ -1231,7 +1188,7 @@ pub const Server = struct {
                     slog.Attr.string("what", err.ctx.what),
                     slog.Attr.string("key", err.ctx.key),
                 });
-                return self.renderError(ctx, telemetry_ctx, err, outcome, arena, keep_alive, correlation);
+                return self.renderError(ctx, telemetry_ctx, err, outcome, arena, keep_alive, correlation_ctx);
             },
             .need => types.Response{ .status = http_status.internal_server_error, .body = .{ .complete = "Pipeline incomplete" } },
         };
@@ -1268,7 +1225,7 @@ pub const Server = struct {
                         .status = response.status,
                         .headers = response.headers,
                         .body = .{ .complete = "" },
-                    }, arena, true, keep_alive, trace_header, correlation);
+                    }, arena, true, keep_alive, trace_header, correlation_ctx);
 
                     return ResponseResult{ .complete = headers_only };
                 }
@@ -1277,7 +1234,7 @@ pub const Server = struct {
                     .status = response.status,
                     .headers = response.headers,
                     .body = .{ .complete = "" },
-                }, arena, false, keep_alive, trace_header, correlation);
+                }, arena, false, keep_alive, trace_header, correlation_ctx);
 
                 return ResponseResult{
                     .streaming = .{
@@ -1288,7 +1245,7 @@ pub const Server = struct {
                 };
             },
             .complete => {
-                const formatted = try self.httpResponse(response, arena, is_head, keep_alive, trace_header, correlation);
+                const formatted = try self.httpResponse(response, arena, is_head, keep_alive, trace_header, correlation_ctx);
                 return ResponseResult{ .complete = formatted };
             },
         }
@@ -1302,7 +1259,7 @@ pub const Server = struct {
         outcome: telemetry.RequestOutcome,
         arena: std.mem.Allocator,
         keep_alive: bool,
-        correlation: CorrelationContext,
+        correlation_ctx: CorrelationContext,
     ) !ResponseResult {
         ctx.last_error = _err;
         const response = try self.config.on_error(ctx);
@@ -1325,7 +1282,7 @@ pub const Server = struct {
         final_outcome.status_code = final_response.status;
         const trace_header = telemetry_ctx.finish(final_outcome, arena) catch "";
 
-        return ResponseResult{ .complete = try self.httpResponse(final_response, arena, is_head, keep_alive, trace_header, correlation) };
+        return ResponseResult{ .complete = try self.httpResponse(final_response, arena, is_head, keep_alive, trace_header, correlation_ctx) };
     }
 
     /// Parse chunked transfer encoding per RFC 9112 Section 6
@@ -1424,33 +1381,6 @@ pub const Server = struct {
         return result.items;
     }
 
-    /// Format timestamp as HTTP date (IMF-fixdate format per RFC 9110 Section 5.6.7)
-    fn formatHttpDate(arena: std.mem.Allocator, timestamp: i64) ![]const u8 {
-        std.debug.assert(timestamp >= 0);
-
-        const day_names = [_][]const u8{ "Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat" };
-        const month_names = [_][]const u8{ "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec" };
-
-        const epoch_seconds = std.time.epoch.EpochSeconds{ .secs = @as(u64, @intCast(timestamp)) };
-        const epoch_day = epoch_seconds.getEpochDay();
-        const year_day = epoch_day.calculateYearDay();
-        const calendar = year_day.calculateMonthDay();
-        const day_seconds = epoch_seconds.getDaySeconds();
-
-        const weekday_index = @as(usize, @intCast(@mod(epoch_day.day + 4, 7)));
-        const month_index = @as(usize, @intCast(@intFromEnum(calendar.month)));
-
-        return std.fmt.allocPrint(arena, "{s}, {d:0>2} {s} {d:0>4} {d:0>2}:{d:0>2}:{d:0>2} GMT", .{
-            day_names[weekday_index],
-            calendar.day_index + 1,
-            month_names[month_index],
-            year_day.year,
-            day_seconds.getHoursIntoDay(),
-            day_seconds.getMinutesIntoHour(),
-            day_seconds.getSecondsIntoMinute(),
-        });
-    }
-
     fn httpResponse(
         self: *Server,
         response: types.Response,
@@ -1458,343 +1388,25 @@ pub const Server = struct {
         is_head: bool,
         keep_alive: bool,
         trace_header: []const u8,
-        correlation: ?CorrelationContext,
+        correlation_ctx: ?CorrelationContext,
     ) ![]const u8 {
         _ = self;
 
-        var buf = std.ArrayList(u8).initCapacity(arena, 512) catch unreachable;
-        const w = buf.writer(arena);
-
-        // Get status text - RFC 9110 Section 15
-        const status_text = switch (response.status) {
-            // 1xx Informational
-            100 => "Continue",
-            101 => "Switching Protocols",
-            102 => "Processing",
-
-            // 2xx Successful
-            200 => "OK",
-            201 => "Created",
-            202 => "Accepted",
-            203 => "Non-Authoritative Information",
-            204 => "No Content",
-            205 => "Reset Content",
-            206 => "Partial Content",
-            207 => "Multi-Status",
-            208 => "Already Reported",
-            226 => "IM Used",
-
-            // 3xx Redirection
-            300 => "Multiple Choices",
-            301 => "Moved Permanently",
-            302 => "Found",
-            303 => "See Other",
-            304 => "Not Modified",
-            305 => "Use Proxy",
-            307 => "Temporary Redirect",
-            308 => "Permanent Redirect",
-
-            // 4xx Client Error
-            400 => "Bad Request",
-            401 => "Unauthorized",
-            402 => "Payment Required",
-            403 => "Forbidden",
-            404 => "Not Found",
-            405 => "Method Not Allowed",
-            406 => "Not Acceptable",
-            407 => "Proxy Authentication Required",
-            408 => "Request Timeout",
-            409 => "Conflict",
-            410 => "Gone",
-            411 => "Length Required",
-            412 => "Precondition Failed",
-            413 => "Payload Too Large",
-            414 => "URI Too Long",
-            415 => "Unsupported Media Type",
-            416 => "Range Not Satisfiable",
-            417 => "Expectation Failed",
-            418 => "I'm a teapot",
-            421 => "Misdirected Request",
-            422 => "Unprocessable Entity",
-            423 => "Locked",
-            424 => "Failed Dependency",
-            425 => "Too Early",
-            426 => "Upgrade Required",
-            428 => "Precondition Required",
-            429 => "Too Many Requests",
-            431 => "Request Header Fields Too Large",
-            451 => "Unavailable For Legal Reasons",
-
-            // 5xx Server Error
-            500 => "Internal Server Error",
-            501 => "Not Implemented",
-            502 => "Bad Gateway",
-            503 => "Service Unavailable",
-            504 => "Gateway Timeout",
-            505 => "HTTP Version Not Supported",
-            506 => "Variant Also Negotiates",
-            507 => "Insufficient Storage",
-            508 => "Loop Detected",
-            510 => "Not Extended",
-            511 => "Network Authentication Required",
-
-            else => "OK", // Default fallback
-        };
-
-        try w.print("HTTP/1.1 {} {s}\r\n", .{ response.status, status_text });
-
-        const status = response.status;
-        const send_date = !((status >= 100 and status < 200) or status == 204 or status == 304);
-        if (send_date and !headerExists(response.headers, "Date")) {
-            const now_raw = std.time.timestamp();
-            const now = @as(i64, @intCast(now_raw));
-            const date_str = try formatHttpDate(arena, now);
-            try w.print("Date: {s}\r\n", .{date_str});
-        }
-
-        // RFC 9110 Section 10.2.4 - Include Server header if not already present
-        if (!headerExists(response.headers, "Server")) {
-            try w.print("Server: Zerver/1.0\r\n", .{});
-        }
-
-        // RFC 9112 Section 9 - Include Connection header
-        if (keep_alive) {
-            try w.print("Connection: keep-alive\r\n", .{});
-        } else {
-            try w.print("Connection: close\r\n", .{});
-        }
-
-        if (trace_header.len > 0) {
-            try w.print("X-Zerver-Trace: {s}\r\n", .{trace_header});
-        }
-
-        if (correlation) |ctx_corr| {
-            if (ctx_corr.header_name.len != 0 and ctx_corr.header_value.len != 0 and
-                !headerExists(response.headers, ctx_corr.header_name))
-            {
-                try w.print("{s}: {s}\r\n", .{ ctx_corr.header_name, ctx_corr.header_value });
+        // Map CorrelationContext to CorrelationHeader for formatter
+        const correlation_header: ?response_formatter.CorrelationHeader = if (correlation_ctx) |ctx|
+            response_formatter.CorrelationHeader{
+                .name = ctx.header_name,
+                .value = ctx.header_value,
             }
-        }
+        else
+            null;
 
-        if (!headerExists(response.headers, "Content-Language")) {
-            try w.print("Content-Language: en\r\n", .{});
-        }
-
-        if (!headerExists(response.headers, "Vary")) {
-            try w.print("Vary: Accept, Accept-Encoding, Accept-Charset, Accept-Language\r\n", .{});
-        }
-
-        // Add custom headers from the response
-        for (response.headers) |header| {
-            if (!send_date and std.ascii.eqlIgnoreCase(header.name, "date")) continue;
-            try w.print("{s}: {s}\r\n", .{ header.name, header.value });
-        }
-
-        // Handle different response body types
-        switch (response.body) {
-            .complete => |body| {
-                // For complete responses, add Content-Length unless it's SSE
-                const is_sse = response.status == 200 and
-                    blk: {
-                        for (response.headers) |header| {
-                            if (std.ascii.eqlIgnoreCase(header.name, "content-type") and
-                                std.mem.eql(u8, header.value, "text/event-stream"))
-                            {
-                                break :blk true;
-                            }
-                        }
-                        break :blk false;
-                    };
-
-                if (!is_sse) {
-                    const has_custom_content_length = headerExists(response.headers, "Content-Length");
-                    if (!has_custom_content_length) {
-                        try w.print("Content-Length: {d}\r\n", .{body.len});
-                    }
-                }
-
-                try w.print("\r\n", .{});
-
-                // RFC 9110 Section 9.3.2 - HEAD responses must not include a message body
-                if (!is_head) {
-                    try w.writeAll(body);
-                }
-            },
-            .streaming => |streaming| {
-                // For streaming responses (SSE), never send Content-Length
-                try w.print("\r\n", .{});
-
-                // For SSE, we don't write the body here - it will be streamed later
-                // The streaming writer will be called by the handler
-                _ = streaming;
-            },
-        }
-
-        // RFC 9110 Section 9.3.2 - HEAD responses omit bodies; handlers can supply Content-Length for the corresponding GET representation.
-
-        return buf.items;
-    }
-
-    fn headerExists(headers: []const types.Header, name: []const u8) bool {
-        for (headers) |header| {
-            if (std.ascii.eqlIgnoreCase(header.name, name)) {
-                return true;
-            }
-        }
-        return false;
-    }
-
-    fn resolveCorrelation(
-        self: *Server,
-        headers: std.StringHashMap(std.ArrayList([]const u8)),
-        arena: std.mem.Allocator,
-    ) !CorrelationContext {
-        if (self.tryTraceparent(headers, arena)) |ctx| return ctx;
-        if (self.tryCorrelationHeader(headers, arena, "x-request-id", .x_request_id)) |ctx| return ctx;
-        if (self.tryCorrelationHeader(headers, arena, "x-correlation-id", .x_correlation_id)) |ctx| return ctx;
-        return try self.generateCorrelation(arena);
-    }
-
-    fn tryTraceparent(
-        self: *Server,
-        headers: std.StringHashMap(std.ArrayList([]const u8)),
-        arena: std.mem.Allocator,
-    ) ?CorrelationContext {
-        _ = self;
-        const values = headers.get("traceparent") orelse return null;
-        if (values.items.len == 0) return null;
-        const raw = std.mem.trim(u8, values.items[0], " \t");
-        if (raw.len == 0) return null;
-
-        if (parseTraceparent(arena, raw)) |parsed| {
-            return CorrelationContext{
-                .id = parsed.trace_id,
-                .header_name = "traceparent",
-                .header_value = parsed.header_value,
-                .source = .traceparent,
-            };
-        }
-
-        return null;
-    }
-
-    fn tryCorrelationHeader(
-        self: *Server,
-        headers: std.StringHashMap(std.ArrayList([]const u8)),
-        arena: std.mem.Allocator,
-        name: []const u8,
-        source: CorrelationSource,
-    ) ?CorrelationContext {
-        _ = self;
-        const values = headers.get(name) orelse return null;
-        if (values.items.len == 0) return null;
-        const raw = std.mem.trim(u8, values.items[0], " \t");
-        if (raw.len == 0) return null;
-
-        const owned = arena.dupe(u8, raw) catch return null;
-        const value_slice: []const u8 = owned;
-
-        return CorrelationContext{
-            .id = value_slice,
-            .header_name = name,
-            .header_value = value_slice,
-            .source = source,
-        };
-    }
-
-    fn generateCorrelation(self: *Server, arena: std.mem.Allocator) !CorrelationContext {
-        _ = self;
-        var entropy: [16]u8 = undefined;
-        std.crypto.random.bytes(&entropy);
-
-        const entropy_value = std.mem.bytesToValue(u128, &entropy);
-        var buf: [32]u8 = undefined;
-        const id_slice = std.fmt.bufPrint(&buf, "{x:0>32}", .{entropy_value}) catch unreachable;
-        const owned = try arena.dupe(u8, id_slice);
-        const id_value: []const u8 = owned;
-
-        return CorrelationContext{
-            .id = id_value,
-            .header_name = "x-request-id",
-            .header_value = id_value,
-            .source = .generated,
-        };
-    }
-
-    const TraceparentParts = struct {
-        trace_id: []const u8,
-        header_value: []const u8,
-    };
-
-    fn parseTraceparent(arena: std.mem.Allocator, value: []const u8) ?TraceparentParts {
-        var parts = std.mem.splitScalar(u8, value, '-');
-        const version = parts.next() orelse return null;
-        const trace_id = parts.next() orelse return null;
-        const span_id = parts.next() orelse return null;
-        const flags = parts.next() orelse return null;
-        if (parts.next() != null) return null;
-
-        if (version.len != 2 or trace_id.len != 32 or span_id.len != 16 or flags.len != 2) return null;
-        if (!isHexSlice(version) or !isHexSlice(trace_id) or !isHexSlice(span_id) or !isHexSlice(flags)) return null;
-        if (std.mem.allEqual(u8, trace_id, '0') or std.mem.allEqual(u8, span_id, '0')) return null;
-
-        const header_value_owned = arena.dupe(u8, value) catch return null;
-        const trace_id_owned = arena.dupe(u8, trace_id) catch return null;
-
-        return TraceparentParts{
-            .trace_id = @as([]const u8, trace_id_owned),
-            .header_value = @as([]const u8, header_value_owned),
-        };
-    }
-
-    fn isHexSlice(value: []const u8) bool {
-        for (value) |c| {
-            const is_digit = c >= '0' and c <= '9';
-            const is_lower = c >= 'a' and c <= 'f';
-            const is_upper = c >= 'A' and c <= 'F';
-            if (!(is_digit or is_lower or is_upper)) return false;
-        }
-        return true;
-    }
-
-    /// Get allowed methods for a given path (RFC 9110 Section 9.3.7)
-    fn getAllowedMethods(self: *Server, path: []const u8, arena: std.mem.Allocator) ![]const u8 {
-        var allowed = try std.ArrayList(u8).initCapacity(arena, 64);
-
-        // Check each method to see if there's a route for it
-        const methods = [_]types.Method{ .GET, .HEAD, .POST, .PUT, .DELETE, .PATCH, .OPTIONS };
-        // CONNECT and TRACE (RFC 9110 Sections 9.3.6, 9.3.8) demand bespoke behaviors, so we intentionally omit them from the generic Allow synthesis.
-
-        for (methods) |method| {
-            var match_found = self.router.match(method, path, arena) catch null;
-            if (match_found == null and method == .HEAD) {
-                match_found = self.router.match(.GET, path, arena) catch null;
-            }
-
-            if (match_found != null) {
-                if (allowed.items.len > 0) try allowed.appendSlice(arena, ", ");
-                const method_str = switch (method) {
-                    .GET => "GET",
-                    .HEAD => "HEAD",
-                    .POST => "POST",
-                    .PUT => "PUT",
-                    .DELETE => "DELETE",
-                    .PATCH => "PATCH",
-                    .OPTIONS => "OPTIONS",
-                    else => continue,
-                };
-                try allowed.appendSlice(arena, method_str);
-            }
-        }
-
-        // Always allow OPTIONS
-        if (allowed.items.len == 0) {
-            try allowed.appendSlice(arena, "OPTIONS");
-        } else if (!std.mem.containsAtLeast(u8, allowed.items, 1, "OPTIONS")) {
-            try allowed.appendSlice(arena, ", OPTIONS");
-        }
-
-        return allowed.items;
+        return response_formatter.formatResponse(arena, response, .{
+            .is_head = is_head,
+            .keep_alive = keep_alive,
+            .trace_header = trace_header,
+            .correlation_header = correlation_header,
+        });
     }
 
     /// Start listening for HTTP requests (blocking).

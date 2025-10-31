@@ -1,7 +1,8 @@
 // build.zig
 const std = @import("std");
 
-const libuv_source_files = [_][]const u8{
+// libuv source files - common to all platforms
+const libuv_common_sources = [_][]const u8{
     "third_party/libuv/src/fs-poll.c",
     "third_party/libuv/src/idna.c",
     "third_party/libuv/src/inet.c",
@@ -14,6 +15,52 @@ const libuv_source_files = [_][]const u8{
     "third_party/libuv/src/uv-common.c",
     "third_party/libuv/src/uv-data-getter-setters.c",
     "third_party/libuv/src/version.c",
+};
+
+// libuv source files - Unix/POSIX platforms (Linux, macOS, BSD)
+const libuv_unix_sources = [_][]const u8{
+    "third_party/libuv/src/unix/async.c",
+    "third_party/libuv/src/unix/core.c",
+    "third_party/libuv/src/unix/dl.c",
+    "third_party/libuv/src/unix/fs.c",
+    "third_party/libuv/src/unix/getaddrinfo.c",
+    "third_party/libuv/src/unix/getnameinfo.c",
+    "third_party/libuv/src/unix/loop-watcher.c",
+    "third_party/libuv/src/unix/loop.c",
+    "third_party/libuv/src/unix/pipe.c",
+    "third_party/libuv/src/unix/poll.c",
+    "third_party/libuv/src/unix/process.c",
+    "third_party/libuv/src/unix/random-devurandom.c",
+    "third_party/libuv/src/unix/signal.c",
+    "third_party/libuv/src/unix/stream.c",
+    "third_party/libuv/src/unix/tcp.c",
+    "third_party/libuv/src/unix/thread.c",
+    "third_party/libuv/src/unix/tty.c",
+    "third_party/libuv/src/unix/udp.c",
+};
+
+// libuv source files - macOS/Darwin specific
+const libuv_darwin_sources = [_][]const u8{
+    "third_party/libuv/src/unix/proctitle.c",
+    "third_party/libuv/src/unix/bsd-ifaddrs.c",
+    "third_party/libuv/src/unix/kqueue.c",
+    "third_party/libuv/src/unix/random-getentropy.c",
+    "third_party/libuv/src/unix/darwin-proctitle.c",
+    "third_party/libuv/src/unix/darwin.c",
+    "third_party/libuv/src/unix/fsevents.c",
+};
+
+// libuv source files - Linux specific
+const libuv_linux_sources = [_][]const u8{
+    "third_party/libuv/src/unix/proctitle.c",
+    "third_party/libuv/src/unix/linux.c",
+    "third_party/libuv/src/unix/procfs-exepath.c",
+    "third_party/libuv/src/unix/random-getrandom.c",
+    "third_party/libuv/src/unix/random-sysctl-linux.c",
+};
+
+// libuv source files - Windows specific
+const libuv_windows_sources = [_][]const u8{
     "third_party/libuv/src/win/async.c",
     "third_party/libuv/src/win/core.c",
     "third_party/libuv/src/win/detect-wakeup.c",
@@ -41,7 +88,8 @@ const libuv_source_files = [_][]const u8{
     "third_party/libuv/src/win/winsock.c",
 };
 
-const libuv_system_libs = [_][]const u8{
+// libuv system libraries - Windows only
+const libuv_windows_libs = [_][]const u8{
     "psapi",
     "user32",
     "advapi32",
@@ -53,17 +101,71 @@ const libuv_system_libs = [_][]const u8{
     "shell32",
 };
 
-fn addLibuv(b: *std.Build, artifact: *std.Build.Step.Compile) void {
+/// Add libuv to the build with proper cross-platform detection
+fn addLibuv(b: *std.Build, artifact: *std.Build.Step.Compile, target: std.Build.ResolvedTarget) void {
+    const os_tag = target.result.os.tag;
+
+    // Add include paths (common to all platforms)
     artifact.root_module.addIncludePath(b.path("third_party/libuv/include"));
     artifact.root_module.addIncludePath(b.path("third_party/libuv/src"));
-    inline for (libuv_source_files) |path| {
+
+    // Add common sources (all platforms)
+    inline for (libuv_common_sources) |path| {
         artifact.addCSourceFile(.{ .file = b.path(path), .flags = &[_][]const u8{} });
     }
-    artifact.root_module.addCMacro("WIN32_LEAN_AND_MEAN", "1");
-    artifact.root_module.addCMacro("_WIN32_WINNT", "0x0A00");
-    artifact.root_module.addCMacro("_CRT_DECLARE_NONSTDC_NAMES", "0");
-    inline for (libuv_system_libs) |name| {
-        artifact.linkSystemLibrary(name);
+
+    // Add platform-specific sources and configuration
+    if (os_tag == .windows) {
+        // Windows-specific configuration
+        artifact.root_module.addCMacro("WIN32_LEAN_AND_MEAN", "1");
+        artifact.root_module.addCMacro("_WIN32_WINNT", "0x0A00");
+        artifact.root_module.addCMacro("_CRT_DECLARE_NONSTDC_NAMES", "0");
+
+        // Add Windows sources
+        inline for (libuv_windows_sources) |path| {
+            artifact.addCSourceFile(.{ .file = b.path(path), .flags = &[_][]const u8{} });
+        }
+
+        // Link Windows system libraries
+        inline for (libuv_windows_libs) |name| {
+            artifact.linkSystemLibrary(name);
+        }
+    } else if (os_tag == .macos) {
+        // macOS-specific configuration
+        artifact.root_module.addCMacro("_DARWIN_UNLIMITED_SELECT", "1");
+        artifact.root_module.addCMacro("_DARWIN_USE_64_BIT_INODE", "1");
+
+        // Add Unix base sources
+        inline for (libuv_unix_sources) |path| {
+            artifact.addCSourceFile(.{ .file = b.path(path), .flags = &[_][]const u8{} });
+        }
+
+        // Add Darwin-specific sources
+        inline for (libuv_darwin_sources) |path| {
+            artifact.addCSourceFile(.{ .file = b.path(path), .flags = &[_][]const u8{} });
+        }
+
+        // macOS doesn't need explicit pthread linking (part of libSystem)
+    } else if (os_tag == .linux) {
+        // Linux-specific configuration
+        artifact.root_module.addCMacro("_GNU_SOURCE", "1");
+        artifact.root_module.addCMacro("_POSIX_C_SOURCE", "200112");
+
+        // Add Unix base sources
+        inline for (libuv_unix_sources) |path| {
+            artifact.addCSourceFile(.{ .file = b.path(path), .flags = &[_][]const u8{} });
+        }
+
+        // Add Linux-specific sources
+        inline for (libuv_linux_sources) |path| {
+            artifact.addCSourceFile(.{ .file = b.path(path), .flags = &[_][]const u8{} });
+        }
+
+        // Link pthread on Linux
+        artifact.linkSystemLibrary("pthread");
+    } else {
+        std.debug.print("ERROR: Unsupported platform '{s}'. Zerver currently supports Windows, macOS, and Linux.\n", .{@tagName(os_tag)});
+        std.process.exit(1);
     }
 }
 
@@ -115,8 +217,9 @@ pub fn build(b: *std.Build) void {
         },
     });
     exe.linkLibC();
-    addLibuv(b, exe);
-    b.installArtifact(exe);
+    addLibuv(b, exe, target);
+    // NOTE: Disabled - main.zig uses old monolithic architecture that was replaced by DLLs
+    // b.installArtifact(exe);
 
     const run_cmd = b.addRunArtifact(exe);
     run_cmd.step.dependOn(b.getInstallStep());
@@ -125,28 +228,49 @@ pub fn build(b: *std.Build) void {
     run_step.dependOn(&run_cmd.step);
 
     // Development helper steps
-    // Create zerver module with proper paths
+    // Create zerver module with proper paths and platform-specific configuration
     const zerver_mod = b.createModule(.{
         .root_source_file = b.path("src/zerver/root.zig"),
     });
     zerver_mod.addIncludePath(b.path("third_party/libuv/include"));
     zerver_mod.addIncludePath(b.path("third_party/libuv/src"));
-    zerver_mod.addCMacro("WIN32_LEAN_AND_MEAN", "1");
-    zerver_mod.addCMacro("_WIN32_WINNT", "0x0A00");
-    zerver_mod.addCMacro("_CRT_DECLARE_NONSTDC_NAMES", "0");
 
-    const runtime_config_mod = b.createModule(.{
-        .root_source_file = b.path("src/zerver/runtime/config.zig"),
+    // Create zupervisor module for slot-effect system
+    const zupervisor_mod = b.createModule(.{
+        .root_source_file = b.path("src/zupervisor/slot_effect.zig"),
     });
 
-    exe.root_module.addImport("runtime_config", runtime_config_mod);
+    // Add platform-specific macros for the zerver module
+    switch (target.result.os.tag) {
+        .windows => {
+            zerver_mod.addCMacro("WIN32_LEAN_AND_MEAN", "1");
+            zerver_mod.addCMacro("_WIN32_WINNT", "0x0A00");
+            zerver_mod.addCMacro("_CRT_DECLARE_NONSTDC_NAMES", "0");
+        },
+        .macos => {
+            zerver_mod.addCMacro("_DARWIN_UNLIMITED_SELECT", "1");
+            zerver_mod.addCMacro("_DARWIN_USE_64_BIT_INODE", "1");
+        },
+        .linux => {
+            zerver_mod.addCMacro("_GNU_SOURCE", "1");
+            zerver_mod.addCMacro("_POSIX_C_SOURCE", "200112");
+        },
+        else => {},
+    }
 
-    zerver_mod.addImport("runtime_config", runtime_config_mod);
+    // NOTE: runtime_config module commented out - files use relative imports instead
+    // const runtime_config_mod = b.createModule(.{
+    //     .root_source_file = b.path("src/zerver/runtime/config.zig"),
+    // });
+
+    // exe.root_module.addImport("runtime_config", runtime_config_mod);
+
+    // zerver_mod.addImport("runtime_config", runtime_config_mod);
 
     const bootstrap_helpers_mod = b.createModule(.{
         .root_source_file = b.path("src/zerver/bootstrap_helpers.zig"),
     });
-    bootstrap_helpers_mod.addImport("runtime_config", runtime_config_mod);
+    // bootstrap_helpers_mod.addImport("runtime_config", runtime_config_mod);
 
     const timeout_runner = b.addExecutable(.{
         .name = "test_timeout_runner",
@@ -179,7 +303,7 @@ pub fn build(b: *std.Build) void {
         }),
     });
     libuv_smoke.linkLibC();
-    addLibuv(b, libuv_smoke);
+    addLibuv(b, libuv_smoke, target);
     const libuv_smoke_step = b.step("libuv_smoke", "Run the libuv smoke test");
     _ = addTimedTestRun(b, timeout_runner, libuv_smoke, &.{ test_step, libuv_smoke_step });
 
@@ -214,7 +338,7 @@ pub fn build(b: *std.Build) void {
     });
     effectors_tests.root_module.addImport("zerver", zerver_mod);
     effectors_tests.linkLibC();
-    addLibuv(b, effectors_tests);
+    addLibuv(b, effectors_tests, target);
     _ = addTimedTestRun(b, timeout_runner, effectors_tests, &.{reactor_tests_step});
 
     const util_helper_tests = b.addTest(.{
@@ -306,7 +430,7 @@ pub fn build(b: *std.Build) void {
     });
     libuv_async_tests.root_module.addImport("zerver", zerver_mod);
     libuv_async_tests.linkLibC();
-    addLibuv(b, libuv_async_tests);
+    addLibuv(b, libuv_async_tests, target);
     _ = addTimedTestRun(b, timeout_runner, libuv_async_tests, &.{reactor_tests_step});
 
     const sql_ast_tests = b.addTest(.{
@@ -387,7 +511,7 @@ pub fn build(b: *std.Build) void {
     });
     bootstrap_init_tests.root_module.addImport("zerver", zerver_mod);
     bootstrap_init_tests.root_module.addImport("bootstrap_helpers", bootstrap_helpers_mod);
-    bootstrap_init_tests.root_module.addImport("runtime_config", runtime_config_mod);
+    // bootstrap_init_tests.root_module.addImport("runtime_config", runtime_config_mod);
     _ = addTimedTestRun(b, timeout_runner, bootstrap_init_tests, &.{test_step});
 
     const saga_tests = b.addTest(.{
@@ -451,6 +575,91 @@ pub fn build(b: *std.Build) void {
     const blog_run_step = b.step("run_blog", "Run the blog CRUD example");
     blog_run_step.dependOn(&blog_run_cmd.step);
 
+    // Slot-effect pipeline demo executable (simple self-contained version)
+    const slot_effect_demo = b.addExecutable(.{
+        .name = "slot_effect_demo",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("examples/slot_effect_simple_demo.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+
+    slot_effect_demo.root_module.addImport("slot_effect", zupervisor_mod);
+    b.installArtifact(slot_effect_demo);
+
+    const slot_effect_demo_run_cmd = b.addRunArtifact(slot_effect_demo);
+    slot_effect_demo_run_cmd.step.dependOn(b.getInstallStep());
+
+    const slot_effect_demo_run_step = b.step("run_slot_demo", "Run the slot-effect pipeline demo");
+    slot_effect_demo_run_step.dependOn(&slot_effect_demo_run_cmd.step);
+
+    // ========================================================================
+    // Multi-Process Architecture: Zingest + Zupervisor
+    // ========================================================================
+
+    // Zingest executable (HTTP Ingest Server - Process 1)
+    const zingest_exe = b.addExecutable(.{
+        .name = "zingest",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/zingest/main.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+
+    zingest_exe.root_module.addImport("zerver", zerver_mod);
+    zingest_exe.linkLibC();
+    addLibuv(b, zingest_exe, target);
+
+    b.installArtifact(zingest_exe);
+
+    const zingest_run_cmd = b.addRunArtifact(zingest_exe);
+    zingest_run_cmd.step.dependOn(b.getInstallStep());
+
+    const zingest_run_step = b.step("run_zingest", "Run the Zingest HTTP ingest server");
+    zingest_run_step.dependOn(&zingest_run_cmd.step);
+
+    // Zupervisor executable (Supervisor with Hot Reload - Process 2)
+    const zupervisor_exe = b.addExecutable(.{
+        .name = "zupervisor",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("src/zupervisor/main.zig"),
+            .target = target,
+            .optimize = optimize,
+        }),
+    });
+
+    zupervisor_exe.root_module.addImport("zerver", zerver_mod);
+    zupervisor_exe.linkLibC();
+    addLibuv(b, zupervisor_exe, target);
+
+    // Add SQLite for database effect executors
+    zupervisor_exe.addCSourceFile(.{
+        .file = b.path("src/zerver/sql/dialects/sqlite/c/sqlite3.c"),
+        .flags = &[_][]const u8{
+            "-DSQLITE_ENABLE_JSON1",
+            "-DSQLITE_THREADSAFE=1",
+        },
+    });
+
+    b.installArtifact(zupervisor_exe);
+
+    const zupervisor_run_cmd = b.addRunArtifact(zupervisor_exe);
+    zupervisor_run_cmd.step.dependOn(b.getInstallStep());
+
+    const zupervisor_run_step = b.step("run_zupervisor", "Run the Zupervisor with hot reload");
+    zupervisor_run_step.dependOn(&zupervisor_run_cmd.step);
+
+    // ========================================================================
+    // Feature DLLs - Slot-Effect Architecture
+    // ========================================================================
+
+    // Note: Skipping auth DLL build for now - will add proper module support later
+    // The auth_slot_effect code is complete and tested, but needs proper build integration
+    const auth_dll_step = b.step("auth_dll", "Build the auth feature DLL (not implemented yet)");
+    _ = auth_dll_step;
+
     // Teams example executable - commented out due to compilation errors
     const reqtest_runner = b.addTest(.{
         .root_module = b.createModule(.{
@@ -471,7 +680,7 @@ pub fn build(b: *std.Build) void {
     });
     rfc9110_tests.root_module.addImport("zerver", zerver_mod);
     rfc9110_tests.linkLibC();
-    addLibuv(b, rfc9110_tests);
+    addLibuv(b, rfc9110_tests, target);
     _ = addTimedTestRun(b, timeout_runner, rfc9110_tests, &.{ test_step, integration_step });
 
     const rfc9112_tests = b.addTest(.{
@@ -483,7 +692,7 @@ pub fn build(b: *std.Build) void {
     });
     rfc9112_tests.root_module.addImport("zerver", zerver_mod);
     rfc9112_tests.linkLibC();
-    addLibuv(b, rfc9112_tests);
+    addLibuv(b, rfc9112_tests, target);
     _ = addTimedTestRun(b, timeout_runner, rfc9112_tests, &.{ test_step, integration_step });
 
     const router_tests = b.addTest(.{
@@ -495,7 +704,7 @@ pub fn build(b: *std.Build) void {
     });
     router_tests.root_module.addImport("zerver", zerver_mod);
     router_tests.linkLibC();
-    addLibuv(b, router_tests);
+    addLibuv(b, router_tests, target);
     _ = addTimedTestRun(b, timeout_runner, router_tests, &.{ test_step, integration_step });
     // teams_run_cmd.step.dependOn(b.getInstallStep());
 

@@ -265,6 +265,35 @@ pub const StepJobResumedEvent = struct {
     timestamp_ms: u64,
 };
 
+/// Fired when a compute task budget is registered.
+pub const ComputeBudgetRegisteredEvent = struct {
+    request_id: []const u8,
+    token: u32,
+    allocated_ms: u32,
+    priority: u8,
+    yield_interval_ms: u32,
+    timestamp_ms: u64,
+};
+
+/// Fired when a compute task exceeds its budget.
+pub const ComputeBudgetExceededEvent = struct {
+    request_id: []const u8,
+    token: u32,
+    allocated_ms: u32,
+    used_ms: u32,
+    action: []const u8, // park|reject
+    timestamp_ms: u64,
+};
+
+/// Fired when a compute task cooperatively yields.
+pub const ComputeBudgetYieldEvent = struct {
+    request_id: []const u8,
+    token: u32,
+    elapsed_ms: u32,
+    yield_interval_ms: u32,
+    timestamp_ms: u64,
+};
+
 /// Union of all telemetry signals publishable to subscribers.
 pub const Event = union(enum) {
     request_start: RequestStartEvent,
@@ -289,6 +318,9 @@ pub const Event = union(enum) {
     step_job_taken: StepJobTakenEvent,
     step_job_parked: StepJobParkedEvent,
     step_job_resumed: StepJobResumedEvent,
+    compute_budget_registered: ComputeBudgetRegisteredEvent,
+    compute_budget_exceeded: ComputeBudgetExceededEvent,
+    compute_budget_yield: ComputeBudgetYieldEvent,
 };
 
 /// Options supplied when building per-request telemetry.
@@ -1089,6 +1121,84 @@ pub const Telemetry = struct {
             .request_id = self.request_id,
             .phase = phase,
             .error_name = error_name,
+        } });
+    }
+
+    pub const ComputeBudgetRegisteredDetails = struct {
+        token: u32,
+        allocated_ms: u32,
+        priority: u8,
+        yield_interval_ms: u32,
+    };
+
+    pub fn computeBudgetRegistered(self: *Telemetry, details: ComputeBudgetRegisteredDetails) void {
+        const timestamp_ms = std.time.milliTimestamp();
+        self.logDebug("compute_budget_registered", &.{
+            slog.Attr.string("request_id", self.request_id),
+            slog.Attr.uint("token", details.token),
+            slog.Attr.uint("allocated_ms", details.allocated_ms),
+            slog.Attr.uint("priority", details.priority),
+            slog.Attr.uint("yield_interval_ms", details.yield_interval_ms),
+        });
+
+        self.emit(.{ .compute_budget_registered = .{
+            .request_id = self.request_id,
+            .token = details.token,
+            .allocated_ms = details.allocated_ms,
+            .priority = details.priority,
+            .yield_interval_ms = details.yield_interval_ms,
+            .timestamp_ms = @as(u64, @intCast(timestamp_ms)),
+        } });
+    }
+
+    pub const ComputeBudgetExceededDetails = struct {
+        token: u32,
+        allocated_ms: u32,
+        used_ms: u32,
+        action: []const u8, // "park" or "reject"
+    };
+
+    pub fn computeBudgetExceeded(self: *Telemetry, details: ComputeBudgetExceededDetails) void {
+        const timestamp_ms = std.time.milliTimestamp();
+        self.logDebug("compute_budget_exceeded", &.{
+            slog.Attr.string("request_id", self.request_id),
+            slog.Attr.uint("token", details.token),
+            slog.Attr.uint("allocated_ms", details.allocated_ms),
+            slog.Attr.uint("used_ms", details.used_ms),
+            slog.Attr.string("action", details.action),
+        });
+
+        self.emit(.{ .compute_budget_exceeded = .{
+            .request_id = self.request_id,
+            .token = details.token,
+            .allocated_ms = details.allocated_ms,
+            .used_ms = details.used_ms,
+            .action = details.action,
+            .timestamp_ms = @as(u64, @intCast(timestamp_ms)),
+        } });
+    }
+
+    pub const ComputeBudgetYieldDetails = struct {
+        token: u32,
+        elapsed_ms: u32,
+        yield_interval_ms: u32,
+    };
+
+    pub fn computeBudgetYield(self: *Telemetry, details: ComputeBudgetYieldDetails) void {
+        const timestamp_ms = std.time.milliTimestamp();
+        self.logDebug("compute_budget_yield", &.{
+            slog.Attr.string("request_id", self.request_id),
+            slog.Attr.uint("token", details.token),
+            slog.Attr.uint("elapsed_ms", details.elapsed_ms),
+            slog.Attr.uint("yield_interval_ms", details.yield_interval_ms),
+        });
+
+        self.emit(.{ .compute_budget_yield = .{
+            .request_id = self.request_id,
+            .token = details.token,
+            .elapsed_ms = details.elapsed_ms,
+            .yield_interval_ms = details.yield_interval_ms,
+            .timestamp_ms = @as(u64, @intCast(timestamp_ms)),
         } });
     }
 
