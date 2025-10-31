@@ -51,6 +51,13 @@ const DLLHandler = struct {
     dll_version: *DLL,
 };
 
+/// Route entry for atomic route swapping
+const RouteEntry = struct {
+    method: types.Method,
+    path: []const u8,
+    handler: DLLHandler,
+};
+
 /// Simple DLL router (replaces RouteSpec-based router for DLL handlers)
 const DLLRouter = struct {
     allocator: std.mem.Allocator,
@@ -84,6 +91,25 @@ const DLLRouter = struct {
         var buf: [256]u8 = undefined;
         const key_str = std.fmt.bufPrint(&buf, "{s}:{s}", .{ method_str, path }) catch return null;
         return self.routes.get(key_str);
+    }
+
+    /// Replace all routes atomically (for hot-reload)
+    /// Clears existing routes and adds new ones from the provided list
+    fn replaceAllRoutes(
+        self: *DLLRouter,
+        new_routes: []const RouteEntry,
+    ) !void {
+        // Clear old routes (freeing all keys)
+        var iter = self.routes.keyIterator();
+        while (iter.next()) |key| {
+            self.allocator.free(key.*);
+        }
+        self.routes.clearRetainingCapacity();
+
+        // Add all new routes
+        for (new_routes) |route| {
+            try self.addRoute(route.method, route.path, route.handler);
+        }
     }
 };
 
@@ -140,6 +166,36 @@ const RouterBuilder = struct {
             self.allocator.free(route.path);
         }
         self.routes.deinit(self.allocator);
+    }
+
+    /// Transfer routes from this builder to the DLLRouter atomically
+    /// This is used after featureInit() completes to activate the new routes
+    fn transferToRouter(self: *RouterBuilder, old_dll: ?*DLL) !void {
+        // Build route list with DLL handlers
+        const route_list = try self.allocator.alloc(RouteEntry, self.routes.items.len);
+        defer self.allocator.free(route_list);
+
+        for (self.routes.items, 0..) |route, i| {
+            route_list[i] = .{
+                .method = route.method,
+                .path = route.path,
+                .handler = .{
+                    .func = route.handler,
+                    .dll_version = self.reg_ctx.dll,
+                },
+            };
+        }
+
+        // Lock and replace routes atomically
+        self.reg_ctx.dll_router_mutex.lock();
+        defer self.reg_ctx.dll_router_mutex.unlock();
+
+        try self.reg_ctx.dll_router.replaceAllRoutes(route_list);
+
+        // Release old DLL if hot-reloading
+        if (old_dll) |old| {
+            old.release();
+        }
     }
 };
 
@@ -503,7 +559,19 @@ fn loadInitialDLLs(
             slog.Attr.int("routes_registered", @intCast(router_builder.routes.items.len)),
         });
 
-        // TODO: Build router with registered routes and swap atomically
+        // Transfer routes from builder to active router
+        router_builder.transferToRouter(null) catch |err| {
+            slog.err("Failed to transfer routes to router", &.{
+                slog.Attr.string("dll", entry.name),
+                slog.Attr.string("error", @errorName(err)),
+            });
+            continue;
+        };
+
+        slog.info("Routes activated", &.{
+            slog.Attr.string("dll", entry.name),
+        });
+
         _ = atomic_router;
     }
 }
@@ -622,6 +690,9 @@ fn hotReloadLoop(
 ) !void {
     slog.info("Hot reload loop started", &.{});
 
+    // Get global context for DLL router access
+    const context = g_context orelse return error.ContextNotInitialized;
+
     while (true) {
         std.Thread.sleep(DEFAULT_WATCH_INTERVAL_MS * std.time.ns_per_ms);
 
@@ -649,19 +720,82 @@ fn hotReloadLoop(
                 continue;
             };
 
-            // TODO: Implement full DLL hot reload
-            // 1. Load new DLL using DLL.load()
-            // 2. Create new DLLVersion using DLLVersion.init()
-            // 3. Rebuild router with new DLL's routes
-            // 4. Swap router atomically using router_lifecycle
-            // 5. Drain old version and unload when safe
+            // Step 1: Load new DLL
+            const dll = DLL.load(allocator, full_path) catch |err| {
+                slog.err("Failed to load DLL for hot reload", &.{
+                    slog.Attr.string("file", filename),
+                    slog.Attr.string("error", @errorName(err)),
+                });
+                continue;
+            };
+            errdefer dll.release();
 
+            slog.info("Hot reload: DLL loaded successfully", &.{
+                slog.Attr.string("path", full_path),
+                slog.Attr.string("version", dll.getVersion()),
+            });
+
+            // Step 2: Create route registration context
+            var reg_ctx = RouteRegistrationContext{
+                .dll = dll,
+                .dll_router = &context.dll_router,
+                .dll_router_mutex = &context.dll_router_mutex,
+                .slot_effect_adapter = context.slot_effect_adapter,
+            };
+
+            // Step 3: Create router builder for this DLL
+            var router_builder = RouterBuilder.init(allocator, &reg_ctx) catch |err| {
+                slog.err("Hot reload: Failed to create router builder", &.{
+                    slog.Attr.string("file", filename),
+                    slog.Attr.string("error", @errorName(err)),
+                });
+                continue;
+            };
+            defer router_builder.deinit();
+
+            // Step 4: Temporarily swap router and call featureInit
+            const original_router = g_server_adapter.router;
+            g_server_adapter.router = @ptrCast(&router_builder);
+            defer g_server_adapter.router = original_router;
+
+            const init_result = dll.featureInit(@ptrCast(@constCast(&g_server_adapter)));
+            if (init_result != 0) {
+                slog.err("Hot reload: DLL init failed", &.{
+                    slog.Attr.string("file", filename),
+                    slog.Attr.int("result_code", init_result),
+                });
+                continue;
+            }
+
+            // Step 5: Transfer routes from builder to active router
+            // NOTE: old_dll=null because version_manager isn't implemented yet
+            // This means old DLLs will leak memory until version management is added
+            const route_count = router_builder.routes.items.len;
+            router_builder.transferToRouter(null) catch |err| {
+                slog.err("Hot reload: Failed to transfer routes", &.{
+                    slog.Attr.string("file", filename),
+                    slog.Attr.string("error", @errorName(err)),
+                });
+                continue;
+            };
+
+            // Step 6: Log success
+            slog.info("Hot reload completed successfully", &.{
+                slog.Attr.string("file", filename),
+                slog.Attr.string("path", full_path),
+                slog.Attr.string("version", dll.getVersion()),
+                slog.Attr.int("routes_registered", @intCast(route_count)),
+            });
+
+            slog.info("Routes activated for hot reload", &.{
+                slog.Attr.string("file", filename),
+            });
+
+            // TODO: Future enhancements
+            // - Use version_manager for old DLL cleanup and pass to transferToRouter
+            // - Use router_lifecycle for atomic swap
             _ = version_manager;
             _ = router_lifecycle;
-
-            slog.info("Hot reload triggered (not yet implemented)", &.{
-                slog.Attr.string("path", full_path),
-            });
         }
     }
 }

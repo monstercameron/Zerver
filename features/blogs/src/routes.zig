@@ -1,5 +1,6 @@
 // features/blogs/src/routes.zig
 /// Blog routes DLL - provides /blogs endpoint with database integration
+/// Hot-reload test: This comment added to trigger DLL rebuild
 
 const std = @import("std");
 
@@ -574,7 +575,7 @@ fn buildHomepageHTML(allocator: std.mem.Allocator) ![]const u8 {
                 .cta_href = "#portfolio",
             },
             .resume_section = .{
-                .image_src = "https://earlcameron.com/profile.jpg",
+                .image_src = "https://www.earlcameron.com/static/images/profile-sm.jpg",
                 .image_alt = "Earl Cameron",
                 .description = "Over a decade of experience building high-performance backend systems, cloud infrastructure, and developer tools.",
                 .resume_url = "/static/resume.pdf",

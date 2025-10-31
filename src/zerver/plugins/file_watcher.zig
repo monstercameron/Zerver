@@ -64,6 +64,7 @@ const KqueueImpl = struct {
     allocator: std.mem.Allocator,
     kq: std.posix.fd_t,
     watch_dir: std.fs.Dir,
+    watch_dir_fd: std.posix.fd_t,
     watched_files: std.StringHashMap(WatchedFile),
 
     const WatchedFile = struct {
@@ -77,17 +78,44 @@ const KqueueImpl = struct {
         const kq = try std.posix.kqueue();
         errdefer std.posix.close(kq);
 
+        const dir_fd = dir.fd;
+
         var impl = KqueueImpl{
             .allocator = allocator,
             .kq = kq,
             .watch_dir = dir,
+            .watch_dir_fd = dir_fd,
             .watched_files = std.StringHashMap(WatchedFile).init(allocator),
         };
 
-        // Initial scan and setup watches
+        // Watch the directory for new file events
+        try impl.watchDirectory();
+
+        // Initial scan and setup watches on existing files
         try impl.scanAndWatch();
 
         return impl;
+    }
+
+    fn watchDirectory(self: *KqueueImpl) !void {
+        // Register kevent for directory VNODE changes
+        var event: std.c.Kevent = undefined;
+        // NOTE_WRITE = directory modified (file created, deleted, renamed)
+        const fflags: u32 = 0x0002; // NOTE_WRITE
+
+        event.ident = @intCast(self.watch_dir_fd);
+        event.filter = -4; // EVFILT_VNODE
+        event.flags = 0x0001 | 0x0020; // EV_ADD | EV_CLEAR
+        event.fflags = fflags;
+        event.data = 0;
+        event.udata = 0;
+
+        const changelist = [_]std.c.Kevent{event};
+        _ = try std.posix.kevent(self.kq, &changelist, &[0]std.c.Kevent{}, null);
+
+        slog.debug("Added directory watch", &.{
+            slog.Attr.int("fd", self.watch_dir_fd),
+        });
     }
 
     fn deinit(self: *KqueueImpl) void {
@@ -191,6 +219,20 @@ const KqueueImpl = struct {
     fn handleEvent(self: *KqueueImpl, event: *const std.c.Kevent) !?[]const u8 {
         const fd: std.posix.fd_t = @intCast(event.ident);
 
+        // Check if this is a directory event
+        if (fd == self.watch_dir_fd) {
+            slog.debug("Directory changed, rescanning for new files", &.{
+                slog.Attr.int("fflags", @intCast(event.fflags)),
+            });
+
+            // Rescan directory to pick up new/modified files
+            try self.scanAndWatch();
+
+            // Return a generic signal that directory changed
+            // The next poll() will catch actual file changes
+            return null;
+        }
+
         // Find which file this fd belongs to
         var iter = self.watched_files.iterator();
         while (iter.next()) |entry| {
@@ -208,7 +250,6 @@ const KqueueImpl = struct {
                 {
                     const name_copy = try self.allocator.dupe(u8, filename);
                     std.posix.close(fd);
-                    self.allocator.free(entry.key_ptr.*);
                     _ = self.watched_files.remove(filename);
                     return name_copy;
                 }
@@ -442,4 +483,147 @@ test "FileWatcher - ignore non-DLL files" {
     // Should not detect non-DLL files
     const result = try watcher.poll();
     try testing.expect(result == null);
+}
+
+test "FileWatcher - detect file modification" {
+    if (builtin.os.tag == .windows) return error.SkipZigTest;
+
+    const testing = std.testing;
+
+    var tmp = testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const tmp_path = try tmp.dir.realpathAlloc(testing.allocator, ".");
+    defer testing.allocator.free(tmp_path);
+
+    // Create a .dylib file first
+    const file1 = try tmp.dir.createFile("test.dylib", .{});
+    try file1.writeAll("initial content");
+    file1.close();
+
+    // Initialize watcher after file exists
+    var watcher = try FileWatcher.init(testing.allocator, tmp_path);
+    defer watcher.deinit();
+
+    // Give it time to set up watches
+    std.time.sleep(200 * std.time.ns_per_ms);
+
+    // Poll to clear any initial events
+    _ = try watcher.poll();
+
+    // Modify the file
+    const file2 = try tmp.dir.openFile("test.dylib", .{ .mode = .write_only });
+    try file2.writeAll("modified content");
+    file2.close();
+
+    // Give filesystem time to propagate
+    std.time.sleep(200 * std.time.ns_per_ms);
+
+    // Should detect the modification
+    const result = try watcher.poll();
+    if (result) |filename| {
+        defer testing.allocator.free(filename);
+        try testing.expectEqualStrings("test.dylib", filename);
+    } else {
+        try testing.expect(false); // Should have detected change
+    }
+}
+
+test "FileWatcher - detect file delete and recreate (rebuild scenario)" {
+    if (builtin.os.tag == .windows) return error.SkipZigTest;
+
+    const testing = std.testing;
+
+    var tmp = testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const tmp_path = try tmp.dir.realpathAlloc(testing.allocator, ".");
+    defer testing.allocator.free(tmp_path);
+
+    // Create initial file
+    const file1 = try tmp.dir.createFile("rebuild.so", .{});
+    try file1.writeAll("version 1");
+    file1.close();
+
+    var watcher = try FileWatcher.init(testing.allocator, tmp_path);
+    defer watcher.deinit();
+
+    // Give it time to set up watches
+    std.time.sleep(200 * std.time.ns_per_ms);
+
+    // Clear any initial events
+    _ = try watcher.poll();
+
+    // Simulate rebuild: delete then recreate
+    try tmp.dir.deleteFile("rebuild.so");
+    std.time.sleep(100 * std.time.ns_per_ms);
+
+    // Should detect deletion
+    const delete_result = try watcher.poll();
+    if (delete_result) |filename| {
+        defer testing.allocator.free(filename);
+        try testing.expectEqualStrings("rebuild.so", filename);
+    }
+
+    // Recreate the file (like a build process would)
+    const file2 = try tmp.dir.createFile("rebuild.so", .{});
+    try file2.writeAll("version 2");
+    file2.close();
+
+    std.time.sleep(200 * std.time.ns_per_ms);
+
+    // Should detect the new file
+    const create_result = try watcher.poll();
+    if (create_result) |filename| {
+        defer testing.allocator.free(filename);
+        try testing.expectEqualStrings("rebuild.so", filename);
+    } else {
+        // This is the bug we're fixing - new file isn't detected
+        try testing.expect(false);
+    }
+}
+
+test "FileWatcher - multiple rapid changes" {
+    if (builtin.os.tag == .windows) return error.SkipZigTest;
+
+    const testing = std.testing;
+
+    var tmp = testing.tmpDir(.{});
+    defer tmp.cleanup();
+
+    const tmp_path = try tmp.dir.realpathAlloc(testing.allocator, ".");
+    defer testing.allocator.free(tmp_path);
+
+    var watcher = try FileWatcher.init(testing.allocator, tmp_path);
+    defer watcher.deinit();
+
+    std.time.sleep(100 * std.time.ns_per_ms);
+
+    // Create multiple files rapidly
+    const file1 = try tmp.dir.createFile("test1.so", .{});
+    file1.close();
+    const file2 = try tmp.dir.createFile("test2.dylib", .{});
+    file2.close();
+    const file3 = try tmp.dir.createFile("test3.dll", .{});
+    file3.close();
+
+    std.time.sleep(200 * std.time.ns_per_ms);
+
+    // Should detect at least one change
+    var detected_files = std.ArrayList([]const u8).init(testing.allocator);
+    defer {
+        for (detected_files.items) |f| testing.allocator.free(f);
+        detected_files.deinit();
+    }
+
+    // Poll multiple times to catch all events
+    for (0..5) |_| {
+        if (try watcher.poll()) |filename| {
+            try detected_files.append(filename);
+        }
+        std.time.sleep(50 * std.time.ns_per_ms);
+    }
+
+    // Should have detected at least one file
+    try testing.expect(detected_files.items.len > 0);
 }
