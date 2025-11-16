@@ -6,8 +6,7 @@ const feature_registry = @import("zerver/features/registry.zig");
 const TokenGen = feature_registry.TokenFor(0);
 
 pub const PostInput = struct {
-    title: []const u8,
-    content: []const u8,
+    title: []const u8, content: []const u8,
     author: []const u8,
 };
 
@@ -35,12 +34,9 @@ pub const Comment = struct {
 
 /// Slot definitions - tokens automatically assigned by Zerver registry
 pub const BlogSlot = enum(u32) {
-    PostId = TokenGen.token(0),
-    CommentId = TokenGen.token(1),
-    PostInput = TokenGen.token(2),
-    Post = TokenGen.token(3),
-    CommentInput = TokenGen.token(4),
-    Comment = TokenGen.token(5),
+    PostId = TokenGen.token(0), CommentId = TokenGen.token(1),
+    PostInput = TokenGen.token(2), Post = TokenGen.token(3),
+    CommentInput = TokenGen.token(4), Comment = TokenGen.token(5),
     PostList = TokenGen.token(6), // JSON string of posts
     CommentList = TokenGen.token(7), // JSON string of comments
     PostJson = TokenGen.token(8), // JSON for single post (effect output)

@@ -19,8 +19,7 @@ fn test_router_matching() !void {
     defer router.deinit();
 
     const spec = zerver.RouteSpec{
-        .before = &.{},
-        .steps = &.{},
+        .before = &.{}, .steps = &.{},
     };
 
     try router.addRoute(.GET, "/", spec);
@@ -110,8 +109,7 @@ fn test_decision_types() !void {
 
     // Test Done decision
     const done_dec = zerver.done(.{
-        .status = 201,
-        .body = "Created",
+        .status = 201, .body = "Created",
     });
     try std.testing.expect(done_dec == .Done);
     try std.testing.expectEqual(done_dec.Done.status, 201);
@@ -132,8 +130,7 @@ fn test_effect_types() !void {
     // Test DbGet effect
     const db_get_effect = zerver.Effect{
         .db_get = .{
-            .key = "user:123",
-            .token = 0,
+            .key = "user:123", .token = 0,
             .timeout_ms = 300,
             .required = true,
         },
@@ -168,8 +165,7 @@ fn test_effect_types() !void {
     // Test HttpPost effect
     const http_post_effect = zerver.Effect{
         .http_post = .{
-            .url = "https://api.example.com/orders",
-            .body = "{\"items\":[]}",
+            .url = "https://api.example.com/orders", .body = "{\"items\":[]}",
             .token = 3,
             .required = true,
         },
@@ -230,8 +226,7 @@ fn test_error_codes() !void {
 /// Test 8: Retry policies
 fn test_retry_policies() !void {
     const basic_retry = zerver.Retry{
-        .max = 3,
-        .initial_backoff_ms = 50,
+        .max = 3, .initial_backoff_ms = 50,
         .max_backoff_ms = 5000,
         .backoff_multiplier = 2.0,
         .jitter_enabled = false,

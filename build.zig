@@ -3,8 +3,7 @@ const std = @import("std");
 
 // libuv source files - common to all platforms
 const libuv_common_sources = [_][]const u8{
-    "third_party/libuv/src/fs-poll.c",
-    "third_party/libuv/src/idna.c",
+    "third_party/libuv/src/fs-poll.c", "third_party/libuv/src/idna.c",
     "third_party/libuv/src/inet.c",
     "third_party/libuv/src/random.c",
     "third_party/libuv/src/strscpy.c",
@@ -170,8 +169,7 @@ fn addLibuv(b: *std.Build, artifact: *std.Build.Step.Compile, target: std.Build.
 }
 
 fn addTimedTestRun(
-    b: *std.Build,
-    timeout_runner: *std.Build.Step.Compile,
+    b: *std.Build, timeout_runner: *std.Build.Step.Compile,
     artifact: *std.Build.Step.Compile,
     parents: []const *std.Build.Step,
 ) *std.Build.Step.Run {
@@ -200,8 +198,7 @@ pub fn build(b: *std.Build) void {
 
     // Main example executable
     const exe = b.addExecutable(.{
-        .name = "zerver_example",
-        .root_module = b.createModule(.{
+        .name = "zerver_example", .root_module = b.createModule(.{
             .root_source_file = b.path("main.zig"),
             .target = target,
             .optimize = optimize,
@@ -210,8 +207,7 @@ pub fn build(b: *std.Build) void {
 
     // Add SQLite as a C library
     exe.addCSourceFile(.{
-        .file = b.path("src/zerver/sql/dialects/sqlite/c/sqlite3.c"),
-        .flags = &[_][]const u8{
+        .file = b.path("src/zerver/sql/dialects/sqlite/c/sqlite3.c"), .flags = &[_][]const u8{
             "-DSQLITE_ENABLE_JSON1",
             "-DSQLITE_THREADSAFE=1",
         },
@@ -230,15 +226,13 @@ pub fn build(b: *std.Build) void {
     // Development helper steps
     // Create zerver module with proper paths and platform-specific configuration
     const zerver_mod = b.createModule(.{
-        .root_source_file = b.path("src/zerver/root.zig"),
-    });
+        .root_source_file = b.path("src/zerver/root.zig"), });
     zerver_mod.addIncludePath(b.path("third_party/libuv/include"));
     zerver_mod.addIncludePath(b.path("third_party/libuv/src"));
 
     // Create zupervisor module for slot-effect system
     const zupervisor_mod = b.createModule(.{
-        .root_source_file = b.path("src/zupervisor/slot_effect.zig"),
-    });
+        .root_source_file = b.path("src/zupervisor/slot_effect.zig"), });
 
     // Add platform-specific macros for the zerver module
     switch (target.result.os.tag) {
@@ -260,21 +254,18 @@ pub fn build(b: *std.Build) void {
 
     // NOTE: runtime_config module commented out - files use relative imports instead
     // const runtime_config_mod = b.createModule(.{
-    //     .root_source_file = b.path("src/zerver/runtime/config.zig"),
-    // });
+    //     .root_source_file = b.path("src/zerver/runtime/config.zig"), // });
 
     // exe.root_module.addImport("runtime_config", runtime_config_mod);
 
     // zerver_mod.addImport("runtime_config", runtime_config_mod);
 
     const bootstrap_helpers_mod = b.createModule(.{
-        .root_source_file = b.path("src/zerver/bootstrap_helpers.zig"),
-    });
+        .root_source_file = b.path("src/zerver/bootstrap_helpers.zig"), });
     // bootstrap_helpers_mod.addImport("runtime_config", runtime_config_mod);
 
     const timeout_runner = b.addExecutable(.{
-        .name = "test_timeout_runner",
-        .root_module = b.createModule(.{
+        .name = "test_timeout_runner", .root_module = b.createModule(.{
             .root_source_file = b.path("tools/test_timeout_runner.zig"),
             .target = target,
             .optimize = optimize,
@@ -286,8 +277,7 @@ pub fn build(b: *std.Build) void {
     const integration_step = b.step("integration_tests", "Run integration test suite");
     const reqtest_suite = b.addTest(.{
         .root_module = b.createModule(.{
-            .root_source_file = b.path("tests/reqtest_runner.zig"),
-            .target = target,
+            .root_source_file = b.path("tests/reqtest_runner.zig"), .target = target,
             .optimize = optimize,
         }),
     });
@@ -295,8 +285,7 @@ pub fn build(b: *std.Build) void {
     _ = addTimedTestRun(b, timeout_runner, reqtest_suite, &.{test_step});
 
     const libuv_smoke = b.addExecutable(.{
-        .name = "libuv_smoke",
-        .root_module = b.createModule(.{
+        .name = "libuv_smoke", .root_module = b.createModule(.{
             .root_source_file = b.path("tests/libuv_smoke.zig"),
             .target = target,
             .optimize = optimize,
@@ -311,8 +300,7 @@ pub fn build(b: *std.Build) void {
 
     const join_tests = b.addTest(.{
         .root_module = b.createModule(.{
-            .root_source_file = b.path("tests/unit/reactor_join.zig"),
-            .target = target,
+            .root_source_file = b.path("tests/unit/reactor_join.zig"), .target = target,
             .optimize = optimize,
         }),
     });
@@ -321,8 +309,7 @@ pub fn build(b: *std.Build) void {
 
     const job_tests = b.addTest(.{
         .root_module = b.createModule(.{
-            .root_source_file = b.path("tests/unit/reactor_job_system.zig"),
-            .target = target,
+            .root_source_file = b.path("tests/unit/reactor_job_system.zig"), .target = target,
             .optimize = optimize,
         }),
     });
@@ -331,8 +318,7 @@ pub fn build(b: *std.Build) void {
 
     const effectors_tests = b.addTest(.{
         .root_module = b.createModule(.{
-            .root_source_file = b.path("tests/unit/reactor_effectors.zig"),
-            .target = target,
+            .root_source_file = b.path("tests/unit/reactor_effectors.zig"), .target = target,
             .optimize = optimize,
         }),
     });
@@ -343,8 +329,7 @@ pub fn build(b: *std.Build) void {
 
     const util_helper_tests = b.addTest(.{
         .root_module = b.createModule(.{
-            .root_source_file = b.path("tests/unit/util_helpers_test.zig"),
-            .target = target,
+            .root_source_file = b.path("tests/unit/util_helpers_test.zig"), .target = target,
             .optimize = optimize,
         }),
     });
@@ -353,8 +338,7 @@ pub fn build(b: *std.Build) void {
 
     const root_tests = b.addTest(.{
         .root_module = b.createModule(.{
-            .root_source_file = b.path("tests/unit/root_test.zig"),
-            .target = target,
+            .root_source_file = b.path("tests/unit/root_test.zig"), .target = target,
             .optimize = optimize,
         }),
     });
@@ -363,8 +347,7 @@ pub fn build(b: *std.Build) void {
 
     const circuit_breaker_tests = b.addTest(.{
         .root_module = b.createModule(.{
-            .root_source_file = b.path("tests/unit/circuit_breaker_test.zig"),
-            .target = target,
+            .root_source_file = b.path("tests/unit/circuit_breaker_test.zig"), .target = target,
             .optimize = optimize,
         }),
     });
@@ -373,8 +356,7 @@ pub fn build(b: *std.Build) void {
 
     const core_core_tests = b.addTest(.{
         .root_module = b.createModule(.{
-            .root_source_file = b.path("tests/unit/core_core_test.zig"),
-            .target = target,
+            .root_source_file = b.path("tests/unit/core_core_test.zig"), .target = target,
             .optimize = optimize,
         }),
     });
@@ -383,8 +365,7 @@ pub fn build(b: *std.Build) void {
 
     const ctx_tests = b.addTest(.{
         .root_module = b.createModule(.{
-            .root_source_file = b.path("tests/unit/ctx_test.zig"),
-            .target = target,
+            .root_source_file = b.path("tests/unit/ctx_test.zig"), .target = target,
             .optimize = optimize,
         }),
     });
@@ -393,8 +374,7 @@ pub fn build(b: *std.Build) void {
 
     const reqtest_tests = b.addTest(.{
         .root_module = b.createModule(.{
-            .root_source_file = b.path("tests/unit/reqtest_test.zig"),
-            .target = target,
+            .root_source_file = b.path("tests/unit/reqtest_test.zig"), .target = target,
             .optimize = optimize,
         }),
     });
@@ -403,8 +383,7 @@ pub fn build(b: *std.Build) void {
 
     const http_status_tests = b.addTest(.{
         .root_module = b.createModule(.{
-            .root_source_file = b.path("tests/unit/http_status_test.zig"),
-            .target = target,
+            .root_source_file = b.path("tests/unit/http_status_test.zig"), .target = target,
             .optimize = optimize,
         }),
     });
@@ -413,8 +392,7 @@ pub fn build(b: *std.Build) void {
 
     const router_unit_tests = b.addTest(.{
         .root_module = b.createModule(.{
-            .root_source_file = b.path("tests/unit/router_test.zig"),
-            .target = target,
+            .root_source_file = b.path("tests/unit/router_test.zig"), .target = target,
             .optimize = optimize,
         }),
     });
@@ -423,8 +401,7 @@ pub fn build(b: *std.Build) void {
 
     const libuv_async_tests = b.addTest(.{
         .root_module = b.createModule(.{
-            .root_source_file = b.path("tests/unit/libuv_unit_test.zig"),
-            .target = target,
+            .root_source_file = b.path("tests/unit/libuv_unit_test.zig"), .target = target,
             .optimize = optimize,
         }),
     });
@@ -435,8 +412,7 @@ pub fn build(b: *std.Build) void {
 
     const sql_ast_tests = b.addTest(.{
         .root_module = b.createModule(.{
-            .root_source_file = b.path("tests/unit/sql_ast_test.zig"),
-            .target = target,
+            .root_source_file = b.path("tests/unit/sql_ast_test.zig"), .target = target,
             .optimize = optimize,
         }),
     });
@@ -445,8 +421,7 @@ pub fn build(b: *std.Build) void {
 
     const sql_builder_renderer_tests = b.addTest(.{
         .root_module = b.createModule(.{
-            .root_source_file = b.path("tests/unit/sql_builder_renderer_test.zig"),
-            .target = target,
+            .root_source_file = b.path("tests/unit/sql_builder_renderer_test.zig"), .target = target,
             .optimize = optimize,
         }),
     });
@@ -455,15 +430,13 @@ pub fn build(b: *std.Build) void {
 
     const sql_db_driver_tests = b.addTest(.{
         .root_module = b.createModule(.{
-            .root_source_file = b.path("tests/unit/sql_db_driver_test.zig"),
-            .target = target,
+            .root_source_file = b.path("tests/unit/sql_db_driver_test.zig"), .target = target,
             .optimize = optimize,
         }),
     });
     sql_db_driver_tests.root_module.addImport("zerver", zerver_mod);
     sql_db_driver_tests.addCSourceFile(.{
-        .file = b.path("src/zerver/sql/dialects/sqlite/c/sqlite3.c"),
-        .flags = &[_][]const u8{
+        .file = b.path("src/zerver/sql/dialects/sqlite/c/sqlite3.c"), .flags = &[_][]const u8{
             "-DSQLITE_ENABLE_JSON1",
             "-DSQLITE_THREADSAFE=1",
         },
@@ -473,8 +446,7 @@ pub fn build(b: *std.Build) void {
 
     const sql_modules_tests = b.addTest(.{
         .root_module = b.createModule(.{
-            .root_source_file = b.path("tests/unit/sql_modules_test.zig"),
-            .target = target,
+            .root_source_file = b.path("tests/unit/sql_modules_test.zig"), .target = target,
             .optimize = optimize,
         }),
     });
@@ -484,8 +456,7 @@ pub fn build(b: *std.Build) void {
 
     const types_tests = b.addTest(.{
         .root_module = b.createModule(.{
-            .root_source_file = b.path("tests/unit/types_test.zig"),
-            .target = target,
+            .root_source_file = b.path("tests/unit/types_test.zig"), .target = target,
             .optimize = optimize,
         }),
     });
@@ -494,8 +465,7 @@ pub fn build(b: *std.Build) void {
 
     const error_renderer_tests = b.addTest(.{
         .root_module = b.createModule(.{
-            .root_source_file = b.path("tests/unit/error_renderer_test.zig"),
-            .target = target,
+            .root_source_file = b.path("tests/unit/error_renderer_test.zig"), .target = target,
             .optimize = optimize,
         }),
     });
@@ -504,8 +474,7 @@ pub fn build(b: *std.Build) void {
 
     const bootstrap_init_tests = b.addTest(.{
         .root_module = b.createModule(.{
-            .root_source_file = b.path("tests/unit/bootstrap_init_test.zig"),
-            .target = target,
+            .root_source_file = b.path("tests/unit/bootstrap_init_test.zig"), .target = target,
             .optimize = optimize,
         }),
     });
@@ -516,8 +485,7 @@ pub fn build(b: *std.Build) void {
 
     const saga_tests = b.addTest(.{
         .root_module = b.createModule(.{
-            .root_source_file = b.path("tests/unit/reactor_saga.zig"),
-            .target = target,
+            .root_source_file = b.path("tests/unit/reactor_saga.zig"), .target = target,
             .optimize = optimize,
         }),
     });
@@ -526,8 +494,7 @@ pub fn build(b: *std.Build) void {
 
     const task_system_tests = b.addTest(.{
         .root_module = b.createModule(.{
-            .root_source_file = b.path("tests/unit/reactor_task_system.zig"),
-            .target = target,
+            .root_source_file = b.path("tests/unit/reactor_task_system.zig"), .target = target,
             .optimize = optimize,
         }),
     });
@@ -548,8 +515,7 @@ pub fn build(b: *std.Build) void {
 
     // Blog CRUD example executable
     const blog_exe = b.addExecutable(.{
-        .name = "blog_crud_example",
-        .root_module = b.createModule(.{
+        .name = "blog_crud_example", .root_module = b.createModule(.{
             .root_source_file = b.path("examples/blog_crud.zig"),
             .target = target,
             .optimize = optimize,
@@ -559,8 +525,7 @@ pub fn build(b: *std.Build) void {
     blog_exe.root_module.addImport("zerver", zerver_mod);
     // Add SQLite to blog example
     blog_exe.addCSourceFile(.{
-        .file = b.path("src/zerver/sql/dialects/sqlite/c/sqlite3.c"),
-        .flags = &[_][]const u8{
+        .file = b.path("src/zerver/sql/dialects/sqlite/c/sqlite3.c"), .flags = &[_][]const u8{
             "-DSQLITE_ENABLE_JSON1",
             "-DSQLITE_THREADSAFE=1",
         },
@@ -570,15 +535,13 @@ pub fn build(b: *std.Build) void {
     b.installArtifact(blog_exe);
 
     const blog_run_cmd = b.addRunArtifact(blog_exe);
-    blog_run_cmd.step.dependOn(b.getInstallStep());
 
     const blog_run_step = b.step("run_blog", "Run the blog CRUD example");
     blog_run_step.dependOn(&blog_run_cmd.step);
 
     // Slot-effect pipeline demo executable (simple self-contained version)
     const slot_effect_demo = b.addExecutable(.{
-        .name = "slot_effect_demo",
-        .root_module = b.createModule(.{
+        .name = "slot_effect_demo", .root_module = b.createModule(.{
             .root_source_file = b.path("examples/slot_effect_simple_demo.zig"),
             .target = target,
             .optimize = optimize,
@@ -600,8 +563,7 @@ pub fn build(b: *std.Build) void {
 
     // Zingest executable (HTTP Ingest Server - Process 1)
     const zingest_exe = b.addExecutable(.{
-        .name = "zingest",
-        .root_module = b.createModule(.{
+        .name = "zingest", .root_module = b.createModule(.{
             .root_source_file = b.path("src/zingest/main.zig"),
             .target = target,
             .optimize = optimize,
@@ -622,8 +584,7 @@ pub fn build(b: *std.Build) void {
 
     // Zupervisor executable (Supervisor with Hot Reload - Process 2)
     const zupervisor_exe = b.addExecutable(.{
-        .name = "zupervisor",
-        .root_module = b.createModule(.{
+        .name = "zupervisor", .root_module = b.createModule(.{
             .root_source_file = b.path("src/zupervisor/main.zig"),
             .target = target,
             .optimize = optimize,
@@ -636,8 +597,7 @@ pub fn build(b: *std.Build) void {
 
     // Add SQLite for database effect executors
     zupervisor_exe.addCSourceFile(.{
-        .file = b.path("src/zerver/sql/dialects/sqlite/c/sqlite3.c"),
-        .flags = &[_][]const u8{
+        .file = b.path("src/zerver/sql/dialects/sqlite/c/sqlite3.c"), .flags = &[_][]const u8{
             "-DSQLITE_ENABLE_JSON1",
             "-DSQLITE_THREADSAFE=1",
         },
@@ -663,8 +623,7 @@ pub fn build(b: *std.Build) void {
     // Teams example executable - commented out due to compilation errors
     const reqtest_runner = b.addTest(.{
         .root_module = b.createModule(.{
-            .root_source_file = b.path("tests/reqtest_runner.zig"),
-            .target = target,
+            .root_source_file = b.path("tests/reqtest_runner.zig"), .target = target,
             .optimize = optimize,
         }),
     });
@@ -673,8 +632,7 @@ pub fn build(b: *std.Build) void {
 
     const rfc9110_tests = b.addTest(.{
         .root_module = b.createModule(.{
-            .root_source_file = b.path("tests/integration/rfc9110_semantics_test.zig"),
-            .target = target,
+            .root_source_file = b.path("tests/integration/rfc9110_semantics_test.zig"), .target = target,
             .optimize = optimize,
         }),
     });
@@ -685,8 +643,7 @@ pub fn build(b: *std.Build) void {
 
     const rfc9112_tests = b.addTest(.{
         .root_module = b.createModule(.{
-            .root_source_file = b.path("tests/integration/rfc9112_message_format_test.zig"),
-            .target = target,
+            .root_source_file = b.path("tests/integration/rfc9112_message_format_test.zig"), .target = target,
             .optimize = optimize,
         }),
     });
@@ -697,8 +654,7 @@ pub fn build(b: *std.Build) void {
 
     const router_tests = b.addTest(.{
         .root_module = b.createModule(.{
-            .root_source_file = b.path("tests/integration/router_functionality_test.zig"),
-            .target = target,
+            .root_source_file = b.path("tests/integration/router_functionality_test.zig"), .target = target,
             .optimize = optimize,
         }),
     });

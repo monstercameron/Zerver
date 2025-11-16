@@ -3,10 +3,10 @@
 const std = @import("std");
 const types = @import("../../../core/types.zig");
 const http_status = @import("../../../core/http_status.zig").HttpStatus;
+const array_list_writer = @import("../../../util/array_list_writer.zig");
 
 pub const SSEEvent = struct {
-    data: ?[]const u8 = null,
-    event: ?[]const u8 = null,
+    data: ?[]const u8 = null, event: ?[]const u8 = null,
     id: ?[]const u8 = null,
     retry: ?u32 = null,
 };
@@ -22,7 +22,8 @@ pub fn formatEvent(arena: std.mem.Allocator, event: SSEEvent) ![]const u8 {
     // 3. Use a thread-local scratch buffer pool (reduces allocation overhead)
     // Tradeoff: Current approach is simpler and works well for <100 concurrent clients.
     // For larger scale (1000+ clients), approach #1 would provide best ROI.
-    const w = buf.writer(arena);
+    var writer_helper = array_list_writer.ArrayListWriter.init(&buf, arena);
+    const w = writer_helper.writer();
 
     if (event.event) |event_type| {
         try w.print("event: {s}\n", .{event_type});

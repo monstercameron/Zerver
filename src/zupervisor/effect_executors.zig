@@ -11,25 +11,26 @@ const sqlite_driver_mod = zerver.sql.dialects.sqlite.driver;
 
 /// HTTP effect executor using standard library HTTP client
 pub const HttpEffectExecutor = struct {
-    allocator: std.mem.Allocator,
-    client: std.http.Client,
+    allocator: std.mem.Allocator, client: std.http.Client, threaded: std.Io.Threaded,
     security_policy: slot_effect.HttpSecurityPolicy,
 
     pub fn init(allocator: std.mem.Allocator) HttpEffectExecutor {
+        var threaded = std.Io.Threaded.init_single_threaded;
         return .{
             .allocator = allocator,
-            .client = std.http.Client{ .allocator = allocator },
+            .threaded = threaded,
+            .client = std.http.Client{ .allocator = allocator, .io = threaded.io() },
             .security_policy = .{},
         };
     }
 
     pub fn deinit(self: *HttpEffectExecutor) void {
         self.client.deinit();
+        self.threaded.deinit();
     }
 
     pub fn execute(
-        self: *HttpEffectExecutor,
-        ctx: *slot_effect.CtxBase,
+        self: *HttpEffectExecutor, ctx: *slot_effect.CtxBase,
         effect: slot_effect.HttpCallEffect,
     ) !void {
         // Validate security policy
@@ -40,8 +41,7 @@ pub const HttpEffectExecutor = struct {
 
         // Prepare fetch options
         const method: std.http.Method = switch (effect.method) {
-            .GET => .GET,
-            .POST => .POST,
+            .GET => .GET, .POST => .POST,
             .PUT => .PUT,
             .DELETE => .DELETE,
             .PATCH => .PATCH,
@@ -54,8 +54,7 @@ pub const HttpEffectExecutor = struct {
         // Note: In Zig 0.15.1, fetch() without response_writer returns status only
         // For now, we'll store an empty response body as a simplified implementation
         const result = try self.client.fetch(.{
-            .location = .{ .uri = uri },
-            .method = method,
+            .location = .{ .uri = uri }, .method = method,
             .payload = effect.body,
         });
 
@@ -66,8 +65,7 @@ pub const HttpEffectExecutor = struct {
         // Store response in result slot
         const response_data = try ctx.allocator.create(HttpResponseData);
         response_data.* = .{
-            .status = @intFromEnum(result.status),
-            .body = response_body,
+            .status = @intFromEnum(result.status), .body = response_body,
         };
 
         // Store in the slot specified by the effect
@@ -85,8 +83,7 @@ pub const HttpEffectExecutor = struct {
 
 /// Database effect executor (SQLite-based)
 pub const DbEffectExecutor = struct {
-    allocator: std.mem.Allocator,
-    connection: db.Connection,
+    allocator: std.mem.Allocator, connection: db.Connection,
     security_policy: slot_effect.SqlSecurityPolicy,
 
     pub fn init(allocator: std.mem.Allocator, db_path: []const u8) !DbEffectExecutor {
@@ -127,8 +124,7 @@ pub const DbEffectExecutor = struct {
     }
 
     pub fn executeQuery(
-        self: *DbEffectExecutor,
-        ctx: *slot_effect.CtxBase,
+        self: *DbEffectExecutor, ctx: *slot_effect.CtxBase,
         effect: slot_effect.DbQueryEffect,
     ) !void {
         // Validate security policy
@@ -145,8 +141,7 @@ pub const DbEffectExecutor = struct {
 
             for (effect.params, 0..) |param, i| {
                 bind_values[i] = switch (param) {
-                    .string => |s| .{ .text = s },
-                    .int => |n| .{ .integer = n },
+                    .string => |s| .{ .text = s }, .int => |n| .{ .integer = n },
                     .float => |f| .{ .float = f },
                     .bool => |b| .{ .integer = if (b) 1 else 0 },
                     .null => .{ .null = {} },
@@ -170,8 +165,7 @@ pub const DbEffectExecutor = struct {
             defer db.deinitRow(ctx.allocator, row_values);
 
             var row = DbRow{
-                .columns = std.StringHashMap([]const u8).init(ctx.allocator),
-            };
+                .columns = std.StringHashMap([]const u8).init(ctx.allocator), };
 
             // Map column values by name
             const col_count = stmt.columnCount();
@@ -196,16 +190,14 @@ pub const DbEffectExecutor = struct {
         // Store result
         const result = try ctx.allocator.create(DbQueryResult);
         result.* = .{
-            .rows_affected = rows.items.len,
-            .rows = rows,
+            .rows_affected = rows.items.len, .rows = rows,
         };
 
         try ctx.slots.put("__db_result", @ptrCast(result));
     }
 
     pub fn executeGet(
-        self: *DbEffectExecutor,
-        ctx: *slot_effect.CtxBase,
+        self: *DbEffectExecutor, ctx: *slot_effect.CtxBase,
         effect: slot_effect.DbGetEffect,
     ) !void {
         // Query the key-value table
@@ -244,8 +236,7 @@ pub const DbEffectExecutor = struct {
     }
 
     pub fn executePut(
-        self: *DbEffectExecutor,
-        ctx: *slot_effect.CtxBase,
+        self: *DbEffectExecutor, ctx: *slot_effect.CtxBase,
         effect: slot_effect.DbPutEffect,
     ) !void {
         // Insert or replace in key-value table
@@ -273,8 +264,7 @@ pub const DbEffectExecutor = struct {
     }
 
     pub fn executeDelete(
-        self: *DbEffectExecutor,
-        ctx: *slot_effect.CtxBase,
+        self: *DbEffectExecutor, ctx: *slot_effect.CtxBase,
         effect: slot_effect.DbDelEffect,
     ) !void {
         // Delete from key-value table
@@ -302,8 +292,7 @@ pub const DbEffectExecutor = struct {
 
     const DbQueryResult = struct {
         rows_affected: usize,
-        rows: std.ArrayList(DbRow),
-    };
+        rows: std.ArrayList(DbRow), };
 
     const DbRow = struct {
         columns: std.StringHashMap([]const u8),
@@ -337,8 +326,7 @@ pub const ComputeEffectExecutor = struct {
     }
 
     pub fn execute(
-        self: *ComputeEffectExecutor,
-        ctx: *slot_effect.CtxBase,
+        self: *ComputeEffectExecutor, ctx: *slot_effect.CtxBase,
         effect: slot_effect.ComputeTask,
     ) !void {
         // Execute task synchronously for now
@@ -400,8 +388,7 @@ pub const ComputeEffectExecutor = struct {
         // Encrypt (ciphertext and tag are written inline)
         var tag: [16]u8 = undefined;
         ChaCha20Poly1305.encrypt(
-            encrypted[12..][0..plaintext.len],
-            &tag,
+            encrypted[12..][0..plaintext.len], &tag,
             plaintext,
             "",  // No additional data
             nonce,
@@ -450,8 +437,7 @@ pub const ComputeEffectExecutor = struct {
 
         // Decrypt and verify
         ChaCha20Poly1305.decrypt(
-            plaintext,
-            ciphertext,
+            plaintext, ciphertext,
             tag.*,
             "",  // No additional data
             nonce.*,
@@ -472,10 +458,8 @@ pub const UnifiedEffectExecutor = struct {
     pub fn init(allocator: std.mem.Allocator, db_path: []const u8) !UnifiedEffectExecutor {
         return .{
             .allocator = allocator,
-            .http_executor = HttpEffectExecutor.init(allocator),
-            .db_executor = try DbEffectExecutor.init(allocator, db_path),
-            .compute_executor = ComputeEffectExecutor.init(allocator),
-        };
+            .http_executor = HttpEffectExecutor.init(allocator), .db_executor = try DbEffectExecutor.init(allocator, db_path),
+            .compute_executor = ComputeEffectExecutor.init(allocator), };
     }
 
     pub fn deinit(self: *UnifiedEffectExecutor) void {
@@ -485,8 +469,7 @@ pub const UnifiedEffectExecutor = struct {
     }
 
     pub fn execute(
-        self: *UnifiedEffectExecutor,
-        ctx: *slot_effect.CtxBase,
+        self: *UnifiedEffectExecutor, ctx: *slot_effect.CtxBase,
         effect: slot_effect.Effect,
     ) !void {
         return switch (effect) {
@@ -545,8 +528,7 @@ test "DbEffectExecutor - query execution" {
     defer ctx.deinit();
 
     const effect = slot_effect.DbQueryEffect{
-        .database = "test",
-        .query = "SELECT 1 as value",
+        .database = "test", .query = "SELECT 1 as value",
         .params = &[_]slot_effect.SqlParam{},
         .result_slot = 100,
     };
@@ -568,8 +550,7 @@ test "ComputeEffectExecutor - hash task" {
     defer ctx.deinit();
 
     const effect = slot_effect.ComputeTask{
-        .task_type = .hash,
-        .input = "hello world",
+        .task_type = .hash, .input = "hello world",
         .result_slot = 100,
     };
 
@@ -593,8 +574,7 @@ test "ComputeEffectExecutor - encrypt and decrypt" {
 
     // Encrypt
     const encrypt_effect = slot_effect.ComputeTask{
-        .task_type = .encrypt,
-        .input = plaintext,
+        .task_type = .encrypt, .input = plaintext,
         .result_slot = 100,
     };
 
@@ -647,8 +627,7 @@ test "UnifiedEffectExecutor - database effects" {
     // Test db_put
     const put_effect = slot_effect.Effect{
         .db_put = .{
-            .database = "test",
-            .key = "foo",
+            .database = "test", .key = "foo",
             .value = "bar",
             .result_slot = 100,
         },
@@ -671,8 +650,7 @@ test "UnifiedEffectExecutor - database effects" {
     // Test db_query
     const query_effect = slot_effect.Effect{
         .db_query = .{
-            .database = "test",
-            .query = "SELECT 1 as value",
+            .database = "test", .query = "SELECT 1 as value",
             .params = &[_]slot_effect.SqlParam{},
             .result_slot = 102,
         },
@@ -695,8 +673,7 @@ test "UnifiedEffectExecutor - compute effects" {
     // Test hash
     const hash_effect = slot_effect.Effect{
         .compute_task = .{
-            .task_type = .hash,
-            .input = "test data",
+            .task_type = .hash, .input = "test data",
             .result_slot = 200,
         },
     };
@@ -708,8 +685,7 @@ test "UnifiedEffectExecutor - compute effects" {
     // Test encrypt
     const encrypt_effect = slot_effect.Effect{
         .compute_task = .{
-            .task_type = .encrypt,
-            .input = "secret",
+            .task_type = .encrypt, .input = "secret",
             .result_slot = 201,
         },
     };
@@ -734,8 +710,7 @@ test "UnifiedEffectExecutor - effect routing" {
     // Test database effect routing
     const db_effect = slot_effect.Effect{
         .db_put = .{
-            .database = "test",
-            .key = "integration_test",
+            .database = "test", .key = "integration_test",
             .value = "routing_works",
             .result_slot = 300,
         },
@@ -748,8 +723,7 @@ test "UnifiedEffectExecutor - effect routing" {
     // Test compute effect routing
     const compute_effect = slot_effect.Effect{
         .compute_task = .{
-            .task_type = .hash,
-            .input = "routing_test",
+            .task_type = .hash, .input = "routing_test",
             .result_slot = 301,
         },
     };

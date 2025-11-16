@@ -3,6 +3,7 @@
 const std = @import("std");
 const types = @import("types.zig");
 const slog = @import("../observability/slog.zig");
+const time_util = @import("../util/time.zig");
 
 // Global atomic counter for efficient request ID generation
 var request_id_counter = std.atomic.Value(u64).init(1);
@@ -58,7 +59,7 @@ pub const CtxBase = struct {
     // Observability
     request_id: []const u8 = "",
     user_sub: []const u8 = "",
-    start_time: i64, // milliseconds
+    start_time: u64, // milliseconds
     status_code: u16 = 200,
     request_bytes: usize = 0,
 
@@ -70,9 +71,7 @@ pub const CtxBase = struct {
     slots: std.AutoHashMap(u32, *anyopaque) = undefined,
 
     // Exit callbacks
-    exit_cbs: std.ArrayList(ExitCallback) = undefined,
-
-    // Trace events captured during request execution
+    exit_cbs: std.ArrayList(ExitCallback) = undefined, // Trace events captured during request execution
     trace_events: std.ArrayList(TraceEvent) = undefined,
 
     // Last error
@@ -80,17 +79,12 @@ pub const CtxBase = struct {
 
     pub fn init(allocator: std.mem.Allocator) !CtxBase {
         return CtxBase{
-            .allocator = allocator,
-            .method_str = "",
+            .allocator = allocator, .method_str = "",
             .path_str = "",
-            .headers = std.StringHashMap([]const u8).init(allocator),
-            .params = std.StringHashMap([]const u8).init(allocator),
-            .query = std.StringHashMap([]const u8).init(allocator),
-            .body = "",
+            .headers = std.StringHashMap([]const u8).init(allocator), .params = std.StringHashMap([]const u8).init(allocator), .query = std.StringHashMap([]const u8).init(allocator), .body = "",
             .client_ip = "",
-            .start_time = std.time.milliTimestamp(),
-            .slots = std.AutoHashMap(u32, *anyopaque).init(allocator),
-            .exit_cbs = try std.ArrayList(ExitCallback).initCapacity(allocator, 8),
+            .start_time = time_util.nanoTimestamp() / std.time.ns_per_ms,
+            .slots = std.AutoHashMap(u32, *anyopaque).init(allocator), .exit_cbs = try std.ArrayList(ExitCallback).initCapacity(allocator, 8),
             .trace_events = try std.ArrayList(TraceEvent).initCapacity(allocator, 32),
         };
     }
@@ -188,8 +182,8 @@ pub const CtxBase = struct {
     }
 
     pub fn elapsedMs(self: *CtxBase) u64 {
-        const now = std.time.milliTimestamp();
-        return @as(u64, @intCast(now - self.start_time));
+        const now = time_util.nanoTimestamp() / std.time.ns_per_ms;
+        return now - self.start_time;
     }
 
     pub fn onExit(self: *CtxBase, cb: ExitCallback) void {
@@ -254,7 +248,7 @@ pub const CtxBase = struct {
     /// Generate a new unique ID (simple timestamp-based for now)
     pub fn newId(self: *CtxBase) []const u8 {
         var buf: [64]u8 = undefined;
-        const id = std.fmt.bufPrint(&buf, "{d}", .{std.time.nanoTimestamp()}) catch return "0";
+        const id = std.fmt.bufPrint(&buf, "{d}", .{time_util.nanoTimestamp()}) catch return "0";
         return self.allocator.dupe(u8, id) catch "0";
     }
 
@@ -265,8 +259,7 @@ pub const CtxBase = struct {
         switch (type_info) {
             .int => try writer.print("{}", .{value}),
             .float => try writer.print("{d}", .{value}),
-            .bool => try writer.writeAll(if (value) "true" else "false"),
-            .pointer => {
+            .bool => try writer.writeAll(if (value) "true" else "false"), .pointer => {
                 const ValueType = @TypeOf(value);
                 if (ValueType == []const u8 or ValueType == []u8) {
                     try writer.writeAll("\"");
@@ -275,53 +268,50 @@ pub const CtxBase = struct {
                 } else {
                     try writer.writeAll("null");
                 }
-            },
-            .optional => {
+            }, .optional => {
                 if (value) |v| {
                     try self.stringifyValue(writer, v);
                 } else {
                     try writer.writeAll("null");
                 }
-            },
-            .array => |arr_info| {
+            }, .array => |arr_info| {
                 try writer.writeAll("[");
                 for (value, 0..) |item, idx| {
                     try self.stringifyValue(writer, item);
-                    if (idx < arr_info.len - 1) try writer.writeAll(",");
+                    if (idx < arr_info.len - 1) try writer.writeAll(", ");
                 }
                 try writer.writeAll("]");
-            },
-            .@"struct" => |struct_info| {
+            }, .@"struct" => |struct_info| {
                 try writer.writeAll("{");
                 inline for (struct_info.fields, 0..) |field, idx| {
                     try writer.print("\"{s}\":", .{field.name});
                     try self.stringifyValue(writer, @field(value, field.name));
-                    if (idx < struct_info.fields.len - 1) try writer.writeAll(",");
+                    if (idx < struct_info.fields.len - 1) try writer.writeAll(", ");
                 }
                 try writer.writeAll("}");
-            },
-            else => try writer.writeAll("null"),
+            }, else => try writer.writeAll("null"),
         }
     }
 
     pub fn toJson(self: *CtxBase, value: anytype) ![]const u8 {
         var buffer = try std.ArrayList(u8).initCapacity(self.allocator, 256);
-        errdefer buffer.deinit(self.allocator);
-        const writer = buffer.writer(self.allocator);
+        var writer_alloc = std.Io.Writer.Allocating.fromArrayList(self.allocator, &buffer);
+        var writer_done = false;
+        defer if (!writer_done) writer_alloc.deinit();
+        const writer = &writer_alloc.writer;
         try self.stringifyValue(writer, value);
-        return buffer.toOwnedSlice(self.allocator);
+        const msg = try writer_alloc.toOwnedSlice();
+        writer_done = true;
+        return msg;
     }
 
     fn escapeJsonString(self: *CtxBase, writer: anytype, str: []const u8) !void {
         _ = self;
         for (str) |ch| {
             switch (ch) {
-                '"' => try writer.writeAll("\\\""),
-                '\\' => try writer.writeAll("\\\\"),
-                '\n' => try writer.writeAll("\\n"),
-                '\r' => try writer.writeAll("\\r"),
-                '\t' => try writer.writeAll("\\t"),
-                else => try writer.writeByte(ch),
+                '"' => try writer.writeAll("\\\""), '\\' => try writer.writeAll("\\\\"),
+                '\n' => try writer.writeAll("\\n"), '\r' => try writer.writeAll("\\r"),
+                '\t' => try writer.writeAll("\\t"), else => try writer.writeByte(ch),
             }
         }
     }
@@ -352,8 +342,7 @@ pub const CtxBase = struct {
                     return child_info.array.child == u8;
                 }
                 return false;
-            },
-            .array => |array_info| {
+            }, .array => |array_info| {
                 return array_info.child == u8;
             },
             else => return false,
@@ -370,8 +359,7 @@ pub const CtxBase = struct {
                     return value.*[0..array_info.len];
                 }
                 unreachable;
-            },
-            .array => |array_info| return value[0..array_info.len],
+            }, .array => |array_info| return value[0..array_info.len],
             else => unreachable,
         }
     }
@@ -639,8 +627,7 @@ pub const CtxBase = struct {
         const json_str = try self.toJson(data);
         return types.Decision{
             .Done = .{
-                .status = status_code,
-                .headers = &[_]types.Header{
+                .status = status_code, .headers = &[_]types.Header{
                     .{ .name = "Content-Type", .value = "application/json" },
                 },
                 .body = .{ .complete = json_str },
@@ -682,8 +669,7 @@ pub const CtxBase = struct {
     pub fn paramRequired(self: *CtxBase, name: []const u8, domain: []const u8) ![]const u8 {
         return self.param(name) orelse {
             self.last_error = .{
-                .kind = types.ErrorCode.NotFound,
-                .ctx = .{ .what = domain, .key = self.bufFmt("missing_{s}", .{name}) },
+                .kind = types.ErrorCode.NotFound, .ctx = .{ .what = domain, .key = self.bufFmt("missing_{s}", .{name}) },
             };
             return error.MissingParameter;
         };
@@ -693,8 +679,7 @@ pub const CtxBase = struct {
     pub fn headerRequired(self: *CtxBase, name: []const u8, domain: []const u8) ![]const u8 {
         return self.header(name) orelse {
             self.last_error = .{
-                .kind = types.ErrorCode.BadRequest,
-                .ctx = .{ .what = domain, .key = self.bufFmt("missing_header_{s}", .{name}) },
+                .kind = types.ErrorCode.BadRequest, .ctx = .{ .what = domain, .key = self.bufFmt("missing_header_{s}", .{name}) },
             };
             return error.MissingHeader;
         };
@@ -710,8 +695,7 @@ pub const CtxBase = struct {
 ///
 /// Usage:
 ///   const MyView = CtxView(.{
-///       .slotTypeFn = MySlotType,
-///       .reads = &.{ .TodoId, .TodoItem },
+///       .slotTypeFn = MySlotType, ///       .reads = &.{ .TodoId, .TodoItem },
 ///       .writes = &.{ .TodoItem },
 ///   });
 ///

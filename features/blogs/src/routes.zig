@@ -3,6 +3,7 @@
 /// Hot-reload test: This comment added to trigger DLL rebuild
 
 const std = @import("std");
+const array_list_writer = @import("zerver/util/array_list_writer.zig");
 
 // External function from http_slot_adapter for getting path parameters
 extern fn getPathParam(name_ptr: [*c]const u8, name_len: usize) ?[*:0]const u8;
@@ -18,34 +19,27 @@ fn getParam(name: []const u8) ?[]const u8 {
 
 // ServerAdapter definition matching the C ABI bridge
 const ServerAdapter = extern struct {
-    router: *anyopaque,
-    runtime_resources: *anyopaque,
+    router: *anyopaque, runtime_resources: *anyopaque,
     addRoute: *const fn (
         router: *anyopaque,
         method: c_int,
         path: [*c]const u8,
         path_len: usize,
-        handler: *const fn (*anyopaque, *anyopaque) callconv(.c) c_int,
-    ) callconv(.c) c_int,
-    setStatus: *const fn (response: *anyopaque, status: c_int) callconv(.c) void,
-    setHeader: *const fn (
+        handler: *const fn (*anyopaque, *anyopaque) callconv(.c) c_int,  ) callconv(.c) c_int, setStatus: *const fn (response: *anyopaque, status: c_int) callconv(.c) void, setHeader: *const fn (
         response: *anyopaque,
         name: [*c]const u8,
         name_len: usize,
         value: [*c]const u8,
         value_len: usize,
-    ) callconv(.c) c_int,
-    setBody: *const fn (
+    ) callconv(.c) c_int, setBody: *const fn (
         response: *anyopaque,
         body: [*c]const u8,
         body_len: usize,
-    ) callconv(.c) c_int,
-    getPath: *const fn (
+    ) callconv(.c) c_int, getPath: *const fn (
         request: *anyopaque,
         path_buf: [*c]u8,
         path_buf_len: usize,
-    ) callconv(.c) c_int,
-};
+    ) callconv(.c) c_int, };
 
 // HttpRequest structure matching http_slot_adapter.zig
 const HttpRequest = extern struct {
@@ -83,8 +77,7 @@ const c = @cImport({
 
 /// Blog post structure matching the database schema
 const BlogPost = struct {
-    id: []const u8,
-    title: []const u8,
+    id: []const u8, title: []const u8,
     content: []const u8,
     author: []const u8,
     created_at: i64,
@@ -109,8 +102,7 @@ pub fn registerRoutes(server: *anyopaque) c_int {
         const path = "/blogs";
         const handler_fn: *const fn (*anyopaque, *anyopaque) callconv(.c) c_int = @ptrCast(&handleBlogsPage);
         const result = adapter.addRoute(
-            adapter.router,
-            @intFromEnum(Method.GET),
+            adapter.router, @intFromEnum(Method.GET),
             path.ptr,
             path.len,
             handler_fn,
@@ -123,8 +115,7 @@ pub fn registerRoutes(server: *anyopaque) c_int {
         const path = "/blogs/list";
         const handler_fn: *const fn (*anyopaque, *anyopaque) callconv(.c) c_int = @ptrCast(&handleBlogsList);
         const result = adapter.addRoute(
-            adapter.router,
-            @intFromEnum(Method.GET),
+            adapter.router, @intFromEnum(Method.GET),
             path.ptr,
             path.len,
             handler_fn,
@@ -137,8 +128,7 @@ pub fn registerRoutes(server: *anyopaque) c_int {
         const path = "/blogs/{id}";
         const handler_fn: *const fn (*anyopaque, *anyopaque) callconv(.c) c_int = @ptrCast(&handleBlogsRedirect);
         const result = adapter.addRoute(
-            adapter.router,
-            @intFromEnum(Method.GET),
+            adapter.router, @intFromEnum(Method.GET),
             path.ptr,
             path.len,
             handler_fn,
@@ -307,7 +297,8 @@ fn buildBlogListHTML(allocator: std.mem.Allocator, posts: []const BlogPost) ![]c
     std.debug.print("[DEBUG] html_buffer created\n", .{});
 
     std.debug.print("[DEBUG] Getting writer\n", .{});
-    const writer = html_buffer.writer(allocator);
+    var writer_helper = array_list_writer.ArrayListWriter.init(&html_buffer, allocator);
+    const writer = writer_helper.writer();
     std.debug.print("[DEBUG] Writer created\n", .{});
 
     // Write doctype
@@ -364,8 +355,7 @@ fn buildBlogListHTML(allocator: std.mem.Allocator, posts: []const BlogPost) ![]c
             post.content;
 
         card_props[i] = .{
-            .title = post.title,
-            .excerpt = excerpt,
+            .title = post.title, .excerpt = excerpt,
             .date = date_str,
             .author = post.author,
             .href = null,
@@ -380,8 +370,7 @@ fn buildBlogListHTML(allocator: std.mem.Allocator, posts: []const BlogPost) ![]c
     std.debug.print("[DEBUG] Building blog section\n", .{});
     const blog_section = components.BlogListSectionDynamic.init(
         .{
-            .title = "Blog Posts",
-            .description = "Insights, deep dives, and experiments in Go, Zig, WebAssembly, and AI-driven systems.",
+            .title = "Blog Posts", .description = "Insights, deep dives, and experiments in Go, Zig, WebAssembly, and AI-driven systems.",
         },
         card_props,
     );
@@ -393,16 +382,13 @@ fn buildBlogListHTML(allocator: std.mem.Allocator, posts: []const BlogPost) ![]c
         html.head(components.Attrs{}, .{
             html.meta(components.Attrs{ .charset = "UTF-8" }, .{}),
             html.meta(components.Attrs{
-                .name = "viewport",
-                .content = "width=device-width, initial-scale=1.0",
+                .name = "viewport", .content = "width=device-width, initial-scale=1.0",
             }, .{}),
             html.title(components.Attrs{}, .{html.text("Blog - Earl Cameron")}),
             html.script(components.Attrs{
-                .src = "https://cdn.tailwindcss.com",
-            }, .{}),
+                .src = "https://cdn.tailwindcss.com", }, .{}),
             html.script(components.Attrs{
-                .src = "https://unpkg.com/htmx.org@1.9.10",
-            }, .{}),
+                .src = "https://unpkg.com/htmx.org@1.9.10", }, .{}),
         }),
         html.body(components.Attrs{ .class = "bg-gradient-to-b from-sky-50 to-sky-100 min-h-screen" }, .{
             navbar,
@@ -436,7 +422,8 @@ fn buildBlogListSnippet(allocator: std.mem.Allocator, posts: []const BlogPost) !
     const components = @import("shared/components.zig");
 
     var html_buffer = try std.ArrayList(u8).initCapacity(allocator, 2048);
-    const writer = html_buffer.writer(allocator);
+    var writer_helper = array_list_writer.ArrayListWriter.init(&html_buffer, allocator);
+    const writer = writer_helper.writer();
 
     // Convert blog posts to card props
     var card_props = try allocator.alloc(components.BlogPostCardProps, posts.len);
@@ -452,8 +439,7 @@ fn buildBlogListSnippet(allocator: std.mem.Allocator, posts: []const BlogPost) !
             post.content;
 
         card_props[i] = .{
-            .title = post.title,
-            .excerpt = excerpt,
+            .title = post.title, .excerpt = excerpt,
             .date = date_str,
             .author = post.author,
             .href = null,
@@ -466,8 +452,7 @@ fn buildBlogListSnippet(allocator: std.mem.Allocator, posts: []const BlogPost) !
     // Build blog list section
     const blog_section = components.BlogListSectionDynamic.init(
         .{
-            .title = "Blog Posts",
-            .description = "Insights, deep dives, and experiments in Go, Zig, WebAssembly, and AI-driven systems.",
+            .title = "Blog Posts", .description = "Insights, deep dives, and experiments in Go, Zig, WebAssembly, and AI-driven systems.",
         },
         card_props,
     );
@@ -488,7 +473,8 @@ fn buildBlogListSnippet(allocator: std.mem.Allocator, posts: []const BlogPost) !
 /// Build blog post HTML snippet (without full page wrapper) for HTMX swapping
 fn buildBlogPostSnippet(allocator: std.mem.Allocator, post: BlogPost) ![]const u8 {
     var html_buffer = try std.ArrayList(u8).initCapacity(allocator, 4096);
-    const writer = html_buffer.writer(allocator);
+    var writer_helper = array_list_writer.ArrayListWriter.init(&html_buffer, allocator);
+    const writer = writer_helper.writer();
 
     const date_str = try formatDate(allocator, post.created_at);
     defer allocator.free(date_str);
@@ -530,12 +516,12 @@ fn buildHomepageHTML(allocator: std.mem.Allocator) ![]const u8 {
     const components = @import("shared/components.zig");
 
     var html_buffer = try std.ArrayList(u8).initCapacity(allocator, 8192);
-    const writer = html_buffer.writer(allocator);
+    var writer_helper = array_list_writer.ArrayListWriter.init(&html_buffer, allocator);
+    const writer = writer_helper.writer();
 
     // Create homepage configuration
     const homepage_config = components.HomepageDocumentDynamicConfig{
-        .lang = "en",
-        .head = .{
+        .lang = "en", .head = .{
             .title = "Earl Cameron - Portfolio",
             .script_includes = &[_]components.ScriptIncludeDynamic{
                 .{ .src = "https://cdn.tailwindcss.com" },
@@ -627,8 +613,7 @@ fn buildHomepageHTML(allocator: std.mem.Allocator) ![]const u8 {
 
 /// Handle GET /blogs/{id} route (shows single blog post)
 fn handleBlogsRedirect(
-    request: *RequestContext,
-    response: *ResponseBuilder,
+    request: *RequestContext, response: *ResponseBuilder,
 ) callconv(.c) c_int {
     _ = request; // not used
     const server = g_server orelse return 1;
@@ -685,8 +670,7 @@ fn handleBlogsRedirect(
 
 /// Handle GET /blogs route (homepage with all sections)
 fn handleBlogsPage(
-    request: *RequestContext,
-    response: *ResponseBuilder,
+    request: *RequestContext, response: *ResponseBuilder,
 ) callconv(.c) c_int {
     _ = request;
     const server = g_server orelse return 1;
@@ -715,8 +699,7 @@ fn handleBlogsPage(
 
 /// Handle GET /blogs/list route (snippet for HTMX)
 fn handleBlogsList(
-    request: *RequestContext,
-    response: *ResponseBuilder,
+    request: *RequestContext, response: *ResponseBuilder,
 ) callconv(.c) c_int {
     _ = request;
 

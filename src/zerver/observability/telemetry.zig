@@ -4,12 +4,12 @@ const types = @import("../core/types.zig");
 const ctx_module = @import("../core/ctx.zig");
 const tracer_module = @import("tracer.zig");
 const slog = @import("slog.zig");
+const time_util = @import("../util/time.zig");
 
 /// Subscriber interface for telemetry events. Downstream integrations (e.g. OTLP exporters)
 /// can supply a vtable that receives every request/step/effect signal.
 pub const Subscriber = struct {
-    ctx: *anyopaque,
-    vtable: *const VTable,
+    ctx: *anyopaque, vtable: *const VTable,
 
     pub const VTable = struct {
         onEvent: *const fn (*anyopaque, Event) void,
@@ -203,8 +203,7 @@ pub const StepWaitEvent = struct {
 
 /// Fired when an effect job is dequeued from the job system (taken by a worker).
 pub const EffectJobTakenEvent = struct {
-    request_id: []const u8,
-    need_sequence: usize,
+    request_id: []const u8, need_sequence: usize,
     effect_sequence: usize,
     queue: []const u8,
     worker_index: usize,
@@ -235,8 +234,7 @@ pub const EffectJobResumedEvent = struct {
 
 /// Fired when a step job is dequeued from the job system (taken by a worker).
 pub const StepJobTakenEvent = struct {
-    request_id: []const u8,
-    need_sequence: usize,
+    request_id: []const u8, need_sequence: usize,
     job_ctx: usize,
     queue: []const u8,
     worker_index: usize,
@@ -296,8 +294,7 @@ pub const ComputeBudgetYieldEvent = struct {
 
 /// Union of all telemetry signals publishable to subscribers.
 pub const Event = union(enum) {
-    request_start: RequestStartEvent,
-    request_end: RequestEndEvent,
+    request_start: RequestStartEvent, request_end: RequestEndEvent,
     step_start: StepStartEvent,
     step_end: StepEndEvent,
     need_scheduled: NeedScheduledEvent,
@@ -355,7 +352,7 @@ const StepFrame = struct {
     name: []const u8,
     layer: StepLayer,
     sequence: usize,
-    started_at_ms: i64,
+    started_at_ms: u64,
 };
 
 const EffectFrame = struct {
@@ -364,7 +361,7 @@ const EffectFrame = struct {
     need_sequence: usize,
     token: u32,
     required: bool,
-    started_at_ms: i64,
+    started_at_ms: u64,
 };
 
 /// Core telemetry structure shared across the server/request lifetime.
@@ -389,7 +386,7 @@ pub const Telemetry = struct {
     response_body_bytes: usize = 0,
     response_streaming: bool = false,
 
-    request_start_ms: i64 = 0,
+    request_start_ms: u64 = 0,
     completed: bool = false,
     cached_trace_json: ?[]const u8 = null,
 
@@ -397,8 +394,7 @@ pub const Telemetry = struct {
     need_sequence: usize = 0,
     effect_sequence: usize = 0,
 
-    step_stack: std.ArrayList(StepFrame),
-    effect_stack: std.ArrayList(EffectFrame),
+    step_stack: std.ArrayList(StepFrame), effect_stack: std.ArrayList(EffectFrame),
 
     pub fn init(allocator: std.mem.Allocator, tracer: *Tracer, options: InitOptions) !Telemetry {
         return Telemetry{
@@ -434,7 +430,7 @@ pub const Telemetry = struct {
         }
         self.request_bytes = ctx.request_bytes;
         self.client_ip = ctx.clientIpText();
-        self.request_start_ms = std.time.milliTimestamp();
+        self.request_start_ms = time_util.milliTimestamp();
 
         self.tracer.recordRequestStart();
         self.logDebug("request_start", &.{
@@ -449,10 +445,9 @@ pub const Telemetry = struct {
         });
 
         self.emit(.{ .request_start = .{
-            .request_id = self.request_id,
-            .method = self.method,
+            .request_id = self.request_id, .method = self.method,
             .path = self.path,
-            .timestamp_ms = @as(u64, @intCast(self.request_start_ms)),
+            .timestamp_ms = self.request_start_ms,
             .host = self.request_host,
             .user_agent = self.request_user_agent,
             .referer = self.request_referer,
@@ -470,8 +465,8 @@ pub const Telemetry = struct {
         }
 
         self.completed = true;
-        const now = std.time.milliTimestamp();
-        const duration = if (self.request_start_ms == 0) 0 else @as(u64, @intCast(now - self.request_start_ms));
+        const now = time_util.milliTimestamp();
+        const duration = if (self.request_start_ms == 0) 0 else now - self.request_start_ms;
 
         self.tracer.recordRequestEnd();
         self.logDebug("request_end", &.{
@@ -487,8 +482,7 @@ pub const Telemetry = struct {
         });
 
         self.emit(.{ .request_end = .{
-            .request_id = self.request_id,
-            .status_code = outcome.status_code,
+            .request_id = self.request_id, .status_code = outcome.status_code,
             .outcome = outcome.outcome,
             .duration_ms = duration,
             .error_ctx = outcome.error_ctx,
@@ -509,7 +503,7 @@ pub const Telemetry = struct {
     pub fn stepStart(self: *Telemetry, layer: StepLayer, name: []const u8) void {
         self.step_sequence += 1;
         const sequence = self.step_sequence;
-        const started_at = std.time.milliTimestamp();
+        const started_at = time_util.milliTimestamp();
         self.step_stack.append(self.allocator, .{ .name = name, .layer = layer, .sequence = sequence, .started_at_ms = started_at }) catch return;
 
         self.tracer.recordStepStart(name);
@@ -521,18 +515,17 @@ pub const Telemetry = struct {
         });
 
         self.emit(.{ .step_start = .{
-            .request_id = self.request_id,
-            .name = name,
+            .request_id = self.request_id, .name = name,
             .layer = layer,
             .sequence = sequence,
-            .timestamp_ms = @as(u64, @intCast(started_at)),
+            .timestamp_ms = started_at,
         } });
     }
 
     pub fn stepEnd(self: *Telemetry, layer: StepLayer, name: []const u8, outcome: []const u8) void {
-        const now = std.time.milliTimestamp();
+        const now = time_util.milliTimestamp();
         const frame = self.popStepFrame(name, layer) orelse return;
-        const duration = if (frame.started_at_ms == 0) 0 else @as(u64, @intCast(now - frame.started_at_ms));
+        const duration = if (frame.started_at_ms == 0) 0 else now - frame.started_at_ms;
 
         self.tracer.recordStepEnd(name, outcome);
         self.logDebug("step_end", &.{
@@ -545,8 +538,7 @@ pub const Telemetry = struct {
         });
 
         self.emit(.{ .step_end = .{
-            .request_id = self.request_id,
-            .name = name,
+            .request_id = self.request_id, .name = name,
             .layer = layer,
             .sequence = frame.sequence,
             .outcome = outcome,
@@ -568,8 +560,7 @@ pub const Telemetry = struct {
 
     pub fn responseMetricsFromResponse(response: types.Response) ResponseMetrics {
         var metrics = ResponseMetrics{
-            .content_type = "",
-            .body_bytes = 0,
+            .content_type = "", .body_bytes = 0,
             .streaming = false,
         };
 
@@ -607,18 +598,15 @@ pub const Telemetry = struct {
             slog.Attr.string("join", @tagName(summary.join)),
         });
         self.emit(.{ .need_scheduled = .{
-            .request_id = self.request_id,
-            .sequence = sequence,
+            .request_id = self.request_id, .sequence = sequence,
             .effect_count = summary.effect_count,
             .mode = summary.mode,
             .join = summary.join,
         } });
         self.tracer.recordNeedScheduled(
-            sequence,
-            summary.effect_count,
+            sequence, summary.effect_count,
             @tagName(summary.mode),
-            @tagName(summary.join),
-        );
+            @tagName(summary.join),  );
         return sequence;
     }
 
@@ -636,7 +624,7 @@ pub const Telemetry = struct {
     pub fn effectStart(self: *Telemetry, details: EffectStartDetails) usize {
         self.effect_sequence += 1;
         const sequence = self.effect_sequence;
-        const started_at = std.time.milliTimestamp();
+        const started_at = time_util.milliTimestamp();
         self.effect_stack.append(self.allocator, .{
             .kind = details.kind,
             .sequence = sequence,
@@ -660,8 +648,7 @@ pub const Telemetry = struct {
         });
 
         self.emit(.{ .effect_start = .{
-            .request_id = self.request_id,
-            .sequence = sequence,
+            .request_id = self.request_id, .sequence = sequence,
             .need_sequence = details.need_sequence,
             .kind = details.kind,
             .token = details.token,
@@ -670,7 +657,7 @@ pub const Telemetry = struct {
             .join = details.join,
             .timeout_ms = details.timeout_ms,
             .target = details.target,
-            .timestamp_ms = @as(u64, @intCast(started_at)),
+            .timestamp_ms = started_at,
         } });
         return sequence;
     }
@@ -687,9 +674,9 @@ pub const Telemetry = struct {
     };
 
     pub fn effectEnd(self: *Telemetry, details: EffectEndDetails) void {
-        const now = std.time.milliTimestamp();
+        const now = time_util.milliTimestamp();
         const frame = self.popEffectFrame(details.sequence, details.kind) orelse return;
-        const duration = if (frame.started_at_ms == 0) 0 else @as(u64, @intCast(now - frame.started_at_ms));
+        const duration = if (frame.started_at_ms == 0) 0 else now - frame.started_at_ms;
 
         self.tracer.recordEffectEnd(details.kind, details.success);
         self.logDebug("effect_end", &.{
@@ -704,8 +691,7 @@ pub const Telemetry = struct {
         });
 
         self.emit(.{ .effect_end = .{
-            .request_id = self.request_id,
-            .sequence = details.sequence,
+            .request_id = self.request_id, .sequence = details.sequence,
             .need_sequence = details.need_sequence,
             .kind = details.kind,
             .token = details.token,
@@ -724,7 +710,7 @@ pub const Telemetry = struct {
     };
 
     pub fn effectJobEnqueued(self: *Telemetry, details: EffectJobEnqueuedDetails) void {
-        const timestamp_ms = std.time.milliTimestamp();
+        const timestamp_ms = time_util.milliTimestamp();
         self.logDebug("effect_job_enqueued", &.{
             slog.Attr.string("request_id", self.request_id),
             slog.Attr.uint("need_sequence", details.need_sequence),
@@ -733,8 +719,7 @@ pub const Telemetry = struct {
         });
 
         self.emit(.{ .effect_job_enqueued = .{
-            .request_id = self.request_id,
-            .need_sequence = details.need_sequence,
+            .request_id = self.request_id, .need_sequence = details.need_sequence,
             .effect_sequence = details.effect_sequence,
             .queue = details.queue,
             .timestamp_ms = @as(u64, @intCast(timestamp_ms)),
@@ -752,7 +737,7 @@ pub const Telemetry = struct {
     };
 
     pub fn effectJobStarted(self: *Telemetry, details: EffectJobStartedDetails) void {
-        const timestamp_ms = std.time.milliTimestamp();
+        const timestamp_ms = time_util.milliTimestamp();
         self.logDebug("effect_job_started", &.{
             slog.Attr.string("request_id", self.request_id),
             slog.Attr.uint("need_sequence", details.need_sequence),
@@ -761,8 +746,7 @@ pub const Telemetry = struct {
         });
 
         self.emit(.{ .effect_job_started = .{
-            .request_id = self.request_id,
-            .need_sequence = details.need_sequence,
+            .request_id = self.request_id, .need_sequence = details.need_sequence,
             .effect_sequence = details.effect_sequence,
             .queue = details.queue,
             .job_ctx = details.job_ctx,
@@ -771,8 +755,7 @@ pub const Telemetry = struct {
         } });
 
         self.tracer.recordEffectJobStarted(
-            details.need_sequence,
-            details.effect_sequence,
+            details.need_sequence, details.effect_sequence,
             details.queue,
             details.job_ctx,
             details.worker_index,
@@ -789,7 +772,7 @@ pub const Telemetry = struct {
     };
 
     pub fn effectJobCompleted(self: *Telemetry, details: EffectJobCompletedDetails) void {
-        const timestamp_ms = std.time.milliTimestamp();
+        const timestamp_ms = time_util.milliTimestamp();
         self.logDebug("effect_job_completed", &.{
             slog.Attr.string("request_id", self.request_id),
             slog.Attr.uint("need_sequence", details.need_sequence),
@@ -799,8 +782,7 @@ pub const Telemetry = struct {
         });
 
         self.emit(.{ .effect_job_completed = .{
-            .request_id = self.request_id,
-            .need_sequence = details.need_sequence,
+            .request_id = self.request_id, .need_sequence = details.need_sequence,
             .effect_sequence = details.effect_sequence,
             .queue = details.queue,
             .success = details.success,
@@ -810,8 +792,7 @@ pub const Telemetry = struct {
         } });
 
         self.tracer.recordEffectJobCompleted(
-            details.need_sequence,
-            details.effect_sequence,
+            details.need_sequence, details.effect_sequence,
             details.queue,
             details.success,
             details.job_ctx,
@@ -827,7 +808,7 @@ pub const Telemetry = struct {
     };
 
     pub fn effectJobTaken(self: *Telemetry, details: EffectJobTakenDetails) void {
-        const timestamp_ms = std.time.milliTimestamp();
+        const timestamp_ms = time_util.milliTimestamp();
         self.logDebug("effect_job_taken", &.{
             slog.Attr.string("request_id", self.request_id),
             slog.Attr.uint("need_sequence", details.need_sequence),
@@ -837,8 +818,7 @@ pub const Telemetry = struct {
         });
 
         self.emit(.{ .effect_job_taken = .{
-            .request_id = self.request_id,
-            .need_sequence = details.need_sequence,
+            .request_id = self.request_id, .need_sequence = details.need_sequence,
             .effect_sequence = details.effect_sequence,
             .queue = details.queue,
             .worker_index = details.worker_index,
@@ -857,7 +837,7 @@ pub const Telemetry = struct {
     };
 
     pub fn effectJobParked(self: *Telemetry, details: EffectJobParkedDetails) void {
-        const timestamp_ms = std.time.milliTimestamp();
+        const timestamp_ms = time_util.milliTimestamp();
         self.logDebug("effect_job_parked", &.{
             slog.Attr.string("request_id", self.request_id),
             slog.Attr.uint("need_sequence", details.need_sequence),
@@ -867,8 +847,7 @@ pub const Telemetry = struct {
         });
 
         self.emit(.{ .effect_job_parked = .{
-            .request_id = self.request_id,
-            .need_sequence = details.need_sequence,
+            .request_id = self.request_id, .need_sequence = details.need_sequence,
             .effect_sequence = details.effect_sequence,
             .queue = details.queue,
             .cause = details.cause,
@@ -886,7 +865,7 @@ pub const Telemetry = struct {
     };
 
     pub fn effectJobResumed(self: *Telemetry, details: EffectJobResumedDetails) void {
-        const timestamp_ms = std.time.milliTimestamp();
+        const timestamp_ms = time_util.milliTimestamp();
         self.logDebug("effect_job_resumed", &.{
             slog.Attr.string("request_id", self.request_id),
             slog.Attr.uint("need_sequence", details.need_sequence),
@@ -895,8 +874,7 @@ pub const Telemetry = struct {
         });
 
         self.emit(.{ .effect_job_resumed = .{
-            .request_id = self.request_id,
-            .need_sequence = details.need_sequence,
+            .request_id = self.request_id, .need_sequence = details.need_sequence,
             .effect_sequence = details.effect_sequence,
             .queue = details.queue,
             .timestamp_ms = @as(u64, @intCast(timestamp_ms)),
@@ -910,7 +888,7 @@ pub const Telemetry = struct {
     };
 
     pub fn stepJobEnqueued(self: *Telemetry, details: StepJobEnqueuedDetails) void {
-        const timestamp_ms = std.time.milliTimestamp();
+        const timestamp_ms = time_util.milliTimestamp();
         self.logDebug("step_job_enqueued", &.{
             slog.Attr.string("request_id", self.request_id),
             slog.Attr.uint("need_sequence", details.need_sequence),
@@ -919,8 +897,7 @@ pub const Telemetry = struct {
         });
 
         self.emit(.{ .step_job_enqueued = .{
-            .request_id = self.request_id,
-            .need_sequence = details.need_sequence,
+            .request_id = self.request_id, .need_sequence = details.need_sequence,
             .job_ctx = details.job_ctx,
             .queue = details.queue,
             .timestamp_ms = @as(u64, @intCast(timestamp_ms)),
@@ -937,7 +914,7 @@ pub const Telemetry = struct {
     };
 
     pub fn stepJobStarted(self: *Telemetry, details: StepJobStartedDetails) void {
-        const timestamp_ms = std.time.milliTimestamp();
+        const timestamp_ms = time_util.milliTimestamp();
         self.logDebug("step_job_started", &.{
             slog.Attr.string("request_id", self.request_id),
             slog.Attr.uint("need_sequence", details.need_sequence),
@@ -946,8 +923,7 @@ pub const Telemetry = struct {
         });
 
         self.emit(.{ .step_job_started = .{
-            .request_id = self.request_id,
-            .need_sequence = details.need_sequence,
+            .request_id = self.request_id, .need_sequence = details.need_sequence,
             .job_ctx = details.job_ctx,
             .queue = details.queue,
             .worker_index = details.worker_index,
@@ -966,7 +942,7 @@ pub const Telemetry = struct {
     };
 
     pub fn stepJobCompleted(self: *Telemetry, details: StepJobCompletedDetails) void {
-        const timestamp_ms = std.time.milliTimestamp();
+        const timestamp_ms = time_util.milliTimestamp();
         self.logDebug("step_job_completed", &.{
             slog.Attr.string("request_id", self.request_id),
             slog.Attr.uint("need_sequence", details.need_sequence),
@@ -976,8 +952,7 @@ pub const Telemetry = struct {
         });
 
         self.emit(.{ .step_job_completed = .{
-            .request_id = self.request_id,
-            .need_sequence = details.need_sequence,
+            .request_id = self.request_id, .need_sequence = details.need_sequence,
             .job_ctx = details.job_ctx,
             .queue = details.queue,
             .worker_index = details.worker_index,
@@ -996,7 +971,7 @@ pub const Telemetry = struct {
     };
 
     pub fn stepJobTaken(self: *Telemetry, details: StepJobTakenDetails) void {
-        const timestamp_ms = std.time.milliTimestamp();
+        const timestamp_ms = time_util.milliTimestamp();
         self.logDebug("step_job_taken", &.{
             slog.Attr.string("request_id", self.request_id),
             slog.Attr.uint("need_sequence", details.need_sequence),
@@ -1006,8 +981,7 @@ pub const Telemetry = struct {
         });
 
         self.emit(.{ .step_job_taken = .{
-            .request_id = self.request_id,
-            .need_sequence = details.need_sequence,
+            .request_id = self.request_id, .need_sequence = details.need_sequence,
             .job_ctx = details.job_ctx,
             .queue = details.queue,
             .worker_index = details.worker_index,
@@ -1026,7 +1000,7 @@ pub const Telemetry = struct {
     };
 
     pub fn stepJobParked(self: *Telemetry, details: StepJobParkedDetails) void {
-        const timestamp_ms = std.time.milliTimestamp();
+        const timestamp_ms = time_util.milliTimestamp();
         self.logDebug("step_job_parked", &.{
             slog.Attr.string("request_id", self.request_id),
             slog.Attr.uint("need_sequence", details.need_sequence),
@@ -1036,8 +1010,7 @@ pub const Telemetry = struct {
         });
 
         self.emit(.{ .step_job_parked = .{
-            .request_id = self.request_id,
-            .need_sequence = details.need_sequence,
+            .request_id = self.request_id, .need_sequence = details.need_sequence,
             .job_ctx = details.job_ctx,
             .queue = details.queue,
             .cause = details.cause,
@@ -1055,7 +1028,7 @@ pub const Telemetry = struct {
     };
 
     pub fn stepJobResumed(self: *Telemetry, details: StepJobResumedDetails) void {
-        const timestamp_ms = std.time.milliTimestamp();
+        const timestamp_ms = time_util.milliTimestamp();
         self.logDebug("step_job_resumed", &.{
             slog.Attr.string("request_id", self.request_id),
             slog.Attr.uint("need_sequence", details.need_sequence),
@@ -1064,8 +1037,7 @@ pub const Telemetry = struct {
         });
 
         self.emit(.{ .step_job_resumed = .{
-            .request_id = self.request_id,
-            .need_sequence = details.need_sequence,
+            .request_id = self.request_id, .need_sequence = details.need_sequence,
             .job_ctx = details.job_ctx,
             .queue = details.queue,
             .timestamp_ms = @as(u64, @intCast(timestamp_ms)),
@@ -1073,15 +1045,14 @@ pub const Telemetry = struct {
     }
 
     pub fn stepWait(self: *Telemetry, need_sequence: usize) void {
-        const timestamp_ms = std.time.milliTimestamp();
+        const timestamp_ms = time_util.milliTimestamp();
         self.logDebug("step_wait", &.{
             slog.Attr.string("request_id", self.request_id),
             slog.Attr.uint("need_sequence", need_sequence),
         });
 
         self.emit(.{ .step_wait = .{
-            .request_id = self.request_id,
-            .need_sequence = need_sequence,
+            .request_id = self.request_id, .need_sequence = need_sequence,
             .timestamp_ms = @as(u64, @intCast(timestamp_ms)),
         } });
 
@@ -1097,14 +1068,11 @@ pub const Telemetry = struct {
             slog.Attr.string("join", @tagName(join)),
         });
         self.tracer.recordStepResume(
-            need_sequence,
-            resume_ptr,
+            need_sequence, resume_ptr,
             @tagName(mode),
-            @tagName(join),
-        );
+            @tagName(join),  );
         self.emit(.{ .step_resume = .{
-            .request_id = self.request_id,
-            .need_sequence = need_sequence,
+            .request_id = self.request_id, .need_sequence = need_sequence,
             .resume_ptr = resume_ptr,
             .mode = mode,
             .join = join,
@@ -1118,8 +1086,7 @@ pub const Telemetry = struct {
             slog.Attr.string("error", error_name),
         });
         self.emit(.{ .executor_crash = .{
-            .request_id = self.request_id,
-            .phase = phase,
+            .request_id = self.request_id, .phase = phase,
             .error_name = error_name,
         } });
     }
@@ -1132,7 +1099,7 @@ pub const Telemetry = struct {
     };
 
     pub fn computeBudgetRegistered(self: *Telemetry, details: ComputeBudgetRegisteredDetails) void {
-        const timestamp_ms = std.time.milliTimestamp();
+        const timestamp_ms = time_util.milliTimestamp();
         self.logDebug("compute_budget_registered", &.{
             slog.Attr.string("request_id", self.request_id),
             slog.Attr.uint("token", details.token),
@@ -1142,8 +1109,7 @@ pub const Telemetry = struct {
         });
 
         self.emit(.{ .compute_budget_registered = .{
-            .request_id = self.request_id,
-            .token = details.token,
+            .request_id = self.request_id, .token = details.token,
             .allocated_ms = details.allocated_ms,
             .priority = details.priority,
             .yield_interval_ms = details.yield_interval_ms,
@@ -1159,7 +1125,7 @@ pub const Telemetry = struct {
     };
 
     pub fn computeBudgetExceeded(self: *Telemetry, details: ComputeBudgetExceededDetails) void {
-        const timestamp_ms = std.time.milliTimestamp();
+        const timestamp_ms = time_util.milliTimestamp();
         self.logDebug("compute_budget_exceeded", &.{
             slog.Attr.string("request_id", self.request_id),
             slog.Attr.uint("token", details.token),
@@ -1169,8 +1135,7 @@ pub const Telemetry = struct {
         });
 
         self.emit(.{ .compute_budget_exceeded = .{
-            .request_id = self.request_id,
-            .token = details.token,
+            .request_id = self.request_id, .token = details.token,
             .allocated_ms = details.allocated_ms,
             .used_ms = details.used_ms,
             .action = details.action,
@@ -1185,7 +1150,7 @@ pub const Telemetry = struct {
     };
 
     pub fn computeBudgetYield(self: *Telemetry, details: ComputeBudgetYieldDetails) void {
-        const timestamp_ms = std.time.milliTimestamp();
+        const timestamp_ms = time_util.milliTimestamp();
         self.logDebug("compute_budget_yield", &.{
             slog.Attr.string("request_id", self.request_id),
             slog.Attr.uint("token", details.token),
@@ -1194,8 +1159,7 @@ pub const Telemetry = struct {
         });
 
         self.emit(.{ .compute_budget_yield = .{
-            .request_id = self.request_id,
-            .token = details.token,
+            .request_id = self.request_id, .token = details.token,
             .elapsed_ms = details.elapsed_ms,
             .yield_interval_ms = details.yield_interval_ms,
             .timestamp_ms = @as(u64, @intCast(timestamp_ms)),
@@ -1250,8 +1214,7 @@ pub const Telemetry = struct {
 
 pub fn stepLayerName(layer: StepLayer) []const u8 {
     return switch (layer) {
-        .global_before => "global_before",
-        .route_before => "route_before",
+        .global_before => "global_before", .route_before => "route_before",
         .main => "main",
         .continuation => "continuation",
         .system => "system",

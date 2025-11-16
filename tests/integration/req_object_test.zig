@@ -26,8 +26,7 @@ fn requestHeaderReturnsSpecific(server: *TestServer, allocator: std.mem.Allocato
     }.handler);
 
     const response = try server.handle(
-        allocator,
-        "GET /test HTTP/1.1\r\n" ++ "Host: localhost\r\n" ++ "X-Custom-Header: MyValue\r\n" ++ "\r\n",
+        allocator, "GET /test HTTP/1.1\r\n" ++ "Host: localhost\r\n" ++ "X-Custom-Header: MyValue\r\n" ++ "\r\n",
     );
     defer allocator.free(response);
 
@@ -43,8 +42,7 @@ fn requestHeaderCaseInsensitive(server: *TestServer, allocator: std.mem.Allocato
     }.handler);
 
     const response = try server.handle(
-        allocator,
-        "GET /test HTTP/1.1\r\n" ++ "Host: localhost\r\n" ++ "X-CUSTOM-HEADER: AnotherValue\r\n" ++ "\r\n",
+        allocator, "GET /test HTTP/1.1\r\n" ++ "Host: localhost\r\n" ++ "X-CUSTOM-HEADER: AnotherValue\r\n" ++ "\r\n",
     );
     defer allocator.free(response);
 
@@ -60,8 +58,7 @@ fn requestHeaderMissing(server: *TestServer, allocator: std.mem.Allocator) !void
     }.handler);
 
     const response = try server.handle(
-        allocator,
-        "GET /test HTTP/1.1\r\n" ++ "Host: localhost\r\n" ++ "\r\n",
+        allocator, "GET /test HTTP/1.1\r\n" ++ "Host: localhost\r\n" ++ "\r\n",
     );
     defer allocator.free(response);
 
@@ -77,8 +74,7 @@ fn requestParamReturnsValue(server: *TestServer, allocator: std.mem.Allocator) !
     }.handler);
 
     const response = try server.handle(
-        allocator,
-        "GET /users/123 HTTP/1.1\r\n" ++ "Host: localhost\r\n" ++ "\r\n",
+        allocator, "GET /users/123 HTTP/1.1\r\n" ++ "Host: localhost\r\n" ++ "\r\n",
     );
     defer allocator.free(response);
 
@@ -94,8 +90,7 @@ fn requestParamMissing(server: *TestServer, allocator: std.mem.Allocator) !void 
     }.handler);
 
     const response = try server.handle(
-        allocator,
-        "GET /users HTTP/1.1\r\n" ++ "Host: localhost\r\n" ++ "\r\n",
+        allocator, "GET /users HTTP/1.1\r\n" ++ "Host: localhost\r\n" ++ "\r\n",
     );
     defer allocator.free(response);
 
@@ -111,8 +106,7 @@ fn requestQueryReturnsValue(server: *TestServer, allocator: std.mem.Allocator) !
     }.handler);
 
     const response = try server.handle(
-        allocator,
-        "GET /search?q=ziglang HTTP/1.1\r\n" ++ "Host: localhost\r\n" ++ "\r\n",
+        allocator, "GET /search?q=ziglang HTTP/1.1\r\n" ++ "Host: localhost\r\n" ++ "\r\n",
     );
     defer allocator.free(response);
 
@@ -128,8 +122,7 @@ fn requestQueryMissing(server: *TestServer, allocator: std.mem.Allocator) !void 
     }.handler);
 
     const response = try server.handle(
-        allocator,
-        "GET /search HTTP/1.1\r\n" ++ "Host: localhost\r\n" ++ "\r\n",
+        allocator, "GET /search HTTP/1.1\r\n" ++ "Host: localhost\r\n" ++ "\r\n",
     );
     defer allocator.free(response);
 
@@ -144,8 +137,7 @@ fn requestBodyEchoes(server: *TestServer, allocator: std.mem.Allocator) !void {
     }.handler);
 
     const response = try server.handle(
-        allocator,
-        "POST /submit HTTP/1.1\r\n" ++ "Host: localhost\r\n" ++ "Content-Length: 11\r\n" ++ "\r\n" ++ "Hello World",
+        allocator, "POST /submit HTTP/1.1\r\n" ++ "Host: localhost\r\n" ++ "Content-Length: 11\r\n" ++ "\r\n" ++ "Hello World",
     );
     defer allocator.free(response);
 
@@ -160,8 +152,7 @@ fn requestBodyEmpty(server: *TestServer, allocator: std.mem.Allocator) !void {
     }.handler);
 
     const response = try server.handle(
-        allocator,
-        "POST /submit HTTP/1.1\r\n" ++ "Host: localhost\r\n" ++ "Content-Length: 0\r\n" ++ "\r\n",
+        allocator, "POST /submit HTTP/1.1\r\n" ++ "Host: localhost\r\n" ++ "Content-Length: 0\r\n" ++ "\r\n",
     );
     defer allocator.free(response);
 
@@ -186,8 +177,7 @@ fn requestJsonParsesBody(server: *TestServer, allocator: std.mem.Allocator) !voi
     }.handler);
 
     const response = try server.handle(
-        allocator,
-        "POST /json HTTP/1.1\r\n" ++ "Host: localhost\r\n" ++ "Content-Type: application/json\r\n" ++ "Content-Length: 18\r\n" ++ "\r\n" ++ "{\"name\": \"Zerver\"}",
+        allocator, "POST /json HTTP/1.1\r\n" ++ "Host: localhost\r\n" ++ "Content-Type: application/json\r\n" ++ "Content-Length: 18\r\n" ++ "\r\n" ++ "{\"name\": \"Zerver\"}",
     );
     defer allocator.free(response);
 
@@ -205,8 +195,7 @@ fn requestJsonInvalid(server: *TestServer, allocator: std.mem.Allocator) !void {
     }.handler);
 
     const response = try server.handle(
-        allocator,
-        "POST /json HTTP/1.1\r\n" ++ "Host: localhost\r\n" ++ "Content-Type: application/json\r\n" ++ "Content-Length: 10\r\n" ++ "\r\n" ++ "{\"name\": ",
+        allocator, "POST /json HTTP/1.1\r\n" ++ "Host: localhost\r\n" ++ "Content-Type: application/json\r\n" ++ "Content-Length: 10\r\n" ++ "\r\n" ++ "{\"name\": ",
     );
     defer allocator.free(response);
 

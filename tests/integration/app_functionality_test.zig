@@ -12,8 +12,7 @@ const expectEndsWith = common.expectEndsWith;
 
 fn appListenStartsServer(server: *TestServer, allocator: std.mem.Allocator) !void {
     const response = try server.handle(
-        allocator,
-        "GET / HTTP/1.1\r\n" ++ "Host: localhost\r\n" ++ "\r\n",
+        allocator, "GET / HTTP/1.1\r\n" ++ "Host: localhost\r\n" ++ "\r\n",
     );
     defer allocator.free(response);
     try expectStartsWith(response, "HTTP/1.1 404 Not Found");
@@ -28,8 +27,7 @@ fn appHandleBasicRequest(server: *TestServer, allocator: std.mem.Allocator) !voi
     }.handler);
 
     const response = try server.handle(
-        allocator,
-        "GET /hello HTTP/1.1\r\n" ++ "Host: localhost\r\n" ++ "\r\n",
+        allocator, "GET /hello HTTP/1.1\r\n" ++ "Host: localhost\r\n" ++ "\r\n",
     );
     defer allocator.free(response);
 
@@ -46,8 +44,7 @@ fn appHandlesErrorsGracefully(server: *TestServer, allocator: std.mem.Allocator)
     }.handler);
 
     const response = try server.handle(
-        allocator,
-        "GET /error HTTP/1.1\r\n" ++ "Host: localhost\r\n" ++ "\r\n",
+        allocator, "GET /error HTTP/1.1\r\n" ++ "Host: localhost\r\n" ++ "\r\n",
     );
     defer allocator.free(response);
     try expectStartsWith(response, "HTTP/1.1 500 Internal Server Error");
@@ -69,8 +66,7 @@ fn appRegistersGlobalMiddleware(server: *TestServer, allocator: std.mem.Allocato
     }.handler);
 
     const response = try server.handle(
-        allocator,
-        "GET /test HTTP/1.1\r\n" ++ "Host: localhost\r\n" ++ "\r\n",
+        allocator, "GET /test HTTP/1.1\r\n" ++ "Host: localhost\r\n" ++ "\r\n",
     );
     defer allocator.free(response);
 
@@ -104,8 +100,7 @@ fn appMiddlewareOrder(server: *TestServer, allocator: std.mem.Allocator) !void {
     }.handler);
 
     const response = try server.handle(
-        allocator,
-        "GET /test HTTP/1.1\r\n" ++ "Host: localhost\r\n" ++ "\r\n",
+        allocator, "GET /test HTTP/1.1\r\n" ++ "Host: localhost\r\n" ++ "\r\n",
     );
     defer allocator.free(response);
 
@@ -129,15 +124,13 @@ fn appAddRoutePerMethod(server: *TestServer, allocator: std.mem.Allocator) !void
     }.handler);
 
     const get_response = try server.handle(
-        allocator,
-        "GET /specific HTTP/1.1\r\n" ++ "Host: localhost\r\n" ++ "\r\n",
+        allocator, "GET /specific HTTP/1.1\r\n" ++ "Host: localhost\r\n" ++ "\r\n",
     );
     defer allocator.free(get_response);
     try expectContains(get_response, "GET specific");
 
     const post_response = try server.handle(
-        allocator,
-        "POST /specific HTTP/1.1\r\n" ++ "Host: localhost\r\n" ++ "Content-Length: 0\r\n" ++ "\r\n",
+        allocator, "POST /specific HTTP/1.1\r\n" ++ "Host: localhost\r\n" ++ "Content-Length: 0\r\n" ++ "\r\n",
     );
     defer allocator.free(post_response);
     try expectContains(post_response, "POST specific");
@@ -159,8 +152,7 @@ fn appDuplicateRoute(server: *TestServer, allocator: std.mem.Allocator) !void {
     }.handler);
 
     const response = try server.handle(
-        allocator,
-        "GET /duplicate HTTP/1.1\r\n" ++ "Host: localhost\r\n" ++ "\r\n",
+        allocator, "GET /duplicate HTTP/1.1\r\n" ++ "Host: localhost\r\n" ++ "\r\n",
     );
     defer allocator.free(response);
     try expectContains(response, "second");

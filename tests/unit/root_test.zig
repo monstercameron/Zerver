@@ -5,8 +5,7 @@ const zerver = @import("zerver");
 fn sampleStep(ctx: *zerver.CtxBase) !zerver.Decision {
     ctx.status_code = 201;
     return zerver.done(.{
-        .status = 201,
-        .body = .{ .complete = "ok" },
+        .status = 201, .body = .{ .complete = "ok" },
     });
 }
 
@@ -25,8 +24,7 @@ test "root step helper wraps bare ctx" {
             try std.testing.expectEqual(@as(u16, 201), resp.status);
             try std.testing.expectEqualStrings("ok", resp.body.complete);
         },
-        else => try std.testing.expect(false),
-    }
+        else => try std.testing.expect(false), }
 }
 
 test "root continue helper returns Continue" {

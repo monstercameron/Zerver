@@ -7,6 +7,7 @@ const blog_logging = @import("logging.zig");
 const util = @import("util.zig");
 const http_util = @import("zerver/shared/http.zig");
 const http_status = zerver.HttpStatus;
+const time_util = zerver.time_util;
 
 const Slot = blog_types.BlogSlot;
 
@@ -39,7 +40,7 @@ fn parseCommentInput(ctx: *zerver.CtxBase) CommentParseError!blog_types.CommentI
 }
 
 fn getTimestamp(_: *zerver.CtxBase) i64 {
-    return std.time.timestamp();
+    return time_util.timestamp();
 }
 
 pub fn step_extract_post_id(ctx_base: *zerver.CtxBase) !zerver.Decision {
@@ -229,8 +230,7 @@ pub fn step_db_create_post(ctx_base: *zerver.CtxBase) !zerver.Decision {
     const new_post_id = base.newId();
     const timestamp = getTimestamp(base);
     const post = blog_types.Post{
-        .id = new_post_id,
-        .title = input_post.title,
+        .id = new_post_id, .title = input_post.title,
         .content = input_post.content,
         .author = input_post.author,
         .created_at = timestamp,
@@ -303,8 +303,7 @@ pub fn step_db_update_post(ctx_base: *zerver.CtxBase) !zerver.Decision {
     const input_post = try ctx.require(Slot.PostInput);
     const timestamp = getTimestamp(base);
     const post = blog_types.Post{
-        .id = existing_post.id,
-        .title = input_post.title,
+        .id = existing_post.id, .title = input_post.title,
         .content = input_post.content,
         .author = input_post.author,
         .created_at = existing_post.created_at,
@@ -345,8 +344,7 @@ pub fn step_delete_post(ctx_base: *zerver.CtxBase) !zerver.Decision {
 pub fn step_return_delete_ack(ctx: *zerver.CtxBase) !zerver.Decision {
     _ = ctx;
     return zerver.done(.{
-        .status = http_status.no_content,
-        .body = .{ .complete = "" },
+        .status = http_status.no_content, .body = .{ .complete = "" },
     });
 }
 
@@ -413,8 +411,7 @@ pub fn step_db_create_comment(ctx_base: *zerver.CtxBase) !zerver.Decision {
     const new_comment_id = base.newId();
     const timestamp = getTimestamp(base);
     const comment = blog_types.Comment{
-        .id = new_comment_id,
-        .post_id = post_id,
+        .id = new_comment_id, .post_id = post_id,
         .author = input_comment.author,
         .content = input_comment.content,
         .created_at = timestamp,
@@ -461,7 +458,6 @@ pub fn step_delete_comment(ctx_base: *zerver.CtxBase) !zerver.Decision {
 pub fn step_return_comment_delete_ack(ctx: *zerver.CtxBase) !zerver.Decision {
     _ = ctx;
     return zerver.done(.{
-        .status = http_status.no_content,
-        .body = .{ .complete = "" },
+        .status = http_status.no_content, .body = .{ .complete = "" },
     });
 }

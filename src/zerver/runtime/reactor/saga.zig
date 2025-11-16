@@ -7,9 +7,7 @@ const types = @import("../../core/types.zig");
 pub const SagaError = error{Unimplemented};
 
 pub const SagaLog = struct {
-    allocator: std.mem.Allocator,
-
-    pub fn init(allocator: std.mem.Allocator) SagaLog {
+    allocator: std.mem.Allocator, pub fn init(allocator: std.mem.Allocator) SagaLog {
         return .{ .allocator = allocator };
     }
 

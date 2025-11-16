@@ -12,6 +12,7 @@ const ipc_types = zerver.ipc_types;
 const executor_module = zerver.executor;
 const RuntimeResources = zerver.RuntimeResources;
 const effectors = zerver.reactor_effectors;
+const time_util = zerver.time_util;
 
 /// Thread-local storage for effect dispatcher and context
 /// This allows the effect handler function to access the dispatcher
@@ -34,12 +35,11 @@ fn realEffectHandler(effect: *const types.Effect, timeout_ms: u32) anyerror!exec
 
 /// Execute a pipeline and return an IPC response
 pub fn executePipeline(
-    allocator: std.mem.Allocator,
-    request: *const ipc_types.IPCRequest,
+    allocator: std.mem.Allocator, request: *const ipc_types.IPCRequest,
     route_match: *const zerver.Router.RouteMatch,
     runtime_resources: *RuntimeResources,
 ) !ipc_types.IPCResponse {
-    const start_time: i64 = @intCast(std.time.nanoTimestamp());
+    const start_time: i64 = @intCast(time_util.nanoTimestamp());
 
     // Get effect dispatcher from runtime resources and store in thread-local
     g_effect_dispatcher = runtime_resources.reactorEffectDispatcher() orelse {
@@ -72,8 +72,7 @@ pub fn executePipeline(
 
     // Convert IPC method to method string
     const method_str = switch (request.method) {
-        .GET => "GET",
-        .POST => "POST",
+        .GET => "GET", .POST => "POST",
         .PUT => "PUT",
         .PATCH => "PATCH",
         .DELETE => "DELETE",
@@ -117,8 +116,7 @@ pub fn executePipeline(
         // Check if step returned early response
         if (decision != .Continue) {
             switch (decision) {
-                .Continue => unreachable,
-                .Done => |done| {
+                .Continue => unreachable, .Done => |done| {
                     return try decisionToIPCResponse(allocator, done, request.request_id, start_time);
                 },
                 .Fail => |err| {
@@ -149,8 +147,7 @@ pub fn executePipeline(
         // Check if step returned response
         if (decision != .Continue) {
             switch (decision) {
-                .Continue => unreachable,
-                .Done => |done| {
+                .Continue => unreachable, .Done => |done| {
                     return try decisionToIPCResponse(allocator, done, request.request_id, start_time);
                 },
                 .Fail => |err| {
@@ -183,8 +180,7 @@ pub fn executePipeline(
 
 /// Convert a Decision.Done to an IPC response
 fn decisionToIPCResponse(
-    allocator: std.mem.Allocator,
-    done: types.Response,
+    allocator: std.mem.Allocator, done: types.Response,
     request_id: u128,
     start_time: i64,
 ) !ipc_types.IPCResponse {
@@ -203,7 +199,7 @@ fn decisionToIPCResponse(
         };
     }
 
-    const duration_us: u64 = @intCast(@divTrunc(std.time.nanoTimestamp() - start_time, 1000));
+    const duration_us: u64 = @intCast(@divTrunc(time_util.nanoTimestamp() - start_time, 1000));
 
     return .{
         .request_id = request_id,
@@ -216,8 +212,7 @@ fn decisionToIPCResponse(
 
 /// Convert an Error to an IPC response
 fn errorToIPCResponse(
-    allocator: std.mem.Allocator,
-    err: types.Error,
+    allocator: std.mem.Allocator, err: types.Error,
     request_id: u128,
     start_time: i64,
 ) !ipc_types.IPCResponse {
@@ -233,7 +228,7 @@ fn errorToIPCResponse(
         .value = try allocator.dupe(u8, "application/json"),
     };
 
-    const duration_us: u64 = @intCast(@divTrunc(std.time.nanoTimestamp() - start_time, 1000));
+    const duration_us: u64 = @intCast(@divTrunc(time_util.nanoTimestamp() - start_time, 1000));
 
     return .{
         .request_id = request_id,

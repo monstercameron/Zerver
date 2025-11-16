@@ -11,7 +11,7 @@ const slot_effect = @import("slot_effect");
 
 /// Slots for a simple calculator pipeline
 const CalcSlot = enum {
-    input_a,      // First number
+    input_a, // First number
     input_b,      // Second number
     operation,    // Operation to perform
     result,       // Calculated result
@@ -21,8 +21,7 @@ const CalcSlot = enum {
 /// Type mapping for each slot
 fn calcSlotType(comptime slot: CalcSlot) type {
     return switch (slot) {
-        .input_a => f64,
-        .input_b => f64,
+        .input_a => f64, .input_b => f64,
         .operation => []const u8,
         .result => f64,
         .formatted => []const u8,
@@ -39,8 +38,7 @@ const CalcSchema = slot_effect.SlotSchema(CalcSlot, calcSlotType);
 /// Step 1: Initialize inputs
 fn initializeStep(ctx: *slot_effect.CtxBase) !slot_effect.Decision {
     const Ctx = slot_effect.CtxView(.{
-        .SlotEnum = CalcSlot,
-        .slotTypeFn = calcSlotType,
+        .SlotEnum = CalcSlot, .slotTypeFn = calcSlotType,
         .reads = &[_]CalcSlot{},
         .writes = &[_]CalcSlot{ .input_a, .input_b, .operation },
     });
@@ -59,8 +57,7 @@ fn initializeStep(ctx: *slot_effect.CtxBase) !slot_effect.Decision {
 /// Step 2: Perform calculation
 fn calculateStep(ctx: *slot_effect.CtxBase) !slot_effect.Decision {
     const Ctx = slot_effect.CtxView(.{
-        .SlotEnum = CalcSlot,
-        .slotTypeFn = calcSlotType,
+        .SlotEnum = CalcSlot, .slotTypeFn = calcSlotType,
         .reads = &[_]CalcSlot{ .input_a, .input_b, .operation },
         .writes = &[_]CalcSlot{.result},
     });
@@ -91,8 +88,7 @@ fn calculateStep(ctx: *slot_effect.CtxBase) !slot_effect.Decision {
 /// Step 3: Format result and return response
 fn formatStep(ctx: *slot_effect.CtxBase) !slot_effect.Decision {
     const Ctx = slot_effect.CtxView(.{
-        .SlotEnum = CalcSlot,
-        .slotTypeFn = calcSlotType,
+        .SlotEnum = CalcSlot, .slotTypeFn = calcSlotType,
         .reads = &[_]CalcSlot{ .input_a, .input_b, .operation, .result },
         .writes = &[_]CalcSlot{.formatted},
     });
@@ -105,8 +101,7 @@ fn formatStep(ctx: *slot_effect.CtxBase) !slot_effect.Decision {
     const result = try view.require(.result);
 
     const formatted = try std.fmt.allocPrint(
-        ctx.arenaAllocator(),
-        "{d} {s} {d} = {d}",
+        ctx.arenaAllocator(), "{d} {s} {d} = {d}",
         .{ a, op, b, result },
     );
 
@@ -116,14 +111,12 @@ fn formatStep(ctx: *slot_effect.CtxBase) !slot_effect.Decision {
 
     // Build HTTP response
     const json_body = try std.fmt.allocPrint(
-        ctx.arenaAllocator(),
-        "{{\"result\":{d},\"expression\":\"{s}\"}}",
+        ctx.arenaAllocator(), "{{\"result\":{d},\"expression\":\"{s}\"}}",
         .{ result, formatted },
     );
 
     var response = slot_effect.Response.init(
-        200,
-        slot_effect.Body{ .complete = json_body },
+        200, slot_effect.Body{ .complete = json_body },
     );
 
     try response.addHeader(ctx.allocator, "Content-Type", "application/json");
@@ -136,8 +129,7 @@ fn formatStep(ctx: *slot_effect.CtxBase) !slot_effect.Decision {
 // ============================================================================
 
 fn executePipeline(
-    allocator: std.mem.Allocator,
-    ctx: *slot_effect.CtxBase,
+    allocator: std.mem.Allocator, ctx: *slot_effect.CtxBase,
     steps: []const slot_effect.StepSpec,
 ) !slot_effect.Response {
     var interpreter = slot_effect.Interpreter.init(steps);
@@ -145,13 +137,11 @@ fn executePipeline(
     const decision = try interpreter.evalUntilNeedOrDone(ctx);
 
     return switch (decision) {
-        .Done => |response| response,
-        .Fail => |err| blk: {
+        .Done => |response| response, .Fail => |err| blk: {
             std.debug.print("Pipeline failed: {s} (code {s})\n", .{ err.reason, err.code });
 
             const error_json = try std.fmt.allocPrint(
-                allocator,
-                "{{\"error\":\"{s}\",\"code\":\"{s}\"}}",
+                allocator, "{{\"error\":\"{s}\",\"code\":\"{s}\"}}",
                 .{ err.reason, err.code },
             );
 
@@ -200,19 +190,16 @@ pub fn main() !void {
             .name = "initialize",
             .fn_ptr = initializeStep,
             .reads = &[_]u32{},
-            .writes = &[_]u32{ @intFromEnum(CalcSlot.input_a), @intFromEnum(CalcSlot.input_b), @intFromEnum(CalcSlot.operation) },
-        },
+            .writes = &[_]u32{ @intFromEnum(CalcSlot.input_a), @intFromEnum(CalcSlot.input_b), @intFromEnum(CalcSlot.operation) }, },
         .{
             .name = "calculate",
             .fn_ptr = calculateStep,
             .reads = &[_]u32{ @intFromEnum(CalcSlot.input_a), @intFromEnum(CalcSlot.input_b), @intFromEnum(CalcSlot.operation) },
-            .writes = &[_]u32{ @intFromEnum(CalcSlot.result) },
-        },
+            .writes = &[_]u32{ @intFromEnum(CalcSlot.result) }, },
         .{
             .name = "format",
             .fn_ptr = formatStep,
-            .reads = &[_]u32{ @intFromEnum(CalcSlot.input_a), @intFromEnum(CalcSlot.input_b), @intFromEnum(CalcSlot.operation), @intFromEnum(CalcSlot.result) },
-            .writes = &[_]u32{ @intFromEnum(CalcSlot.formatted) },
+            .reads = &[_]u32{ @intFromEnum(CalcSlot.input_a), @intFromEnum(CalcSlot.input_b), @intFromEnum(CalcSlot.operation), @intFromEnum(CalcSlot.result) }, .writes = &[_]u32{ @intFromEnum(CalcSlot.formatted) },
         },
     };
 
@@ -232,8 +219,7 @@ pub fn main() !void {
         }
     }
     const body_content = switch (response.body) {
-        .complete => |content| content,
-        .streaming => "(streaming)",
+        .complete => |content| content, .streaming => "(streaming)",
     };
     std.debug.print("  Body: {s}\n", .{body_content});
 

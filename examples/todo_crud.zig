@@ -15,16 +15,14 @@ const slog = @import("src/zerver/observability/slog.zig");
 
 /// Application slots for Todo state
 pub const TodoSlot = enum(u32) {
-    UserId = 0,
-    TodoId = 1,
+    UserId = 0, TodoId = 1,
     TodoItem = 2,
     TodoList = 3,
 };
 
 pub fn TodoSlotType(comptime s: TodoSlot) type {
     return switch (s) {
-        .UserId => []const u8,
-        .TodoId => []const u8,
+        .UserId => []const u8, .TodoId => []const u8,
         .TodoItem => struct { id: []const u8, title: []const u8, done: bool = false },
         .TodoList => []const u8, // JSON string
     };
@@ -103,8 +101,7 @@ fn continuation_list(ctx: *zerver.CtxBase) !zerver.Decision {
     slog.infof("  [Continuation] List continuation called", .{});
 
     return zerver.done(.{
-        .status = 200,
-        .headers = &[_]zerver.types.Header{
+        .status = 200, .headers = &[_]zerver.types.Header{
             .{ .name = "Content-Type", .value = "application/json" },
         },
         .body = .{ .complete = "[{\"id\":\"1\",\"title\":\"Buy milk\",\"done\":false},{\"id\":\"2\",\"title\":\"Pay bills\",\"done\":true}]" },
@@ -116,8 +113,7 @@ fn continuation_get(ctx: *zerver.CtxBase) !zerver.Decision {
     slog.infof("  [Continuation] Item continuation called", .{});
 
     return zerver.done(.{
-        .status = 200,
-        .headers = &[_]zerver.types.Header{
+        .status = 200, .headers = &[_]zerver.types.Header{
             .{ .name = "Content-Type", .value = "application/json" },
         },
         .body = .{ .complete = "{\"id\":\"1\",\"title\":\"Buy milk\",\"done\":false}" },
@@ -153,8 +149,7 @@ fn continuation_create(ctx: *zerver.CtxBase) !zerver.Decision {
     slog.infof("  [Continuation] Create continuation called", .{});
 
     return zerver.done(.{
-        .status = 201,
-        .headers = &[_]zerver.types.Header{
+        .status = 201, .headers = &[_]zerver.types.Header{
             .{ .name = "Content-Type", .value = "application/json" },
         },
         .body = .{ .complete = "{\"id\":\"1\",\"title\":\"New todo\",\"done\":false}" },
@@ -194,8 +189,7 @@ fn continuation_update(ctx: *zerver.CtxBase) !zerver.Decision {
     slog.infof("  [Continuation] Update continuation called", .{});
 
     return zerver.done(.{
-        .status = 200,
-        .headers = &[_]zerver.types.Header{
+        .status = 200, .headers = &[_]zerver.types.Header{
             .{ .name = "Content-Type", .value = "application/json" },
         },
         .body = .{ .complete = "{\"id\":\"1\",\"title\":\"Updated todo\",\"done\":true}" },
@@ -233,8 +227,7 @@ fn continuation_delete(ctx: *zerver.CtxBase) !zerver.Decision {
     slog.infof("  [Continuation] Todo deleted", .{});
 
     return zerver.done(.{
-        .status = 204,
-        .body = .{ .complete = "" },
+        .status = 204, .body = .{ .complete = "" },
     });
 }
 
@@ -255,24 +248,21 @@ pub fn onError(ctx: *zerver.CtxBase) anyerror!zerver.Decision {
         // Return appropriate error message based on the error
         if (std.mem.eql(u8, err.ctx.key, "missing_user")) {
             return zerver.done(.{
-                .status = @intCast(err.kind),
-                .headers = &[_]zerver.types.Header{
+                .status = @intCast(err.kind), .headers = &[_]zerver.types.Header{
                     .{ .name = "Content-Type", .value = "application/json" },
                 },
                 .body = .{ .complete = "{\"error\":\"Missing X-User-ID header\"}" },
             });
         } else if (std.mem.eql(u8, err.ctx.key, "missing_id")) {
             return zerver.done(.{
-                .status = @intCast(err.kind),
-                .headers = &[_]zerver.types.Header{
+                .status = @intCast(err.kind), .headers = &[_]zerver.types.Header{
                     .{ .name = "Content-Type", .value = "application/json" },
                 },
                 .body = .{ .complete = "{\"error\":\"Missing todo ID\"}" },
             });
         } else {
             return zerver.done(.{
-                .status = @intCast(err.kind),
-                .headers = &[_]zerver.types.Header{
+                .status = @intCast(err.kind), .headers = &[_]zerver.types.Header{
                     .{ .name = "Content-Type", .value = "application/json" },
                 },
                 .body = .{ .complete = "{\"error\":\"Unknown error\"}" },
@@ -281,8 +271,7 @@ pub fn onError(ctx: *zerver.CtxBase) anyerror!zerver.Decision {
     } else {
         slog.warnf("  [Error] No last_error set", .{});
         return zerver.done(.{
-            .status = 500,
-            .headers = &[_]zerver.types.Header{
+            .status = 500, .headers = &[_]zerver.types.Header{
                 .{ .name = "Content-Type", .value = "application/json" },
             },
             .body = .{ .complete = "{\"error\":\"Internal server error - no error details\"}" },
@@ -423,7 +412,7 @@ pub fn main() !void {
             "X-User-ID: user-123\r\n" ++
             "Content-Length: 36\r\n" ++
             "\r\n" ++
-            "{\"title\":\"Updated todo\",\"done\":true}", arena_alloc);
+            "{\"title\":\"Updated todo\", \"done\":true}", arena_alloc);
         slog.infof("Response: {s}\n", .{resp4.complete});
     }
 

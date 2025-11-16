@@ -13,8 +13,7 @@ const AtomicRouter = zerver.AtomicRouter;
 
 /// Response builder context - stores response data from DLL handlers
 pub const ResponseBuilder = struct {
-    allocator: std.mem.Allocator,
-    status: c_int = 200,
+    allocator: std.mem.Allocator, status: c_int = 200,
     headers: std.ArrayList(Header),
     body: ?[]const u8 = null,
 
@@ -25,8 +24,7 @@ pub const ResponseBuilder = struct {
 
     pub fn init(allocator: std.mem.Allocator) ResponseBuilder {
         return .{
-            .allocator = allocator,
-            .headers = std.ArrayList(Header){},
+            .allocator = allocator, .headers = std.ArrayList(Header){},
         };
     }
 
@@ -45,16 +43,14 @@ pub const ResponseBuilder = struct {
 /// C-compatible response builder functions (called by DLLs)
 
 pub fn responseSetStatus(
-    response_opaque: *dll_abi.ResponseBuilder,
-    status: c_int,
+    response_opaque: *dll_abi.ResponseBuilder, status: c_int,
 ) callconv(.c) void {
     const response: *ResponseBuilder = @ptrCast(@alignCast(response_opaque));
     response.status = status;
 }
 
 pub fn responseSetHeader(
-    response_opaque: *dll_abi.ResponseBuilder,
-    name_ptr: [*c]const u8,
+    response_opaque: *dll_abi.ResponseBuilder, name_ptr: [*c]const u8,
     name_len: usize,
     value_ptr: [*c]const u8,
     value_len: usize,
@@ -77,8 +73,7 @@ pub fn responseSetHeader(
 }
 
 pub fn responseSetBody(
-    response_opaque: *dll_abi.ResponseBuilder,
-    body_ptr: [*c]const u8,
+    response_opaque: *dll_abi.ResponseBuilder, body_ptr: [*c]const u8,
     body_len: usize,
 ) callconv(.c) c_int {
     const response: *ResponseBuilder = @ptrCast(@alignCast(response_opaque));
@@ -104,8 +99,7 @@ pub fn createBridgeStep(handler_fn: dll_abi.HandlerFn, allocator: std.mem.Alloca
     wrapper.* = .{ .handler_fn = handler_fn };
 
     return types.Step{
-        .name = "dll_handler",
-        .call = bridgeStepHandler,
+        .name = "dll_handler", .call = bridgeStepHandler,
         .reads = &.{},
         .writes = &.{},
     };
@@ -127,8 +121,7 @@ fn bridgeStepHandler(_: *types.CtxBase) !types.Decision {
 
 /// C-compatible addRoute wrapper
 pub fn addRouteWrapper(
-    router_opaque: *anyopaque,
-    method_int: c_int,
+    router_opaque: *anyopaque, method_int: c_int,
     path_ptr: [*c]const u8,
     path_len: usize,
     handler: dll_abi.HandlerFn,

@@ -5,8 +5,7 @@ const ast = @import("ast.zig");
 
 /// Result wrapper for builders; owns heap allocations referenced by the query AST.
 pub const BuildResult = struct {
-    allocator: std.mem.Allocator,
-    query: ast.Query,
+    allocator: std.mem.Allocator, query: ast.Query,
     columns: []ast.Identifier,
     orderings: []ast.Ordering,
 
@@ -18,12 +17,10 @@ pub const BuildResult = struct {
 
 /// Fluent API for constructing simple SELECT statements.
 pub const SelectBuilder = struct {
-    allocator: std.mem.Allocator,
-    table: ?ast.Identifier = null,
+    allocator: std.mem.Allocator, table: ?ast.Identifier = null,
     columns: std.ArrayList(ast.Identifier),
     predicate: ?ast.Expr = null,
-    orderings: std.ArrayList(ast.Ordering),
-    limit_value: ?usize = null,
+    orderings: std.ArrayList(ast.Ordering), limit_value: ?usize = null,
 
     pub fn init(allocator: std.mem.Allocator) SelectBuilder {
         return SelectBuilder{

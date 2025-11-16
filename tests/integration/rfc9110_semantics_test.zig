@@ -55,8 +55,7 @@ fn setupCustomServer(server: *TestServer) !void {
         fn handler(ctx: *zerver.CtxBase) !zerver.Decision {
             _ = ctx;
             return zerver.done(.{
-                .body = .{ .complete = "ok" },
-                .headers = &.{.{ .name = "Server", .value = "Custom/9.9" }},
+                .body = .{ .complete = "ok" }, .headers = &.{.{ .name = "Server", .value = "Custom/9.9" }},
             });
         }
     }.handler);
@@ -82,8 +81,7 @@ fn setupCustomDate(server: *TestServer) !void {
         fn handler(ctx: *zerver.CtxBase) !zerver.Decision {
             _ = ctx;
             return zerver.done(.{
-                .body = .{ .complete = "ok" },
-                .headers = &.{.{ .name = "Date", .value = "Mon, 17 Jul 2023 10:00:00 GMT" }},
+                .body = .{ .complete = "ok" }, .headers = &.{.{ .name = "Date", .value = "Mon, 17 Jul 2023 10:00:00 GMT" }},
             });
         }
     }.handler);
@@ -94,8 +92,7 @@ fn setupCustomDateNoContent(server: *TestServer) !void {
         fn handler(ctx: *zerver.CtxBase) !zerver.Decision {
             _ = ctx;
             return zerver.done(.{
-                .status = 204,
-                .body = .{ .complete = "" },
+                .status = 204, .body = .{ .complete = "" },
                 .headers = &.{.{ .name = "Date", .value = "Mon, 17 Jul 2023 10:00:00 GMT" }},
             });
         }
@@ -107,8 +104,7 @@ fn setupCustomDateNotModified(server: *TestServer) !void {
         fn handler(ctx: *zerver.CtxBase) !zerver.Decision {
             _ = ctx;
             return zerver.done(.{
-                .status = 304,
-                .body = .{ .complete = "" },
+                .status = 304, .body = .{ .complete = "" },
                 .headers = &.{.{ .name = "Date", .value = "Mon, 17 Jul 2023 10:00:00 GMT" }},
             });
         }
@@ -117,7 +113,7 @@ fn setupCustomDateNotModified(server: *TestServer) !void {
 
 fn isValidHttpDate(value: []const u8) bool {
     if (value.len != 29) return false;
-    if (value[3] != ',' or value[4] != ' ') return false;
+    if (value[3] != ', ' or value[4] != ' ') return false;
     if (!std.mem.eql(u8, value[25..], " GMT")) return false;
 
     const day_token = value[0..3];
@@ -328,7 +324,7 @@ fn requestAcceptEncodingRejectsIdentity(server: *TestServer, allocator: std.mem.
 fn requestAcceptEncodingWhitespaceAllowsIdentity(server: *TestServer, allocator: std.mem.Allocator) !void {
     try setupGet(server);
     const request_text =
-        "GET /test HTTP/1.1\r\n" ++ "Host: localhost\r\n" ++ "Accept-Encoding:   gzip ; q = 0 ,   identity ; q = 0.5   \r\n" ++ "\r\n";
+        "GET /test HTTP/1.1\r\n" ++ "Host: localhost\r\n" ++ "Accept-Encoding:   gzip ; q = 0 , identity ; q = 0.5   \r\n" ++ "\r\n";
 
     const response = try server.handle(allocator, request_text);
     defer allocator.free(response);
@@ -339,7 +335,7 @@ fn requestAcceptEncodingWhitespaceAllowsIdentity(server: *TestServer, allocator:
 fn requestAcceptEncodingWhitespaceRejectsIdentity(server: *TestServer, allocator: std.mem.Allocator) !void {
     try setupGet(server);
     const request_text =
-        "GET /test HTTP/1.1\r\n" ++ "Host: localhost\r\n" ++ "Accept-Encoding:   gzip ; q = 0.4 ,   identity ; q = 0   \r\n" ++ "\r\n";
+        "GET /test HTTP/1.1\r\n" ++ "Host: localhost\r\n" ++ "Accept-Encoding:   gzip ; q = 0.4 , identity ; q = 0   \r\n" ++ "\r\n";
 
     const response = try server.handle(allocator, request_text);
     defer allocator.free(response);
@@ -349,7 +345,7 @@ fn requestAcceptEncodingWhitespaceRejectsIdentity(server: *TestServer, allocator
 fn requestAcceptEncodingEmptyElementsAllowIdentity(server: *TestServer, allocator: std.mem.Allocator) !void {
     try setupGet(server);
     const request_text =
-        "GET /test HTTP/1.1\r\n" ++ "Host: localhost\r\n" ++ "Accept-Encoding: ,  identity ; q = 0.6  , , gzip ; q = 0 \r\n" ++ "\r\n";
+        "GET /test HTTP/1.1\r\n" ++ "Host: localhost\r\n" ++ "Accept-Encoding: , identity ; q = 0.6  , , gzip ; q = 0 \r\n" ++ "\r\n";
 
     const response = try server.handle(allocator, request_text);
     defer allocator.free(response);
@@ -443,7 +439,7 @@ fn requestAcceptZeroQualityRejected(server: *TestServer, allocator: std.mem.Allo
 fn requestAcceptWhitespaceAllowsTextPlain(server: *TestServer, allocator: std.mem.Allocator) !void {
     try setupGet(server);
     const request_text =
-        "GET /test HTTP/1.1\r\n" ++ "Host: localhost\r\n" ++ "Accept:   text/plain ; q=1 ,   application/json ; q=0   \r\n" ++ "\r\n";
+        "GET /test HTTP/1.1\r\n" ++ "Host: localhost\r\n" ++ "Accept:   text/plain ; q=1 , application/json ; q=0   \r\n" ++ "\r\n";
 
     const response = try server.handle(allocator, request_text);
     defer allocator.free(response);
@@ -464,7 +460,7 @@ fn requestAcceptWhitespaceRejectsTextPlain(server: *TestServer, allocator: std.m
 fn requestAcceptEmptyElementsAllowsTextPlain(server: *TestServer, allocator: std.mem.Allocator) !void {
     try setupGet(server);
     const request_text =
-        "GET /test HTTP/1.1\r\n" ++ "Host: localhost\r\n" ++ "Accept: ,  text/plain ; q = 1  , , application/json ; q = 0 \r\n" ++ "\r\n";
+        "GET /test HTTP/1.1\r\n" ++ "Host: localhost\r\n" ++ "Accept: , text/plain ; q = 1  , , application/json ; q = 0 \r\n" ++ "\r\n";
 
     const response = try server.handle(allocator, request_text);
     defer allocator.free(response);
@@ -621,7 +617,7 @@ fn requestAcceptLanguageZeroQualityRejected(server: *TestServer, allocator: std.
 fn requestAcceptLanguageWhitespaceAllowsEnglish(server: *TestServer, allocator: std.mem.Allocator) !void {
     try setupGet(server);
     const request_text =
-        "GET /test HTTP/1.1\r\n" ++ "Host: localhost\r\n" ++ "Accept-Language:   fr ; q = 0.1 ,   en-US ; q = 0.8   \r\n" ++ "\r\n";
+        "GET /test HTTP/1.1\r\n" ++ "Host: localhost\r\n" ++ "Accept-Language:   fr ; q = 0.1 , en-US ; q = 0.8   \r\n" ++ "\r\n";
 
     const response = try server.handle(allocator, request_text);
     defer allocator.free(response);
@@ -632,7 +628,7 @@ fn requestAcceptLanguageWhitespaceAllowsEnglish(server: *TestServer, allocator: 
 fn requestAcceptLanguageEmptyElementsAllowEnglish(server: *TestServer, allocator: std.mem.Allocator) !void {
     try setupGet(server);
     const request_text =
-        "GET /test HTTP/1.1\r\n" ++ "Host: localhost\r\n" ++ "Accept-Language: ,  en-US ; q = 0.7  , , fr ; q = 0   \r\n" ++ "\r\n";
+        "GET /test HTTP/1.1\r\n" ++ "Host: localhost\r\n" ++ "Accept-Language: , en-US ; q = 0.7  , , fr ; q = 0   \r\n" ++ "\r\n";
 
     const response = try server.handle(allocator, request_text);
     defer allocator.free(response);
@@ -842,7 +838,7 @@ fn requestAcceptCharsetQuotedQualityRejected(server: *TestServer, allocator: std
 fn requestAcceptCharsetWhitespaceAllowsUtf8(server: *TestServer, allocator: std.mem.Allocator) !void {
     try setupGet(server);
     const request_text =
-        "GET /test HTTP/1.1\r\n" ++ "Host: localhost\r\n" ++ "Accept-Charset:   iso-8859-1 ; q = 0 ,   utf-8 ; q = 1   \r\n" ++ "\r\n";
+        "GET /test HTTP/1.1\r\n" ++ "Host: localhost\r\n" ++ "Accept-Charset:   iso-8859-1 ; q = 0 , utf-8 ; q = 1   \r\n" ++ "\r\n";
 
     const response = try server.handle(allocator, request_text);
     defer allocator.free(response);
@@ -853,7 +849,7 @@ fn requestAcceptCharsetWhitespaceAllowsUtf8(server: *TestServer, allocator: std.
 fn requestAcceptCharsetEmptyElementsAllowUtf8(server: *TestServer, allocator: std.mem.Allocator) !void {
     try setupGet(server);
     const request_text =
-        "GET /test HTTP/1.1\r\n" ++ "Host: localhost\r\n" ++ "Accept-Charset: ,  utf-8 ; q = 0.9  , , iso-8859-1 ; q = 0 \r\n" ++ "\r\n";
+        "GET /test HTTP/1.1\r\n" ++ "Host: localhost\r\n" ++ "Accept-Charset: , utf-8 ; q = 0.9  , , iso-8859-1 ; q = 0 \r\n" ++ "\r\n";
 
     const response = try server.handle(allocator, request_text);
     defer allocator.free(response);
@@ -885,7 +881,7 @@ fn requestAcceptCharsetOnlyEmptyElementsAllowUtf8(server: *TestServer, allocator
 fn requestAcceptCharsetWhitespaceRejectsUtf8(server: *TestServer, allocator: std.mem.Allocator) !void {
     try setupGet(server);
     const request_text =
-        "GET /test HTTP/1.1\r\n" ++ "Host: localhost\r\n" ++ "Accept-Charset:   utf-8 ; q = 0 ,   iso-8859-1 ; q = 1   \r\n" ++ "\r\n";
+        "GET /test HTTP/1.1\r\n" ++ "Host: localhost\r\n" ++ "Accept-Charset:   utf-8 ; q = 0 , iso-8859-1 ; q = 1   \r\n" ++ "\r\n";
 
     const response = try server.handle(allocator, request_text);
     defer allocator.free(response);

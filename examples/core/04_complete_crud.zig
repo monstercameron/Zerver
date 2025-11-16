@@ -9,16 +9,14 @@ const zerver = @import("../src/zerver/root.zig");
 
 /// Application slots for Todo state
 pub const TodoSlot = enum(u32) {
-    UserId = 0,
-    TodoId = 1,
+    UserId = 0, TodoId = 1,
     TodoItem = 2,
     TodoList = 3,
 };
 
 pub fn TodoSlotType(comptime s: TodoSlot) type {
     return switch (s) {
-        .UserId => []const u8,
-        .TodoId => []const u8,
+        .UserId => []const u8, .TodoId => []const u8,
         .TodoItem => struct { id: []const u8, title: []const u8, done: bool = false },
         .TodoList => []const u8, // JSON string
     };
@@ -97,8 +95,7 @@ fn continuation_list(ctx: *anyopaque) !zerver.Decision {
     std.debug.print("  [Continuation] List continuation called\n", .{});
 
     return zerver.done(.{
-        .status = 200,
-        .body = "[{\"id\":\"1\",\"title\":\"Buy milk\",\"done\":false},{\"id\":\"2\",\"title\":\"Pay bills\",\"done\":true}]",
+        .status = 200, .body = "[{\"id\":\"1\",\"title\":\"Buy milk\",\"done\":false},{\"id\":\"2\",\"title\":\"Pay bills\",\"done\":true}]",
     });
 }
 
@@ -107,8 +104,7 @@ fn continuation_get(ctx: *anyopaque) !zerver.Decision {
     std.debug.print("  [Continuation] Item continuation called\n", .{});
 
     return zerver.done(.{
-        .status = 200,
-        .body = "{\"id\":\"1\",\"title\":\"Buy milk\",\"done\":false}",
+        .status = 200, .body = "{\"id\":\"1\",\"title\":\"Buy milk\",\"done\":false}",
     });
 }
 
@@ -141,8 +137,7 @@ fn continuation_create(ctx: *anyopaque) !zerver.Decision {
     std.debug.print("  [Continuation] Create continuation called\n", .{});
 
     return zerver.done(.{
-        .status = 201,
-        .body = "{\"id\":\"1\",\"title\":\"New todo\",\"done\":false}",
+        .status = 201, .body = "{\"id\":\"1\",\"title\":\"New todo\",\"done\":false}",
     });
 }
 
@@ -179,8 +174,7 @@ fn continuation_update(ctx: *anyopaque) !zerver.Decision {
     std.debug.print("  [Continuation] Update continuation called\n", .{});
 
     return zerver.done(.{
-        .status = 200,
-        .body = "{\"id\":\"1\",\"title\":\"Updated todo\",\"done\":true}",
+        .status = 200, .body = "{\"id\":\"1\",\"title\":\"Updated todo\",\"done\":true}",
     });
 }
 
@@ -216,8 +210,7 @@ fn continuation_delete(ctx: *anyopaque) !zerver.Decision {
     std.debug.print("  [Continuation] Todo deleted\n", .{});
 
     return zerver.done(.{
-        .status = 204,
-        .body = "",
+        .status = 204, .body = "",
     });
 }
 
@@ -238,25 +231,21 @@ pub fn onError(ctx: *zerver.CtxBase) anyerror!zerver.Decision {
         // Return appropriate error message based on the error
         if (std.mem.eql(u8, err.ctx.key, "missing_user")) {
             return zerver.done(.{
-                .status = @intCast(err.kind),
-                .body = "{\"error\":\"Missing X-User-ID header\"}",
+                .status = @intCast(err.kind), .body = "{\"error\":\"Missing X-User-ID header\"}",
             });
         } else if (std.mem.eql(u8, err.ctx.key, "missing_id")) {
             return zerver.done(.{
-                .status = @intCast(err.kind),
-                .body = "{\"error\":\"Missing todo ID\"}",
+                .status = @intCast(err.kind), .body = "{\"error\":\"Missing todo ID\"}",
             });
         } else {
             return zerver.done(.{
-                .status = @intCast(err.kind),
-                .body = "{\"error\":\"Unknown error\"}",
+                .status = @intCast(err.kind), .body = "{\"error\":\"Unknown error\"}",
             });
         }
     } else {
         std.debug.print("  [Error] No last_error set\n", .{});
         return zerver.done(.{
-            .status = 500,
-            .body = "{\"error\":\"Internal server error - no error details\"}",
+            .status = 500, .body = "{\"error\":\"Internal server error - no error details\"}",
         });
     }
 }

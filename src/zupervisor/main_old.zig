@@ -7,6 +7,7 @@
 const std = @import("std");
 const zerver = @import("zerver");
 const slog = zerver.slog;
+const time_util = zerver.time_util;
 const ipc_server = @import("ipc_server.zig");
 const ipc_types = zerver.ipc_types;
 const AtomicRouter = zerver.AtomicRouter; // Use pre-instantiated type from root.zig
@@ -26,14 +27,12 @@ const DEFAULT_WATCH_INTERVAL_MS = 1000;
 
 /// C-compatible handler function type - what DLLs export
 const DLLHandlerFn = *const fn (
-    request: *anyopaque,
-    response: *anyopaque,
+    request: *anyopaque, response: *anyopaque,
 ) callconv(.c) c_int;
 
 /// Response builder - collects response data from DLL handlers
 const ResponseBuilder = struct {
-    allocator: std.mem.Allocator,
-    status: c_int = 200,
+    allocator: std.mem.Allocator, status: c_int = 200,
     headers: std.ArrayList(Header),
     body: ?[]u8 = null,
 
@@ -44,9 +43,7 @@ const ResponseBuilder = struct {
 
     fn init(allocator: std.mem.Allocator) ResponseBuilder {
         return .{
-            .allocator = allocator,
-            .headers = std.ArrayList(Header).init(allocator),
-        };
+            .allocator = allocator, .headers = std.ArrayList(Header).init(allocator), };
     }
 
     fn deinit(self: *ResponseBuilder) void {
@@ -62,19 +59,14 @@ const ResponseBuilder = struct {
 /// ServerAdapter wraps an AtomicRouter to provide a Server-like interface for DLL feature initialization
 /// Uses C-compatible types for stable ABI across DLL boundaries
 const ServerAdapter = extern struct {
-    atomic_router: *anyopaque,
-    addRouteFn: *const fn (
+    atomic_router: *anyopaque, addRouteFn: *const fn (
         router: *anyopaque,
         method: c_int,
         path_ptr: [*c]const u8,
         path_len: usize,
         handler: DLLHandlerFn,
-    ) callconv(.c) c_int,
-    runtime_resources: *anyopaque,
-    setStatusFn: *const fn (*anyopaque, c_int) callconv(.c) void,
-    setHeaderFn: *const fn (*anyopaque, [*c]const u8, usize, [*c]const u8, usize) callconv(.c) c_int,
-    setBodyFn: *const fn (*anyopaque, [*c]const u8, usize) callconv(.c) c_int,
-};
+    ) callconv(.c) c_int, runtime_resources: *anyopaque,
+    setStatusFn: *const fn (*anyopaque, c_int) callconv(.c) void, setHeaderFn: *const fn (*anyopaque, [*c]const u8, usize, [*c]const u8, usize) callconv(.c) c_int, setBodyFn: *const fn (*anyopaque, [*c]const u8, usize) callconv(.c) c_int, };
 
 /// Global context for request handling
 const RequestContext = struct {
@@ -89,16 +81,14 @@ var g_context: ?*RequestContext = null;
 /// C-callable response builder functions (called by DLL handlers)
 
 fn responseSetStatus(
-    response_opaque: *anyopaque,
-    status: c_int,
+    response_opaque: *anyopaque, status: c_int,
 ) callconv(.c) void {
     const response: *ResponseBuilder = @ptrCast(@alignCast(response_opaque));
     response.status = status;
 }
 
 fn responseSetHeader(
-    response_opaque: *anyopaque,
-    name_ptr: [*c]const u8,
+    response_opaque: *anyopaque, name_ptr: [*c]const u8,
     name_len: usize,
     value_ptr: [*c]const u8,
     value_len: usize,
@@ -122,8 +112,7 @@ fn responseSetHeader(
 }
 
 fn responseSetBody(
-    response_opaque: *anyopaque,
-    body_ptr: [*c]const u8,
+    response_opaque: *anyopaque, body_ptr: [*c]const u8,
     body_len: usize,
 ) callconv(.c) c_int {
     const response: *ResponseBuilder = @ptrCast(@alignCast(response_opaque));
@@ -140,8 +129,7 @@ fn responseSetBody(
 /// Wrapper function for AtomicRouter.addRoute with C-compatible signature
 /// Accepts DLLHandlerFn, creates bridge, and registers route
 fn atomicRouterAddRoute(
-    router_opaque: *anyopaque,
-    method_int: c_int,
+    router_opaque: *anyopaque, method_int: c_int,
     path_ptr: [*c]const u8,
     path_len: usize,
     handler_fn: DLLHandlerFn,
@@ -167,8 +155,7 @@ fn atomicRouterAddRoute(
 
 /// Load all feature DLLs from the plugin directory and register their routes
 fn loadFeatureDLLs(
-    allocator: std.mem.Allocator,
-    feature_dir: []const u8,
+    allocator: std.mem.Allocator, feature_dir: []const u8,
     atomic_router: *AtomicRouter,
     runtime_resources: *RuntimeResources,
 ) !void {
@@ -209,8 +196,7 @@ fn loadFeatureDLLs(
 
         // Create a ServerAdapter to allow DLL to register routes directly to atomic router
         var adapter = ServerAdapter{
-            .atomic_router = @ptrCast(atomic_router),
-            .addRouteFn = &atomicRouterAddRoute,
+            .atomic_router = @ptrCast(atomic_router), .addRouteFn = &atomicRouterAddRoute,
             .runtime_resources = @ptrCast(runtime_resources),
             .setStatusFn = &responseSetStatus,
             .setHeaderFn = &responseSetHeader,
@@ -331,10 +317,9 @@ pub fn main() !void {
 
 /// Handle IPC request from Zingest
 fn handleIPCRequest(
-    allocator: std.mem.Allocator,
-    request: *const ipc_types.IPCRequest,
+    allocator: std.mem.Allocator, request: *const ipc_types.IPCRequest,
 ) !ipc_types.IPCResponse {
-    const start_time: i64 = @intCast(std.time.nanoTimestamp());
+    const start_time: i64 = @intCast(time_util.nanoTimestamp());
 
     const context = g_context orelse return error.ContextNotInitialized;
 
@@ -361,7 +346,7 @@ fn handleIPCRequest(
             .name = try allocator.dupe(u8, "Content-Type"),
             .value = try allocator.dupe(u8, "application/json"),
         };
-        const duration_us: u64 = @intCast(@divTrunc(std.time.nanoTimestamp() - start_time, 1000));
+        const duration_us: u64 = @intCast(@divTrunc(time_util.nanoTimestamp() - start_time, 1000));
         return .{
             .request_id = request.request_id,
             .status = 404,
@@ -383,8 +368,7 @@ fn handleIPCRequest(
 
 /// Hot reload loop - watches for DLL changes and reloads
 fn hotReloadLoop(
-    allocator: std.mem.Allocator,
-    file_watcher: *FileWatcher,
+    allocator: std.mem.Allocator, file_watcher: *FileWatcher,
     feature_dir: []const u8,
     version_manager: *VersionManager,
     router_lifecycle: *RouterLifecycle,
@@ -396,7 +380,7 @@ fn hotReloadLoop(
     slog.info("Hot reload loop started", &.{});
 
     while (true) {
-        std.Thread.sleep(DEFAULT_WATCH_INTERVAL_MS * std.time.ns_per_ms);
+        time_util.sleep(DEFAULT_WATCH_INTERVAL_MS * std.time.ns_per_ms);
 
         // Check for file changes
         const event_opt = file_watcher.poll() catch |err| {
@@ -432,8 +416,7 @@ fn hotReloadLoop(
 
 fn convertMethod(ipc_method: ipc_types.HttpMethod) route_types.Method {
     return switch (ipc_method) {
-        .GET => .GET,
-        .POST => .POST,
+        .GET => .GET, .POST => .POST,
         .PUT => .PUT,
         .PATCH => .PATCH,
         .DELETE => .DELETE,

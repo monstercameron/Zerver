@@ -3,6 +3,7 @@
 /// Runs on its own port and serves blog routes with htmx/html.zig
 
 const std = @import("std");
+const time_util = @import("src/zerver/util/time.zig");
 
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
@@ -24,6 +25,6 @@ pub fn main() !void {
 
     // Keep running
     while (true) {
-        std.time.sleep(1 * std.time.ns_per_s);
+        time_util.sleep(1 * std.time.ns_per_s);
     }
 }

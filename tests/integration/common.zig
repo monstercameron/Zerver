@@ -5,8 +5,7 @@ const zerver = @import("zerver");
 pub const HarnessError = error{UnexpectedStreamingResponse};
 
 pub const TestServer = struct {
-    allocator: std.mem.Allocator,
-    server: zerver.Server,
+    allocator: std.mem.Allocator, server: zerver.Server,
     step_storage: std.ArrayList(StepAllocation),
 
     const StepAllocation = struct {
@@ -39,8 +38,7 @@ pub const TestServer = struct {
                 }
 
                 return zerver.done(.{
-                    .status = status,
-                    .body = .{ .complete = body },
+                    .status = status, .body = .{ .complete = body },
                 });
             }
         }.handle;
@@ -116,8 +114,7 @@ pub fn withServer(test_fn: anytype) !void {
 }
 
 pub fn addRouteStep(
-    server: *TestServer,
-    method: zerver.Method,
+    server: *TestServer, method: zerver.Method,
     path: []const u8,
     comptime name: []const u8,
     handler: anytype,

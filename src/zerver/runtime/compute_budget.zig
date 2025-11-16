@@ -10,19 +10,18 @@
 const std = @import("std");
 const types = @import("../core/types.zig");
 const slog = @import("../observability/slog.zig");
+const time_util = @import("../util/time.zig");
 
 /// Global compute budget configuration
 pub const ComputeBudgetConfig = struct {
     /// Maximum total CPU time per request (milliseconds)
-    max_request_cpu_ms: u32 = 2000,
-
     /// Maximum CPU time for a single compute task (milliseconds)
+    max_request_cpu_ms: u32 = 2000,
     max_task_cpu_ms: u32 = 500,
 
     /// Whether to enforce budgets (can be disabled for testing)
-    enforce_budgets: bool = true,
-
     /// Whether to park tasks that exceed budgets
+    enforce_budgets: bool = true,
     park_on_exceeded: bool = true,
 
     /// Default priority for tasks without explicit priority
@@ -60,24 +59,16 @@ pub const RequestBudget = struct {
     config: ComputeBudgetConfig,
 
     // Tracking
-    total_cpu_used_ms: std.atomic.Value(u32),
-    task_count: std.atomic.Value(u32),
-    budget_exceeded_count: std.atomic.Value(u32),
-
-    // Task tracking
+    total_cpu_used_ms: std.atomic.Value(u32), task_count: std.atomic.Value(u32),
+    budget_exceeded_count: std.atomic.Value(u32), // Task tracking
     task_budgets: std.AutoHashMap(u32, TaskBudget), // token -> budget
     mutex: std.Thread.Mutex,
 
     pub fn init(allocator: std.mem.Allocator, config: ComputeBudgetConfig) !*RequestBudget {
         const self = try allocator.create(RequestBudget);
         self.* = .{
-            .allocator = allocator,
-            .config = config,
-            .total_cpu_used_ms = std.atomic.Value(u32).init(0),
-            .task_count = std.atomic.Value(u32).init(0),
-            .budget_exceeded_count = std.atomic.Value(u32).init(0),
-            .task_budgets = std.AutoHashMap(u32, TaskBudget).init(allocator),
-            .mutex = .{},
+            .allocator = allocator, .config = config,
+            .total_cpu_used_ms = std.atomic.Value(u32).init(0), .task_count = std.atomic.Value(u32).init(0), .budget_exceeded_count = std.atomic.Value(u32).init(0), .task_budgets = std.AutoHashMap(u32, TaskBudget).init(allocator), .mutex = .{},
         };
         return self;
     }
@@ -105,8 +96,7 @@ pub const RequestBudget = struct {
 
             if (self.config.park_on_exceeded and task.park_on_budget_exceeded) {
                 return .{ .park = .{
-                    .reason = "request_budget_exceeded",
-                    .retry_after_ms = 100,
+                    .reason = "request_budget_exceeded", .retry_after_ms = 100,
                 } };
             } else {
                 return .{ .reject = .{
@@ -128,7 +118,7 @@ pub const RequestBudget = struct {
             .used_ms = 0,
             .priority = task.priority,
             .yield_interval_ms = task.cooperative_yield_interval_ms,
-            .started_at_ns = std.time.nanoTimestamp(),
+            .started_at_ns = time_util.nanoTimestamp(),
         });
 
         _ = self.task_count.fetchAdd(1, .seq_cst);
@@ -168,7 +158,7 @@ pub const RequestBudget = struct {
         defer self.mutex.unlock();
 
         if (self.task_budgets.get(token)) |budget| {
-            const elapsed_ns = std.time.nanoTimestamp() - budget.started_at_ns;
+            const elapsed_ns = time_util.nanoTimestamp() - budget.started_at_ns;
             const elapsed_ms = @as(u32, @intCast(@divTrunc(elapsed_ns, std.time.ns_per_ms)));
             return elapsed_ms >= budget.yield_interval_ms;
         }
@@ -186,10 +176,8 @@ pub const RequestBudget = struct {
     /// Get budget statistics for telemetry
     pub fn getStats(self: *RequestBudget) BudgetStats {
         return .{
-            .total_cpu_used_ms = self.total_cpu_used_ms.load(.seq_cst),
-            .task_count = self.task_count.load(.seq_cst),
-            .budget_exceeded_count = self.budget_exceeded_count.load(.seq_cst),
-            .max_request_cpu_ms = self.config.max_request_cpu_ms,
+            .total_cpu_used_ms = self.total_cpu_used_ms.load(.seq_cst), .task_count = self.task_count.load(.seq_cst),
+            .budget_exceeded_count = self.budget_exceeded_count.load(.seq_cst), .max_request_cpu_ms = self.config.max_request_cpu_ms,
         };
     }
 };
@@ -231,8 +219,7 @@ pub const BudgetStats = struct {
 /// Test helper: stub for testing without real CPU measurement
 pub fn createTestBudget(allocator: std.mem.Allocator) !*RequestBudget {
     const config = ComputeBudgetConfig{
-        .max_request_cpu_ms = 1000,
-        .max_task_cpu_ms = 200,
+        .max_request_cpu_ms = 1000, .max_task_cpu_ms = 200,
         .enforce_budgets = true,
         .park_on_exceeded = true,
     };

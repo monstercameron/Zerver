@@ -11,8 +11,7 @@ fn expectCompleteBody(response: zerver.Response) ![]const u8 {
 
 test "ErrorRenderer.render returns JSON payload with headers" {
     const err = zerver.ErrorRenderer.makeError(
-        zerver.http_status.HttpStatus.bad_request,
-        "todo",
+        zerver.http_status.HttpStatus.bad_request, "todo",
         "123",
     );
 
@@ -26,7 +25,7 @@ test "ErrorRenderer.render returns JSON payload with headers" {
     try std.testing.expectEqualStrings("Content-Type", response.headers[0].name);
     try std.testing.expectEqualStrings("application/json", response.headers[0].value);
     try std.testing.expectEqualStrings(
-        "{\"error\":{\"code\":400,\"what\":\"todo\",\"key\":\"123\"}}",
+        "{\"error\":{\"code\":400, \"what\":\"todo\",\"key\":\"123\"}}",
         body,
     );
 }
@@ -37,8 +36,7 @@ test "ErrorRenderer.render falls back on allocation failure" {
     const fail_alloc = fallback_allocator.allocator();
 
     const err = zerver.ErrorRenderer.makeError(
-        zerver.http_status.HttpStatus.gateway_timeout,
-        "db",
+        zerver.http_status.HttpStatus.gateway_timeout, "db",
         "primary",
     );
 
@@ -58,8 +56,7 @@ test "ErrorRenderer helpers create structured errors" {
     try std.testing.expectEqualStrings("user-42", ctx.key);
 
     const err = zerver.ErrorRenderer.makeError(
-        zerver.http_status.HttpStatus.forbidden,
-        "auth",
+        zerver.http_status.HttpStatus.forbidden, "auth",
         "user-42",
     );
 

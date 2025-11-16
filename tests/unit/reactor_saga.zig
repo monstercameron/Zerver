@@ -11,8 +11,7 @@ test "saga log stub reports unimplemented" {
     try std.testing.expectEqual(@as(usize, 0), log.len());
 
     const compensation: zerver.types.Compensation = .{
-        .label = "stub",
-        .effect = .{ .http_get = .{
+        .label = "stub", .effect = .{ .http_get = .{
             .url = "http://example.com",
             .token = 1,
         } },

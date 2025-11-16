@@ -22,8 +22,7 @@ const types = @import("../core/types.zig");
 
 /// TCP socket operation type
 pub const TcpOperation = enum {
-    connect,
-    send,
+    connect, send,
     receive,
     send_receive, // Most common: send then receive
     close,
@@ -216,16 +215,14 @@ pub const HttpRequestBuilder = struct {
     url: []const u8,
     method: HttpMethod = .GET,
     body: []const u8 = "",
-    headers: std.ArrayList(types.Header),
-    timeout_ms: u32 = 5000,
+    headers: std.ArrayList(types.Header), timeout_ms: u32 = 5000,
     retry: types.Retry = .{},
     required: bool = true,
 
     pub fn init(allocator: std.mem.Allocator, url: []const u8) HttpRequestBuilder {
         return .{
             .url = url,
-            .headers = std.ArrayList(types.Header).init(allocator),
-        };
+            .headers = std.ArrayList(types.Header).init(allocator), };
     }
 
     pub fn withMethod(self: *HttpRequestBuilder, method: HttpMethod) *HttpRequestBuilder {
@@ -269,8 +266,7 @@ pub const HttpRequestBuilder = struct {
 
         return switch (self.method) {
             .GET => types.Effect{ .http_get = .{
-                .url = self.url,
-                .token = token,
+                .url = self.url, .token = token,
                 .timeout_ms = self.timeout_ms,
                 .retry = self.retry,
                 .required = self.required,
@@ -374,8 +370,7 @@ pub fn jsonGet(url: []const u8, token: u32) types.Effect {
 
 /// Create a gRPC unary call
 pub fn grpcCall(
-    endpoint: []const u8,
-    service: []const u8,
+    endpoint: []const u8, service: []const u8,
     method: []const u8,
     request_proto: []const u8,
     token: u32,
@@ -403,8 +398,7 @@ pub fn tcpConnect(host: []const u8, port: u16, token: u32) TcpConnect {
 
 /// Create a TCP request-response effect
 pub fn tcpRequest(
-    connection_token: u32,
-    request: []const u8,
+    connection_token: u32, request: []const u8,
     response_token: u32,
 ) TcpSendReceive {
     return .{

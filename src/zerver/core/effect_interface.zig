@@ -105,8 +105,7 @@ pub const Error = struct {
 /// Caller owns the result and must call deinit() to free allocated bytes.
 pub const EffectResult = union(enum) {
     success: struct {
-        bytes: []u8,
-        allocator: ?std.mem.Allocator,
+        bytes: []u8, allocator: ?std.mem.Allocator,
     },
     failure: Error,
 
@@ -118,8 +117,7 @@ pub const EffectResult = union(enum) {
                 if (succ.allocator) |alloc| {
                     alloc.free(succ.bytes);
                 }
-            },
-            .failure => {},
+            }, .failure => {},
         }
         self.* = undefined;
     }
@@ -149,8 +147,7 @@ pub const HttpPost = struct {
     body: []const u8,
     headers: []const Header = &.{},
     token: u32, // Slot identifier (enum tag value) for result storage
-    timeout_ms: u32 = 1000,
-    retry: Retry = .{},
+    timeout_ms: u32 = 1000, retry: Retry = .{},
     required: bool = true,
 };
 
@@ -328,8 +325,7 @@ pub const WebSocketReceive = struct {
 pub const DbGet = struct {
     key: []const u8,
     token: u32, // Slot identifier (enum tag value) for result storage
-    timeout_ms: u32 = 300,
-    retry: Retry = .{},
+    timeout_ms: u32 = 300, retry: Retry = .{},
     required: bool = true,
 };
 
@@ -356,8 +352,7 @@ pub const DbDel = struct {
 
 /// Database query parameter - supports primitive types and slot references
 pub const DbParam = union(enum) {
-    null: void,
-    int: i64,
+    null: void, int: i64,
     float: f64,
     text: []const u8,
     blob: []const u8,
@@ -415,8 +410,7 @@ pub const ComputeTask = struct {
 
 /// Accelerator task (GPU/TPU/etc.) routed to specialized queue.
 pub const AcceleratorTask = struct {
-    kernel: []const u8,
-    token: u32,
+    kernel: []const u8, token: u32,
     timeout_ms: u32 = 2000,
     required: bool = true,
     metadata: ?*const anyopaque = null,

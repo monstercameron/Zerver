@@ -31,14 +31,12 @@ const mutations = @import("examples/products/todos/mutations/operations.zig");
 /// Centralized error handler - converts domain errors to HTTP responses
 fn error_handler(ctx: *zerver.CtxBase) !zerver.Decision {
     const error_info = ctx.lastError() orelse domain.makeError(
-        .Internal,
-        "Unknown error",
+        .Internal, "Unknown error",
         "system",
     );
 
     const error_ctx: domain.ErrorContext = .{
-        .error_code = @enumFromInt(error_info.kind),
-        .message = error_info.ctx.what,
+        .error_code = @enumFromInt(error_info.kind), .message = error_info.ctx.what,
         .resource = error_info.ctx.key,
     };
 
@@ -56,14 +54,12 @@ fn error_handler(ctx: *zerver.CtxBase) !zerver.Decision {
     };
 
     const response_body = try std.fmt.allocPrint(
-        ctx.arena,
-        "{{\"error\":\"{}\"}}",
+        ctx.arena, "{{\"error\":\"{}\"}}",
         .{error_ctx.message},
     );
 
     return zerver.done(.{
-        .status = status_code,
-        .body = response_body,
+        .status = status_code, .body = response_body,
     });
 }
 

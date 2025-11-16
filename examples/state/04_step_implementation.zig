@@ -71,8 +71,7 @@ pub fn step_render_response(ctx: *zerver.CtxBase) !zerver.Decision {
     // Would format the todo as JSON and return .Done
 
     return zerver.done(.{
-        .status = 200,
-        .body = "{}", // would be actual JSON
+        .status = 200, .body = "{}", // would be actual JSON
     });
 }
 

@@ -6,11 +6,11 @@
 const std = @import("std");
 const zerver = @import("zerver");
 const slog = zerver.slog;
+const time_util = zerver.time_util;
 
 // Blog types
 pub const Post = struct {
-    id: []const u8,
-    title: []const u8,
+    id: []const u8, title: []const u8,
     content: []const u8,
     author: []const u8,
     created_at: i64,
@@ -145,9 +145,8 @@ fn step_render_post(ctx: *zerver.CtxBase) !zerver.Decision {
         .title = "Test Post",
         .content = "This is a test post",
         .author = "demo",
-        .created_at = std.time.timestamp(),
-        .updated_at = std.time.timestamp(),
-    };
+        .created_at = time_util.timestamp(),
+        .updated_at = time_util.timestamp(), };
     return ctx.jsonResponse(200, post);
 }
 
@@ -161,7 +160,7 @@ fn step_parse_post(ctx: *zerver.CtxBase) !zerver.Decision {
 
 // Create post - Step 2: Save to DB
 fn step_save_post(ctx: *zerver.CtxBase) !zerver.Decision {
-    const post_json = "{\"id\":\"1\",\"title\":\"New Post\",\"content\":\"Content\",\"author\":\"Author\"}";
+    const post_json = "{\"id\":\"1\", \"title\":\"New Post\",\"content\":\"Content\",\"author\":\"Author\"}";
 
     return ctx.runEffects(&.{
         ctx.dbPut(@intFromEnum(Slot.PostPayload), "posts/1", post_json),
@@ -172,13 +171,11 @@ fn step_save_post(ctx: *zerver.CtxBase) !zerver.Decision {
 fn step_render_created_post(ctx: *zerver.CtxBase) !zerver.Decision {
     // In real app: const post = try ctx.require(Slot.PostPayload);
     const post = Post{
-        .id = "1",
-        .title = "New Post",
+        .id = "1", .title = "New Post",
         .content = "Content",
         .author = "Author",
-        .created_at = std.time.timestamp(),
-        .updated_at = std.time.timestamp(),
-    };
+        .created_at = time_util.timestamp(),
+        .updated_at = time_util.timestamp(), };
     return ctx.jsonResponse(201, post);
 }
 
@@ -204,13 +201,11 @@ fn step_save_update(ctx: *zerver.CtxBase) !zerver.Decision {
 fn step_render_updated_post(ctx: *zerver.CtxBase) !zerver.Decision {
     // In real app: const post = try ctx.require(Slot.UpdatePayload);
     const post = Post{
-        .id = "1",
-        .title = "Updated Post",
+        .id = "1", .title = "Updated Post",
         .content = "Updated content",
         .author = "demo",
-        .created_at = std.time.timestamp() - 3600, // 1 hour ago
-        .updated_at = std.time.timestamp(),
-    };
+        .created_at = time_util.timestamp() - 3600, // 1 hour ago
+        .updated_at = time_util.timestamp(), };
     return ctx.jsonResponse(200, post);
 }
 
@@ -259,7 +254,7 @@ fn step_parse_comment(ctx: *zerver.CtxBase) !zerver.Decision {
 
 // Create comment - Step 2: Save
 fn step_save_comment(ctx: *zerver.CtxBase) !zerver.Decision {
-    const comment_json = "{\"id\":\"1\",\"post_id\":\"1\",\"content\":\"New comment\",\"author\":\"Commenter\"}";
+    const comment_json = "{\"id\":\"1\", \"post_id\":\"1\",\"content\":\"New comment\",\"author\":\"Commenter\"}";
 
     return ctx.runEffects(&.{
         ctx.dbPut(@intFromEnum(Slot.Comment), "comments/1", comment_json),
@@ -270,11 +265,10 @@ fn step_save_comment(ctx: *zerver.CtxBase) !zerver.Decision {
 fn step_render_created_comment(ctx: *zerver.CtxBase) !zerver.Decision {
     // In real app: const comment = try ctx.require(Slot.Comment);
     const comment = Comment{
-        .id = "1",
-        .post_id = "1",
+        .id = "1", .post_id = "1",
         .content = "New comment",
         .author = "Commenter",
-        .created_at = std.time.timestamp(),
+        .created_at = time_util.timestamp(),
     };
     return ctx.jsonResponse(201, comment);
 }
@@ -379,8 +373,7 @@ pub fn main() !void {
 
     // Add a simple root route
     const hello_step = zerver.types.Step{
-        .name = "hello",
-        .call = helloStepWrapper,
+        .name = "hello", .call = helloStepWrapper,
         .reads = &.{},
         .writes = &.{},
     };
@@ -403,8 +396,7 @@ fn helloStepWrapper(ctx: *zerver.CtxBase) anyerror!zerver.Decision {
 fn helloStep(ctx: *zerver.CtxBase) !zerver.Decision {
     _ = ctx;
     return zerver.done(.{
-        .status = 200,
-        .body = .{ .complete = "Blog API Server Running!\n\nEndpoints:\n  GET    /blog/posts          - List all posts\n  GET    /blog/posts/:id      - Get specific post\n  POST   /blog/posts          - Create post\n  PUT    /blog/posts/:id      - Update post\n  PATCH  /blog/posts/:id      - Update post\n  DELETE /blog/posts/:id      - Delete post\n  GET    /blog/posts/:id/comments    - List comments\n  POST   /blog/posts/:id/comments    - Create comment\n  DELETE /blog/posts/:id/comments/:cid - Delete comment\n\nContent-Type: application/json required for POST/PUT/PATCH" },
+        .status = 200, .body = .{ .complete = "Blog API Server Running!\n\nEndpoints:\n  GET    /blog/posts          - List all posts\n  GET    /blog/posts/:id      - Get specific post\n  POST   /blog/posts          - Create post\n  PUT    /blog/posts/:id      - Update post\n  PATCH  /blog/posts/:id      - Update post\n  DELETE /blog/posts/:id      - Delete post\n  GET    /blog/posts/:id/comments    - List comments\n  POST   /blog/posts/:id/comments    - Create comment\n  DELETE /blog/posts/:id/comments/:cid - Delete comment\n\nContent-Type: application/json required for POST/PUT/PATCH" },
     });
 }
 

@@ -13,15 +13,13 @@ const route_registry = @import("route_registry.zig");
 // ============================================================================
 
 const TestSlot = enum {
-    input_data,
-    processed_data,
+    input_data, processed_data,
     output_data,
 };
 
 fn testSlotType(comptime slot: TestSlot) type {
     return switch (slot) {
-        .input_data => []const u8,
-        .processed_data => u32,
+        .input_data => []const u8, .processed_data => u32,
         .output_data => []const u8,
     };
 }
@@ -35,8 +33,7 @@ const TestSchema = slot_effect.SlotSchema(TestSlot, testSlotType);
 /// Simple step that reads input and writes processed data
 fn processStep(ctx: *slot_effect.CtxBase) !slot_effect.Decision {
     const Ctx = slot_effect.CtxView(.{
-        .SlotEnum = TestSlot,
-        .slotTypeFn = testSlotType,
+        .SlotEnum = TestSlot, .slotTypeFn = testSlotType,
         .reads = &[_]TestSlot{.input_data},
         .writes = &[_]TestSlot{.processed_data},
     });
@@ -54,8 +51,7 @@ fn processStep(ctx: *slot_effect.CtxBase) !slot_effect.Decision {
 /// Step that generates output from processed data
 fn outputStep(ctx: *slot_effect.CtxBase) !slot_effect.Decision {
     const Ctx = slot_effect.CtxView(.{
-        .SlotEnum = TestSlot,
-        .slotTypeFn = testSlotType,
+        .SlotEnum = TestSlot, .slotTypeFn = testSlotType,
         .reads = &[_]TestSlot{.processed_data},
         .writes = &[_]TestSlot{.output_data},
     });
@@ -69,8 +65,7 @@ fn outputStep(ctx: *slot_effect.CtxBase) !slot_effect.Decision {
 
     const response = slot_effect.Response{
         .status = 200,
-        .headers = slot_effect.Response.Headers.init(ctx.allocator),
-        .body = slot_effect.Body{ .text = output },
+        .headers = slot_effect.Response.Headers.init(ctx.allocator), .body = slot_effect.Body{ .text = output },
     };
 
     return slot_effect.done(response);
@@ -78,8 +73,7 @@ fn outputStep(ctx: *slot_effect.CtxBase) !slot_effect.Decision {
 
 /// Test handler function for DLL interface
 fn testHandler(
-    server: *const slot_effect_dll.SlotEffectServerAdapter,
-    request: *anyopaque,
+    server: *const slot_effect_dll.SlotEffectServerAdapter, request: *anyopaque,
     response: *anyopaque,
 ) callconv(.c) c_int {
     _ = server;
@@ -115,8 +109,7 @@ test "SlotEffectBridge - context initialization via adapter" {
 
     // Create context via adapter function
     const ctx_ptr = adapter.createSlotContext.?(
-        adapter.runtime_resources,
-        "test-req-002",
+        adapter.runtime_resources, "test-req-002",
         12,
     );
 
@@ -143,8 +136,7 @@ test "RouteRegistry - mixed route types" {
 
     // Register slot-effect route
     try registry.registerSlotEffectRoute(
-        .POST,
-        "/api/slot-effect",
+        .POST, "/api/slot-effect",
         testHandler,
         .{
             .description = "Slot-effect endpoint",
@@ -204,8 +196,7 @@ test "Dispatcher - route dispatch" {
 
     // Register a test route
     try registry.registerSlotEffectRoute(
-        .GET,
-        "/api/test",
+        .GET, "/api/test",
         testHandler,
         null,
     );
@@ -215,11 +206,9 @@ test "Dispatcher - route dispatch" {
     var dummy_response: u32 = 0;
 
     const result = try dispatcher.dispatch(
-        .GET,
-        "/api/test",
+        .GET, "/api/test",
         @ptrCast(&dummy_request),
-        @ptrCast(&dummy_response),
-    );
+        @ptrCast(&dummy_response),  );
 
     try testing.expect(result == 0);
 }
@@ -237,11 +226,9 @@ test "Dispatcher - 404 handling" {
     var dummy_response: u32 = 0;
 
     const result = dispatcher.dispatch(
-        .GET,
-        "/api/nonexistent",
+        .GET, "/api/nonexistent",
         @ptrCast(&dummy_request),
-        @ptrCast(&dummy_response),
-    );
+        @ptrCast(&dummy_response),  );
 
     try testing.expectError(error.RouteNotFound, result);
 }
@@ -255,8 +242,7 @@ test "Integration - pipeline execution with bridge" {
 
     // Set up initial slot
     const Ctx = slot_effect.CtxView(.{
-        .SlotEnum = TestSlot,
-        .slotTypeFn = testSlotType,
+        .SlotEnum = TestSlot, .slotTypeFn = testSlotType,
         .reads = &[_]TestSlot{},
         .writes = &[_]TestSlot{.input_data},
     });

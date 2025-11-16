@@ -13,8 +13,7 @@ pub fn main() !void {
 
     // Create server configuration
     const config = zerver.Config{
-        .port = 8080,
-        .address = zerver.Address{ .ipv4 = "127.0.0.1" },
+        .port = 8080, .address = zerver.Address{ .ipv4 = "127.0.0.1" },
         .allocator = allocator,
     };
 

@@ -6,6 +6,8 @@
 const std = @import("std");
 const windows_sockets = @import("../platform/windows_sockets.zig");
 const slog = @import("../../observability/slog.zig");
+const compat_net = @import("../net_compat.zig");
+const time_util = @import("../../util/time.zig");
 
 /// Check if a string contains CTL characters (control characters 0x00-0x1F, 0x7F).
 /// Per RFC 9110 Section 5.5, these should be rejected in header field values.
@@ -22,8 +24,7 @@ fn containsCtlCharacters(value: []const u8) bool {
 /// Read an HTTP request from a connection with timeout.
 /// Implements robust HTTP/1.1 message framing per RFC 9110/9112.
 pub fn readRequestWithTimeout(
-    connection: std.net.Server.Connection,
-    allocator: std.mem.Allocator,
+    connection: compat_net.Connection, allocator: std.mem.Allocator,
     timeout_ms: u32,
 ) ![]u8 {
     var req_buf = std.ArrayList(u8).initCapacity(allocator, 4096) catch |err| {
@@ -34,7 +35,7 @@ pub fn readRequestWithTimeout(
     var read_buf: [256]u8 = undefined;
     const max_size = 4096;
     // TODO: Expose max_size as config; enforce per-request limits for headers and body (431/413) to mitigate DoS.
-    const start_time = std.time.milliTimestamp();
+    const start_time = time_util.nanoTimestamp();
 
     // RFC 9110 §5.5 Compliance: CTL character validation implemented via containsCtlCharacters()
     // Header values containing control characters (0x00-0x1F, 0x7F) are rejected to prevent request smuggling
@@ -98,7 +99,7 @@ pub fn readRequestWithTimeout(
             slog.Attr.string("chunk_hex", chunk_hex),
             slog.Attr.string("buffer_preview", req_buf.items[0..total_preview_len]),
             slog.Attr.string("tail_hex", tail_hex),
-            slog.Attr.uint("terminator_index", @as(u64, @intCast(terminator_index))),
+                slog.Attr.uint("terminator_index", @as(u64, terminator_index)),
             slog.Attr.bool("terminator_found", terminator_found),
         });
 
@@ -180,25 +181,25 @@ pub fn readRequestWithTimeout(
 }
 
 fn readChunkedBody(
-    req_buf: *std.ArrayList(u8),
-    connection: std.net.Server.Connection,
+    req_buf: *std.ArrayList(u8), connection: compat_net.Connection,
     allocator: std.mem.Allocator,
     timeout_ms: u32,
-    start_time: i64,
+    start_time: u64,
 ) !void {
     var read_buf: [256]u8 = undefined;
     const headers_end = std.mem.indexOf(u8, req_buf.items, "\r\n\r\n") orelse return error.InvalidRequest;
     var chunk_start = headers_end + 4; // Track where unconsumed chunk data begins
     // TODO: Enforce maximum total body size and per-chunk size to prevent resource exhaustion.
+    const timeout_ns = @as(u64, timeout_ms) * std.time.ns_per_ms;
 
     while (true) {
-        const now = std.time.milliTimestamp();
-        if (now - start_time > timeout_ms) {
+        const now = time_util.nanoTimestamp();
+        if (now - start_time > timeout_ns) {
             return error.Timeout;
         }
 
         while (std.mem.indexOf(u8, req_buf.items[chunk_start..], "\r\n") == null) {
-            const bytes_read = try readWithTimeout(connection, &read_buf, timeout_ms, start_time);
+        const bytes_read = try readWithTimeout(connection, &read_buf, timeout_ms, start_time);
             if (bytes_read == 0) return error.ConnectionClosed;
             try req_buf.appendSlice(allocator, read_buf[0..bytes_read]);
         }
@@ -221,7 +222,7 @@ fn readChunkedBody(
 
         if (chunk_size == 0) {
             while (!std.mem.endsWith(u8, req_buf.items, "\r\n\r\n")) {
-                const bytes_read = try readWithTimeout(connection, &read_buf, timeout_ms, start_time);
+        const bytes_read = try readWithTimeout(connection, &read_buf, timeout_ms, start_time);
                 if (bytes_read == 0) return error.ConnectionClosed;
                 try req_buf.appendSlice(allocator, read_buf[0..bytes_read]);
             }
@@ -249,17 +250,15 @@ fn readChunkedBody(
 }
 
 fn readContentLengthBody(
-    req_buf: *std.ArrayList(u8),
-    connection: std.net.Server.Connection,
+    req_buf: *std.ArrayList(u8), connection: compat_net.Connection,
     allocator: std.mem.Allocator,
     content_length: usize,
     timeout_ms: u32,
-    start_time: i64,
+    start_time: u64,
 ) !void {
     const headers_end = std.mem.indexOf(u8, req_buf.items, "\r\n\r\n") orelse return error.InvalidRequest;
     const body_start = headers_end + 4;
     const current_body_len = req_buf.items.len - body_start;
-
     if (current_body_len >= content_length) {
         return;
     }
@@ -279,16 +278,16 @@ fn readContentLengthBody(
 }
 
 fn readWithTimeout(
-    connection: std.net.Server.Connection,
-    buffer: []u8,
+    connection: compat_net.Connection, buffer: []u8,
     timeout_ms: u32,
-    start_time: i64,
+    start_time: u64,
 ) !usize {
     const per_attempt_timeout_ms: u32 = 250;
+    const timeout_ns = @as(u64, timeout_ms) * std.time.ns_per_ms;
 
     while (true) {
-        const now = std.time.milliTimestamp();
-        if (now - start_time > timeout_ms) {
+        const now = time_util.nanoTimestamp();
+        if (now - start_time > timeout_ns) {
             return error.Timeout;
         }
 
@@ -310,7 +309,7 @@ fn readWithTimeout(
                 },
             };
 
-            const poll_result = std.posix.poll(&poll_fds, @intCast(per_attempt_timeout_ms)) catch {
+            const poll_result = std.posix.poll(&poll_fds, @as(i32, per_attempt_timeout_ms)) catch {
                 return error.ConnectionClosed;
             };
 

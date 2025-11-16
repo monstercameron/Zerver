@@ -78,6 +78,8 @@ pub const file_watcher = @import("plugins/file_watcher.zig");
 pub const dll_loader = @import("plugins/dll_loader.zig");
 pub const dll_version = @import("plugins/dll_version.zig");
 pub const atomic_router = @import("plugins/atomic_router.zig");
+pub const time_util = @import("util/time.zig");
+pub const array_list_writer = @import("util/array_list_writer.zig");
 
 // IPC Protocol Types (shared between Zingest and Zupervisor)
 pub const ipc_types = @import("ipc/types.zig");

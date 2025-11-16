@@ -12,15 +12,13 @@ const slog = @import("src/zerver/observability/slog.zig");
 
 // Define your application's slots
 pub const Slot = enum(u32) {
-    UserId = 0,
-    TodoId = 1,
+    UserId = 0, TodoId = 1,
     TodoItem = 2,
 };
 
 pub fn SlotType(comptime s: Slot) type {
     return switch (s) {
-        .UserId => []const u8,
-        .TodoId => []const u8,
+        .UserId => []const u8, .TodoId => []const u8,
         .TodoItem => struct { id: []const u8, title: []const u8 },
     };
 }
@@ -59,8 +57,7 @@ pub fn render_step(ctx: *zerver.CtxView(RenderSpec)) !zerver.Decision {
     slog.infof("render_step: preparing response", .{});
 
     return zerver.done(.{
-        .status = 200,
-        .body = "{}",
+        .status = 200, .body = "{}",
     });
 }
 

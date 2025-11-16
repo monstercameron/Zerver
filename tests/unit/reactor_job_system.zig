@@ -1,13 +1,13 @@
 // tests/unit/reactor_job_system.zig
 const std = @import("std");
 const zerver = @import("zerver");
+const time_util = zerver.time_util;
 
 const JobSystem = zerver.reactor_job_system.JobSystem;
 const SubmitError = zerver.reactor_job_system.SubmitError;
 
 const Counter = struct {
-    value: std.atomic.Value(u32) = std.atomic.Value(u32).init(0),
-};
+    value: std.atomic.Value(u32) = std.atomic.Value(u32).init(0), };
 
 fn incrementJob(ctx: *anyopaque) void {
     const counter: *Counter = @ptrCast(@alignCast(ctx));
@@ -29,7 +29,7 @@ test "job system executes submitted jobs" {
 
     var attempt: usize = 0;
     while (counter.value.load(.seq_cst) < total and attempt < 10_000) : (attempt += 1) {
-        std.Thread.sleep(1_000_000); // 1 ms
+        time_util.sleep(1_000_000); // 1 ms
     }
 
     try std.testing.expectEqual(total, counter.value.load(.seq_cst));

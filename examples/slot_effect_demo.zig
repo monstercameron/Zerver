@@ -3,9 +3,11 @@
 /// Shows: slot schema → pipeline steps → execution → HTTP response
 
 const std = @import("std");
+const zerver = @import("zerver");
 const slot_effect = @import("slot_effect");
 const slot_effect_dll = @import("../src/zupervisor/slot_effect_dll.zig");
 const slot_effect_executor = @import("../src/zupervisor/slot_effect_executor.zig");
+const time_util = zerver.time_util;
 
 // ============================================================================
 // 1. Define Slot Schema
@@ -13,7 +15,7 @@ const slot_effect_executor = @import("../src/zupervisor/slot_effect_executor.zig
 
 /// Slots for a simple greeting API
 const GreetingSlot = enum {
-    name_param,          // Input: extracted from request
+    name_param, // Input: extracted from request
     greeting_message,    // Intermediate: constructed message
     timestamp,           // Intermediate: current time
     response_built,      // Final: marker that response is ready
@@ -22,8 +24,7 @@ const GreetingSlot = enum {
 /// Type mapping for each slot
 fn greetingSlotType(comptime slot: GreetingSlot) type {
     return switch (slot) {
-        .name_param => []const u8,
-        .greeting_message => []const u8,
+        .name_param => []const u8, .greeting_message => []const u8,
         .timestamp => i64,
         .response_built => bool,
     };
@@ -39,8 +40,7 @@ const GreetingSchema = slot_effect.SlotSchema(GreetingSlot, greetingSlotType);
 /// Step 1: Extract name parameter from request
 fn extractNameStep(ctx: *slot_effect.CtxBase) !slot_effect.Decision {
     const Ctx = slot_effect.CtxView(.{
-        .SlotEnum = GreetingSlot,
-        .slotTypeFn = greetingSlotType,
+        .SlotEnum = GreetingSlot, .slotTypeFn = greetingSlotType,
         .reads = &[_]GreetingSlot{},
         .writes = &[_]GreetingSlot{.name_param},
     });
@@ -60,8 +60,7 @@ fn extractNameStep(ctx: *slot_effect.CtxBase) !slot_effect.Decision {
 /// Step 2: Build greeting message
 fn buildGreetingStep(ctx: *slot_effect.CtxBase) !slot_effect.Decision {
     const Ctx = slot_effect.CtxView(.{
-        .SlotEnum = GreetingSlot,
-        .slotTypeFn = greetingSlotType,
+        .SlotEnum = GreetingSlot, .slotTypeFn = greetingSlotType,
         .reads = &[_]GreetingSlot{.name_param},
         .writes = &[_]GreetingSlot{.greeting_message, .timestamp},
     });
@@ -72,13 +71,12 @@ fn buildGreetingStep(ctx: *slot_effect.CtxBase) !slot_effect.Decision {
     const name = try view.require(.name_param);
 
     // Get current timestamp
-    const now = std.time.timestamp();
+    const now = time_util.timestamp();
     try view.put(.timestamp, now);
 
     // Build greeting message
     const message = try std.fmt.allocPrint(
-        ctx.allocator,
-        "Hello, {s}! Welcome to the slot-effect demo.",
+        ctx.allocator, "Hello, {s}! Welcome to the slot-effect demo.",
         .{name},
     );
 
@@ -91,8 +89,7 @@ fn buildGreetingStep(ctx: *slot_effect.CtxBase) !slot_effect.Decision {
 /// Step 3: Build HTTP response (terminal step)
 fn buildResponseStep(ctx: *slot_effect.CtxBase) !slot_effect.Decision {
     const Ctx = slot_effect.CtxView(.{
-        .SlotEnum = GreetingSlot,
-        .slotTypeFn = greetingSlotType,
+        .SlotEnum = GreetingSlot, .slotTypeFn = greetingSlotType,
         .reads = &[_]GreetingSlot{.greeting_message, .timestamp},
         .writes = &[_]GreetingSlot{.response_built},
     });
@@ -108,8 +105,7 @@ fn buildResponseStep(ctx: *slot_effect.CtxBase) !slot_effect.Decision {
 
     // Build JSON response body
     const json_body = try std.fmt.allocPrint(
-        ctx.allocator,
-        "{{\"message\":\"{s}\",\"timestamp\":{d}}}",
+        ctx.allocator, "{{\"message\":\"{s}\",\"timestamp\":{d}}}",
         .{ message, timestamp },
     );
 
@@ -118,8 +114,7 @@ fn buildResponseStep(ctx: *slot_effect.CtxBase) !slot_effect.Decision {
     // Create HTTP response
     var response = slot_effect.Response{
         .status = 200,
-        .headers = slot_effect.Response.Headers.init(ctx.allocator),
-        .body = slot_effect.Body{ .json = json_body },
+        .headers = slot_effect.Response.Headers.init(ctx.allocator), .body = slot_effect.Body{ .json = json_body },
     };
 
     // Add content-type header

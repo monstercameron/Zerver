@@ -25,8 +25,7 @@ pub const FeatureMetadataFn = *const fn () callconv(.c) [*:0]const u8;
 
 /// Error codes that can be returned by feature functions
 pub const ErrorCode = error{
-    InitializationFailed,
-    DatabaseConnectionFailed,
+    InitializationFailed, DatabaseConnectionFailed,
     InvalidConfiguration,
     ResourceExhausted,
 };
@@ -90,11 +89,9 @@ pub const DLL = struct {
         errdefer allocator.free(path_copy);
 
         dll.* = .{
-            .allocator = allocator,
-            .path = path_copy,
+            .allocator = allocator, .path = path_copy,
             .handle = handle,
-            .ref_count = std.atomic.Value(u32).init(1),
-            .featureInit = featureInit,
+            .ref_count = std.atomic.Value(u32).init(1), .featureInit = featureInit,
             .featureShutdown = featureShutdown,
             .featureVersion = featureVersion,
             .featureHealthCheck = featureHealthCheck,
@@ -168,9 +165,7 @@ pub const DLL = struct {
 // ============================================================================
 
 const PosixHandle = struct {
-    ptr: *anyopaque,
-
-    fn open(path: []const u8) !PosixHandle {
+    ptr: *anyopaque, fn open(path: []const u8) !PosixHandle {
         // Null-terminate the path for C API
         const path_z = try std.posix.toPosixPath(path);
 
@@ -287,8 +282,7 @@ test "DLL - error handling" {
 
     // Try to load a non-existent DLL (path varies by platform)
     const nonexistent_path = switch (builtin.os.tag) {
-        .windows => "C:\\nonexistent\\path.dll",
-        else => "/nonexistent/path.so",
+        .windows => "C:\\nonexistent\\path.dll", else => "/nonexistent/path.so",
     };
 
     const result = DLL.load(testing.allocator, nonexistent_path);

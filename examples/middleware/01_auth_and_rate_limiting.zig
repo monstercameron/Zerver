@@ -8,16 +8,14 @@ const zerver = @import("../src/zerver/root.zig");
 
 /// Example Slot enum for middleware examples
 pub const Slot = enum {
-    UserId,
-    AuthToken,
+    UserId, AuthToken,
     RateLimit,
     RequestCount,
 };
 
 pub fn SlotType(comptime s: Slot) type {
     return switch (s) {
-        .UserId => []const u8,
-        .AuthToken => []const u8,
+        .UserId => []const u8, .AuthToken => []const u8,
         .RateLimit => RateLimitData,
         .RequestCount => u32,
     };
@@ -40,8 +38,7 @@ pub fn auth_parse(ctx: *zerver.CtxBase) !zerver.Decision {
     // Extract Authorization header
     const auth_header = ctx.header("Authorization") orelse {
         return zerver.fail(
-            zerver.ErrorCode.Unauthorized,
-            "auth",
+            zerver.ErrorCode.Unauthorized, "auth",
             "missing_header",
         );
     };
@@ -51,8 +48,7 @@ pub fn auth_parse(ctx: *zerver.CtxBase) !zerver.Decision {
         auth_header[7..]
     else
         return zerver.fail(
-            zerver.ErrorCode.Unauthorized,
-            "auth",
+            zerver.ErrorCode.Unauthorized, "auth",
             "invalid_format",
         );
 
@@ -69,8 +65,7 @@ pub fn auth_verify(ctx: *zerver.CtxBase) !zerver.Decision {
     const token_opt = try ctx._get(0, []const u8); // 0 = AuthToken slot id
     const token = token_opt orelse {
         return zerver.fail(
-            zerver.ErrorCode.Unauthorized,
-            "auth",
+            zerver.ErrorCode.Unauthorized, "auth",
             "no_token",
         );
     };
@@ -79,8 +74,7 @@ pub fn auth_verify(ctx: *zerver.CtxBase) !zerver.Decision {
     // For this example, we'll do a simple validation
     if (token.len < 10) {
         return zerver.fail(
-            zerver.ErrorCode.Unauthorized,
-            "auth",
+            zerver.ErrorCode.Unauthorized, "auth",
             "invalid_token",
         );
     }
@@ -90,8 +84,7 @@ pub fn auth_verify(ctx: *zerver.CtxBase) !zerver.Decision {
     _ = parts.next(); // skip "user"
     const user_id = parts.next() orelse {
         return zerver.fail(
-            zerver.ErrorCode.Unauthorized,
-            "auth",
+            zerver.ErrorCode.Unauthorized, "auth",
             "malformed_token",
         );
     };
@@ -122,8 +115,7 @@ pub fn rate_limit_check(ctx: *zerver.CtxBase) !zerver.Decision {
 
     // Simple rate limit: 60 requests per minute
     const limit_data: RateLimitData = .{
-        .requests_per_min = 60,
-        .current_window_count = 0,
+        .requests_per_min = 60, .current_window_count = 0,
         .window_start_ms = now,
     };
 
@@ -175,18 +167,15 @@ pub fn example_protected_route(ctx: *zerver.CtxBase) !zerver.Decision {
     const user_id = user_id_opt orelse "anonymous";
 
     const response_body = std.fmt.allocPrint(
-        ctx.allocator,
-        "Protected resource for user: {s}",
+        ctx.allocator, "Protected resource for user: {s}",
         .{user_id},
     ) catch return zerver.fail(
-        zerver.ErrorCode.InternalError,
-        "memory",
+        zerver.ErrorCode.InternalError, "memory",
         "allocation_failed",
     );
 
     return zerver.done(zerver.Response{
-        .status = 200,
-        .body = response_body,
+        .status = 200, .body = response_body,
     });
 }
 

@@ -7,11 +7,12 @@
 /// - TodoId: Value object for identity
 /// - Error types: Domain-specific errors
 const std = @import("std");
+const zerver = @import("../src/zerver/root.zig");
+const time_util = zerver.time_util;
 
 /// Todo status enumeration
 pub const TodoStatus = enum {
-    pending,
-    in_progress,
+    pending, in_progress,
     completed,
     blocked,
 };
@@ -48,8 +49,7 @@ pub const Todo = struct {
 
 /// Domain error codes
 pub const DomainError = enum {
-    InvalidInput,
-    Unauthorized,
+    InvalidInput, Unauthorized,
     Forbidden,
     NotFound,
     Conflict,
@@ -94,7 +94,7 @@ pub const OperationLatency = struct {
     }
 
     pub fn random(self: OperationLatency) u32 {
-        var prng = std.Random.DefaultPrng.init(std.time.timestamp());
+        var prng = std.Random.DefaultPrng.init(time_util.timestamp());
         const rand = prng.random();
         const range = self.max_ms - self.min_ms;
         const offset = rand.intRangeLessThan(u32, 0, range);

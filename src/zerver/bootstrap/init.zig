@@ -12,68 +12,9 @@ const runtime_global = @import("../runtime/global.zig");
 const helpers = @import("helpers.zig");
 const effectors = @import("../runtime/reactor/effectors.zig");
 
-// Import features - DISABLED: Features have been moved to external DLLs
-// const hello = @import("../../features/hello/routes.zig");
-// const blog = @import("../../features/blog/index.zig");
-// const todos = @import("../../features/todos/index.zig");
-// const feature_registry = @import("../features/registry.zig");
-
-// Create feature registry with automatic token assignment
-// Blog gets tokens 0-99, Todos gets tokens 100-199
-// DISABLED: Using external DLLs instead
-// const FeatureRouter = feature_registry.FeatureRegistry(.{ blog, todos });
-
-// Reactor dispatcher handlers that route through the feature registry
-fn reactorDbGetHandler(_: *effectors.Context, payload: root.types.DbGet) effectors.DispatchError!root.types.EffectResult {
-    slog.info("🚀 REGISTRY DB_GET 🚀", &.{
-        slog.Attr.string("key", payload.key),
-        slog.Attr.uint("token", payload.token),
-    });
-    const effect = root.types.Effect{ .db_get = payload };
-    return FeatureRouter.effectHandler(&effect, 300) catch |err| {
-        slog.err("registry_handler_error", &.{
-            slog.Attr.string("error", @errorName(err)),
-        });
-        return effectors.DispatchError.UnsupportedEffect;
-    };
-}
-
-fn reactorDbPutHandler(_: *effectors.Context, payload: root.types.DbPut) effectors.DispatchError!root.types.EffectResult {
-    slog.info("🚀 REGISTRY DB_PUT 🚀", &.{
-        slog.Attr.string("key", payload.key),
-        slog.Attr.uint("token", payload.token),
-    });
-    const effect = root.types.Effect{ .db_put = payload };
-    return FeatureRouter.effectHandler(&effect, 300) catch |err| {
-        slog.err("registry_handler_error", &.{
-            slog.Attr.string("error", @errorName(err)),
-        });
-        return effectors.DispatchError.UnsupportedEffect;
-    };
-}
-
-fn reactorDbDelHandler(_: *effectors.Context, payload: root.types.DbDel) effectors.DispatchError!root.types.EffectResult {
-    slog.info("🚀 REGISTRY DB_DEL 🚀", &.{
-        slog.Attr.string("key", payload.key),
-        slog.Attr.uint("token", payload.token),
-    });
-    const effect = root.types.Effect{ .db_del = payload };
-    return FeatureRouter.effectHandler(&effect, 300) catch |err| {
-        slog.err("registry_handler_error", &.{
-            slog.Attr.string("error", @errorName(err)),
-        });
-        return effectors.DispatchError.UnsupportedEffect;
-    };
-}
-
-// Register feature registry handlers with the reactor dispatcher
+// Feature registry hooks intentionally disabled in this build.
 fn registerReactorHandlers(resources: *runtime_resources.RuntimeResources) void {
-    if (resources.reactorEffectDispatcher()) |dispatcher| {
-        slog.info("Registering feature registry handlers", &.{});
-        dispatcher.setDbGetHandler(reactorDbGetHandler);
-        dispatcher.setDbPutHandler(reactorDbPutHandler);
-        dispatcher.setDbDelHandler(reactorDbDelHandler);
-    }
+    _ = resources;
 }
 
 // Stub effect handler (won't be called since dispatcher handles everything)
@@ -85,6 +26,11 @@ fn stubEffectHandler(effect: *const root.types.Effect, timeout_ms: u32) anyerror
         .kind = 500,
         .ctx = .{ .what = "stub", .key = "unreachable" },
     } };
+}
+
+fn defaultErrorHandler(_: *root.CtxBase) anyerror!root.types.Decision {
+    slog.warn("default error handler invoked", &.{});
+    return root.types.Decision.Continue;
 }
 
 pub const Initialization = struct {
@@ -169,10 +115,9 @@ pub fn initializeServer(allocator: std.mem.Allocator) !Initialization {
     // consumers should copy and modify this file rather than calling it directly.
     const mut_config = root.Config{
         .addr = .{
-            .ip = server_ip,
-            .port = server_port,
+            .ip = server_ip, .port = server_port,
         },
-        .on_error = blog.errors.onError,
+        .on_error = defaultErrorHandler,
     };
 
     // Create server with the blog effects handler until additional feature routing is wired
@@ -216,11 +161,6 @@ pub fn initializeServer(allocator: std.mem.Allocator) !Initialization {
     }
 
     var srv = try root.Server.init(allocator, config, stubEffectHandler);
-
-    // Register features
-    try blog.registerRoutes(&srv); // Blog routes now working
-    try hello.registerRoutes(&srv);
-    try todos.registerRoutes(&srv);
 
     // Print available routes
     printRoutes(&srv, allocator) catch |err| {

@@ -5,12 +5,13 @@
 const std = @import("std");
 const slog = @import("../observability/slog.zig");
 const DLL = @import("dll_loader.zig").DLL;
+const time_util = @import("../util/time.zig");
 
 /// Version state in the reload lifecycle
 pub const VersionState = enum(u8) {
     /// Actively serving new requests
-    Active,
     /// Finishing in-flight requests, no new requests
+    Active,
     Draining,
     /// All requests completed, ready to unload
     Retired,
@@ -20,18 +21,13 @@ pub const VersionState = enum(u8) {
 pub const DLLVersion = struct {
     dll: *DLL,
     state: std.atomic.Value(VersionState),
-    in_flight: std.atomic.Value(u32),
-    drain_started_ns: std.atomic.Value(i64),
+    in_flight: std.atomic.Value(u32), drain_started_ns: std.atomic.Value(i64),
     allocator: std.mem.Allocator,
 
     pub fn init(allocator: std.mem.Allocator, dll: *DLL) !*DLLVersion {
         const version = try allocator.create(DLLVersion);
         version.* = .{
-            .dll = dll,
-            .state = std.atomic.Value(VersionState).init(.Active),
-            .in_flight = std.atomic.Value(u32).init(0),
-            .drain_started_ns = std.atomic.Value(i64).init(0),
-            .allocator = allocator,
+            .dll = dll, .state = std.atomic.Value(VersionState).init(.Active), .in_flight = std.atomic.Value(u32).init(0), .drain_started_ns = std.atomic.Value(i64).init(0), .allocator = allocator,
         };
 
         dll.retain(); // Increment DLL reference count
@@ -60,7 +56,7 @@ pub const DLLVersion = struct {
         const prev_state = self.state.swap(.Draining, .acq_rel);
 
         if (prev_state == .Active) {
-            const now = std.time.nanoTimestamp();
+            const now = time_util.nanoTimestamp();
             self.drain_started_ns.store(now, .monotonic);
 
             const in_flight = self.in_flight.load(.monotonic);
@@ -86,7 +82,7 @@ pub const DLLVersion = struct {
         const drain_start = self.drain_started_ns.load(.monotonic);
         if (drain_start == 0) return null;
 
-        const now = std.time.nanoTimestamp();
+        const now = time_util.nanoTimestamp();
         const duration_ns = now - drain_start;
         return @intCast(@divTrunc(duration_ns, std.time.ns_per_ms));
     }
@@ -153,9 +149,8 @@ pub const DLLVersion = struct {
 
 /// RAII handle for tracking request lifetime
 pub const RequestHandle = struct {
-    version: *DLLVersion,
-
     /// Release the request when done
+    version: *DLLVersion,
     pub fn release(self: RequestHandle) void {
         self.version.releaseRequest();
     }
@@ -168,8 +163,7 @@ pub const RequestHandle = struct {
 
 /// Manager for active and draining DLL versions
 pub const VersionManager = struct {
-    allocator: std.mem.Allocator,
-    mutex: std.Thread.Mutex,
+    allocator: std.mem.Allocator, mutex: std.Thread.Mutex,
     active: ?*DLLVersion,
     draining: ?*DLLVersion,
     drain_timeout_ms: u64,
@@ -304,11 +298,7 @@ pub const VersionManager = struct {
         defer self.mutex.unlock();
 
         return .{
-            .active_version = if (self.active) |a| a.dll.getVersion() else null,
-            .active_in_flight = if (self.active) |a| a.in_flight.load(.monotonic) else 0,
-            .draining_version = if (self.draining) |d| d.dll.getVersion() else null,
-            .draining_in_flight = if (self.draining) |d| d.in_flight.load(.monotonic) else 0,
-            .draining_duration_ms = if (self.draining) |d| d.drainDurationMs() else null,
+            .active_version = if (self.active) |a| a.dll.getVersion() else null, .active_in_flight = if (self.active) |a| a.in_flight.load(.monotonic) else 0, .draining_version = if (self.draining) |d| d.dll.getVersion() else null, .draining_in_flight = if (self.draining) |d| d.in_flight.load(.monotonic) else 0, .draining_duration_ms = if (self.draining) |d| d.drainDurationMs() else null,
         };
     }
 

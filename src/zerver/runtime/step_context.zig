@@ -22,9 +22,15 @@ const ctx_module = @import("../core/ctx.zig");
 const telemetry = @import("../observability/telemetry.zig");
 const compute_budget = @import("./compute_budget.zig");
 
+const time_util = @import("../util/time.zig");
+
+fn nowMillis() i64 {
+    return std.math.lossyCast(i64, time_util.milliTimestamp());
+}
+
 /// Current state of step execution
 pub const ExecutionState = enum {
-    ready,      // Ready to execute next step
+    ready, // Ready to execute next step
     running,    // Currently executing step function
     waiting,    // Parked, waiting for effects to complete
     resuming,   // Resuming after effects, about to call continuation
@@ -50,7 +56,7 @@ pub const StepExecutionContext = struct {
     steps: []const types.Step,           // All steps in pipeline
     current_step_index: usize,            // Current position (0-based)
     layer: telemetry.StepLayer,           // Step layer (global_before/route_before/main)
-    depth: usize,                         // Recursion depth
+    depth: usize, // Recursion depth
 
     // Execution state
     state: ExecutionState,
@@ -60,10 +66,10 @@ pub const StepExecutionContext = struct {
     // SLO and fairness metadata
     priority: u8,                         // Priority level (0=highest, 255=lowest)
     deadline_ms: ?i64,                    // Absolute deadline timestamp (null = no deadline)
-    enqueue_count: usize,                 // Number of times re-queued (for fairness)
+    enqueue_count: usize, // Number of times re-queued (for fairness)
 
     // Parked state (when waiting for effects)
-    parked_need: ?types.Need,             // The Need that caused parking
+    parked_need: ?types.Need, // The Need that caused parking
     parked_continuation: ?types.ResumeFn, // Continuation to call after effects
     need_sequence: usize,                 // Telemetry sequence number
 
@@ -72,15 +78,13 @@ pub const StepExecutionContext = struct {
     effect_results_mutex: std.Thread.Mutex,
 
     // Synchronization for effect completion
-    outstanding_effects: std.atomic.Value(usize),
-    completed_effects: std.atomic.Value(usize),
+    outstanding_effects: std.atomic.Value(usize), completed_effects: std.atomic.Value(usize),
 
     // Join state for effect completion
     join_mode: types.Mode,
     join_strategy: types.Join,
     required_effect_count: usize,
-    any_effect_succeeded: std.atomic.Value(bool),
-    first_failure: ?types.Error,
+    any_effect_succeeded: std.atomic.Value(bool), first_failure: ?types.Error,
 
     // Compute budget tracking
     compute_budget: ?*compute_budget.RequestBudget,
@@ -100,10 +104,9 @@ pub const StepExecutionContext = struct {
         telemetry_ctx: ?*telemetry.Telemetry,
     ) !*StepExecutionContext {
         const self = try allocator.create(StepExecutionContext);
-        const now_ms = std.time.milliTimestamp();
+        const now_ms = nowMillis();
         self.* = .{
-            .allocator = allocator,
-            .request_ctx = request_ctx,
+            .allocator = allocator, .request_ctx = request_ctx,
             .steps = steps,
             .current_step_index = 0,
             .layer = layer,
@@ -117,15 +120,11 @@ pub const StepExecutionContext = struct {
             .parked_need = null,
             .parked_continuation = null,
             .need_sequence = 0,
-            .effect_results = std.AutoHashMap(u32, EffectCompletion).init(allocator),
-            .effect_results_mutex = .{},
-            .outstanding_effects = std.atomic.Value(usize).init(0),
-            .completed_effects = std.atomic.Value(usize).init(0),
-            .join_mode = .Sequential,
+            .effect_results = std.AutoHashMap(u32, EffectCompletion).init(allocator), .effect_results_mutex = .{},
+            .outstanding_effects = std.atomic.Value(usize).init(0), .completed_effects = std.atomic.Value(usize).init(0), .join_mode = .Sequential,
             .join_strategy = .all,
             .required_effect_count = 0,
-            .any_effect_succeeded = std.atomic.Value(bool).init(false),
-            .first_failure = null,
+            .any_effect_succeeded = std.atomic.Value(bool).init(false), .first_failure = null,
             .compute_budget = null,
             .telemetry_ctx = telemetry_ctx,
             .response = null,
@@ -153,20 +152,19 @@ pub const StepExecutionContext = struct {
     /// Advance to next step
     pub fn advanceStep(self: *StepExecutionContext) void {
         self.current_step_index += 1;
-        self.last_activity_ms = std.time.milliTimestamp();
+        self.last_activity_ms = nowMillis();
     }
 
     /// Park step for I/O (called when step returns Need)
     pub fn parkForIO(
-        self: *StepExecutionContext,
-        need: types.Need,
+        self: *StepExecutionContext, need: types.Need,
         need_seq: usize,
     ) !void {
         self.state = .waiting;
         self.parked_need = need;
         self.parked_continuation = need.continuation;
         self.need_sequence = need_seq;
-        self.last_activity_ms = std.time.milliTimestamp();
+        self.last_activity_ms = nowMillis();
 
         // Initialize join state
         self.join_mode = need.mode;
@@ -180,8 +178,7 @@ pub const StepExecutionContext = struct {
 
     /// Record effect completion
     pub fn recordEffectCompletion(
-        self: *StepExecutionContext,
-        token: u32,
+        self: *StepExecutionContext, token: u32,
         result: types.EffectResult,
         required: bool,
     ) !void {
@@ -191,7 +188,7 @@ pub const StepExecutionContext = struct {
         try self.effect_results.put(token, .{
             .result = result,
             .required = required,
-            .completed_at_ms = std.time.milliTimestamp(),
+            .completed_at_ms = nowMillis(),
         });
 
         _ = self.completed_effects.fetchAdd(1, .seq_cst);
@@ -205,7 +202,7 @@ pub const StepExecutionContext = struct {
             }
         }
 
-        self.last_activity_ms = std.time.milliTimestamp();
+        self.last_activity_ms = nowMillis();
     }
 
     /// Check if ready to resume (based on join strategy)
@@ -214,8 +211,7 @@ pub const StepExecutionContext = struct {
         const outstanding = self.outstanding_effects.load(.seq_cst);
 
         return switch (self.join_strategy) {
-            .all => completed >= outstanding,
-            .all_required => completed >= self.required_effect_count,
+            .all => completed >= outstanding, .all_required => completed >= self.required_effect_count,
             .any => completed >= 1,
             .first_success => self.any_effect_succeeded.load(.seq_cst),
         };
@@ -224,7 +220,7 @@ pub const StepExecutionContext = struct {
     /// Mark as ready for continuation
     pub fn markReadyForResume(self: *StepExecutionContext) void {
         self.state = .resuming;
-        self.last_activity_ms = std.time.milliTimestamp();
+        self.last_activity_ms = nowMillis();
     }
 
     /// Get effect result by token
@@ -242,31 +238,30 @@ pub const StepExecutionContext = struct {
     pub fn completeSuccess(self: *StepExecutionContext, response: types.Response) void {
         self.state = .completed;
         self.response = response;
-        self.last_activity_ms = std.time.milliTimestamp();
+        self.last_activity_ms = nowMillis();
     }
 
     /// Fail request
     pub fn completeFailed(self: *StepExecutionContext, err: types.Error) void {
         self.state = .failed;
         self.error_result = err;
-        self.last_activity_ms = std.time.milliTimestamp();
+        self.last_activity_ms = nowMillis();
     }
 
     /// Get age in milliseconds
     pub fn ageMs(self: *StepExecutionContext) i64 {
-        return std.time.milliTimestamp() - self.created_at_ms;
+        return nowMillis() - self.created_at_ms;
     }
 
     /// Get idle time in milliseconds
     pub fn idleMs(self: *StepExecutionContext) i64 {
-        return std.time.milliTimestamp() - self.last_activity_ms;
+        return nowMillis() - self.last_activity_ms;
     }
 };
 
 /// Effect completion record
 pub const EffectCompletion = struct {
-    result: types.EffectResult,
-    required: bool,
+    result: types.EffectResult, required: bool,
     completed_at_ms: i64,
 };
 

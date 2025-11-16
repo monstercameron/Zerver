@@ -10,8 +10,7 @@ const std = @import("std");
 
 /// Source of correlation ID
 pub const CorrelationSource = enum {
-    traceparent,
-    x_request_id,
+    traceparent, x_request_id,
     x_correlation_id,
     generated,
 };
@@ -36,8 +35,7 @@ const TraceparentParts = struct {
 /// 3. x-correlation-id
 /// 4. Generate new random ID
 pub fn resolveCorrelation(
-    headers: std.StringHashMap(std.ArrayList([]const u8)),
-    arena: std.mem.Allocator,
+    headers: std.StringHashMap(std.ArrayList([]const u8)), arena: std.mem.Allocator,
 ) !CorrelationContext {
     if (tryTraceparent(headers, arena)) |ctx| return ctx;
     if (tryCorrelationHeader(headers, arena, "x-request-id", .x_request_id)) |ctx| return ctx;
@@ -47,8 +45,7 @@ pub fn resolveCorrelation(
 
 /// Try to extract correlation from W3C Traceparent header
 fn tryTraceparent(
-    headers: std.StringHashMap(std.ArrayList([]const u8)),
-    arena: std.mem.Allocator,
+    headers: std.StringHashMap(std.ArrayList([]const u8)), arena: std.mem.Allocator,
 ) ?CorrelationContext {
     const values = headers.get("traceparent") orelse return null;
     if (values.items.len == 0) return null;
@@ -69,8 +66,7 @@ fn tryTraceparent(
 
 /// Try to extract correlation from a specific header
 fn tryCorrelationHeader(
-    headers: std.StringHashMap(std.ArrayList([]const u8)),
-    arena: std.mem.Allocator,
+    headers: std.StringHashMap(std.ArrayList([]const u8)), arena: std.mem.Allocator,
     name: []const u8,
     source: CorrelationSource,
 ) ?CorrelationContext {

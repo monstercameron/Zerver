@@ -3,6 +3,7 @@ const std = @import("std");
 const zerver = @import("zerver/root.zig");
 const components = @import("zerver/shared/components.zig");
 const http_status = zerver.HttpStatus;
+const array_list_writer = @import("zerver/util/array_list_writer.zig");
 
 pub fn generateHomepage() ![]const u8 {
     @setEvalBranchQuota(5000);
@@ -125,8 +126,7 @@ pub fn generateHomepage() ![]const u8 {
     ;
 
     const homepage_config = components.HomepageDocumentDynamicConfig{
-        .lang = "en",
-        .head = .{
+        .lang = "en", .head = .{
             .title = "Earl Cameron | Portfolio Homepage",
             .script_includes = &script_includes,
             .inline_script = inline_script,
@@ -143,7 +143,8 @@ pub fn generateHomepage() ![]const u8 {
         },
     };
 
-    const writer = buffer.writer(std.heap.page_allocator);
+    var writer_helper = array_list_writer.ArrayListWriter.init(&buffer, std.heap.page_allocator);
+    const writer = writer_helper.writer();
     try components.HomepageDocumentDynamic.init(homepage_config).render(writer);
 
     return try buffer.toOwnedSlice(std.heap.page_allocator);

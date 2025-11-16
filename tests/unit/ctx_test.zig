@@ -31,8 +31,7 @@ test "CtxBase header lookup normalizes names" {
 
     try std.testing.expectEqualStrings("application/json", ctx.header("Content-Type").?);
     try std.testing.expectEqualStrings(
-        "v1",
-        ctx.header("X-SUPER-LONG-HEADER-USED-FOR-CASE-TESTING-ABCDEFGHIJKLMNOPQRSTUVWXYZ").?,
+        "v1", ctx.header("X-SUPER-LONG-HEADER-USED-FOR-CASE-TESTING-ABCDEFGHIJKLMNOPQRSTUVWXYZ").?,
     );
     try std.testing.expect(ctx.header("missing") == null);
 }
@@ -100,7 +99,7 @@ test "CtxBase toJson escapes strings" {
     const json = try ctx.toJson(payload);
     defer ctx.allocator.free(json);
 
-    try std.testing.expectEqualStrings("{\"name\":\"Zig\",\"text\":\"line\\nquote\\\"\"}", json);
+    try std.testing.expectEqualStrings("{\"name\":\"Zig\", \"text\":\"line\\nquote\\\"\"}", json);
 }
 
 test "CtxBase json parses body into type" {
@@ -161,8 +160,7 @@ const Slot = enum(u32) { name, count };
 
 fn slotType(comptime slot: Slot) type {
     return switch (slot) {
-        .name => []const u8,
-        .count => u32,
+        .name => []const u8, .count => u32,
     };
 }
 

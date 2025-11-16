@@ -17,8 +17,7 @@ fn step_list_todos(ctx: *zerver.CtxBase) !zerver.Decision {
     _ = ctx;
     slog.infof("    [Step] list_todos", .{});
     return zerver.done(.{
-        .status = 200,
-        .body = "[{\"id\":1,\"title\":\"Buy milk\"}]",
+        .status = 200, .body = "[{\"id\":1,\"title\":\"Buy milk\"}]",
     });
 }
 
@@ -29,8 +28,7 @@ fn step_get_todo(ctx: *zerver.CtxBase) !zerver.Decision {
     };
     slog.infof("    [Step] get_todo id={s}", .{todo_id});
     return zerver.done(.{
-        .status = 200,
-        .body = "{\"id\":1,\"title\":\"Buy milk\"}",
+        .status = 200, .body = "{\"id\":1,\"title\":\"Buy milk\"}",
     });
 }
 
@@ -39,8 +37,7 @@ fn step_create_todo(ctx: *zerver.CtxBase) !zerver.Decision {
     _ = ctx;
     slog.infof("    [Step] create_todo", .{});
     return zerver.done(.{
-        .status = 201,
-        .body = "{\"id\":1,\"title\":\"Buy milk\"}",
+        .status = 201, .body = "{\"id\":1,\"title\":\"Buy milk\"}",
     });
 }
 
@@ -55,8 +52,7 @@ fn middleware_logging(ctx: *zerver.CtxBase) !zerver.Decision {
 fn errorRenderer(_ctx: *zerver.CtxBase) anyerror!zerver.Decision {
     _ = _ctx;
     return zerver.done(.{
-        .status = 500,
-        .body = "Error processing request",
+        .status = 500, .body = "Error processing request",
     });
 }
 

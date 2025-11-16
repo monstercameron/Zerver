@@ -7,9 +7,7 @@ pub const OtelConfig = struct {
     promote_queue_ms: u32,
 
     /// Minimum park duration (ms) before promoting to a dedicated span.
-    promote_park_ms: u32,
-
-    /// Force all job spans to be created (debug mode).
+    promote_park_ms: u32, /// Force all job spans to be created (debug mode).
     debug_jobs: bool,
 
     /// Name of the effects queue.

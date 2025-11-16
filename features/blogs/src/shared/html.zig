@@ -4,8 +4,7 @@ const std = @import("std");
 /// Comprehensive HTML attributes struct shared across components and renderers.
 pub const Attrs = struct {
     // Global attributes
-    id: ?[]const u8 = null,
-    class: ?[]const u8 = null,
+    id: ?[]const u8 = null, class: ?[]const u8 = null,
     style: ?[]const u8 = null,
     title: ?[]const u8 = null,
     lang: ?[]const u8 = null,
@@ -213,8 +212,7 @@ inline fn writeEscaped(writer: anytype, value: []const u8) !void {
     var start: usize = 0;
     for (value, 0..) |c, idx| {
         const replacement = switch (c) {
-            '&' => "&amp;",
-            '<' => "&lt;",
+            '&' => "&amp;", '<' => "&lt;",
             '>' => "&gt;",
             '"' => "&quot;",
             '\'' => "&#39;",
@@ -253,23 +251,19 @@ pub fn textDynamic(value: []const u8) TextDynamic {
 }
 
 pub const TextDynamic = struct {
-    value: []const u8,
-
-    pub fn render(self: @This(), writer: anytype) !void {
+    value: []const u8, pub fn render(self: @This(), writer: anytype) !void {
         try writeEscaped(writer, self.value);
     }
 };
 
 /// HTML element representation generated per tag.
 pub fn Element(
-    comptime tag: []const u8,
-    comptime AttrType: type,
+    comptime tag: []const u8, comptime AttrType: type,
     comptime Children: type,
 ) type {
     return struct {
         const Self = @This();
-        attrs: AttrType,
-        children: Children,
+        attrs: AttrType, children: Children,
 
         pub fn render(self: Self, writer: anytype) !void {
             try writer.print("<{s}", .{tag});
@@ -332,16 +326,14 @@ pub fn Element(
                             try writer.writeByte('"');
                         }
                     }
-                },
-            }
+                }, }
         }
 
         inline fn asSlice(value: anytype) ?[]const u8 {
             const info = @typeInfo(@TypeOf(value));
             return switch (info) {
                 .pointer => |ptr| switch (ptr.size) {
-                    .slice => if (ptr.child == u8) value else null,
-                    .one => switch (@typeInfo(ptr.child)) {
+                    .slice => if (ptr.child == u8) value else null, .one => switch (@typeInfo(ptr.child)) {
                         .array => |arr| if (arr.child == u8) blk: {
                             if (arr.sentinel_ptr != null) {
                                 break :blk std.mem.sliceTo(value, 0);
@@ -376,8 +368,7 @@ fn makeTags(comptime names: anytype) type {
         const Factory = struct {
             pub fn call(attrs: anytype, children: anytype) Element(name, @TypeOf(attrs), @TypeOf(children)) {
                 return Element(name, @TypeOf(attrs), @TypeOf(children)){
-                    .attrs = attrs,
-                    .children = children,
+                    .attrs = attrs, .children = children,
                 };
             }
         };
@@ -388,8 +379,7 @@ fn makeTags(comptime names: anytype) type {
             .type = @TypeOf(func),
             .default_value_ptr = &func,
             .is_comptime = true,
-            .alignment = @alignOf(@TypeOf(func)),
-        };
+            .alignment = @alignOf(@TypeOf(func)), };
     }
 
     return @Type(.{ .@"struct" = .{
@@ -401,7 +391,7 @@ fn makeTags(comptime names: anytype) type {
 }
 
 pub const Tags = makeTags(.{
-    "a",      "abbr",     "address",  "area",   "article",    "aside",    "audio",
+    "a", "abbr",     "address",  "area",   "article",    "aside",    "audio",
     "b",      "base",     "bdi",      "bdo",    "blockquote", "body",     "br",
     "button", "canvas",   "caption",  "cite",   "code",       "col",      "colgroup",
     "data",   "datalist", "dd",       "del",    "details",    "dfn",      "dialog",

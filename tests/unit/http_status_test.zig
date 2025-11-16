@@ -14,8 +14,7 @@ fn expectInvalid(code: u16) !void {
 
 test "HttpStatus constants align with RFC values" {
     const samples = [_]struct {
-        actual: u16,
-        expected: u16,
+        actual: u16, expected: u16,
     }{
         .{ .actual = HttpStatus.continue_, .expected = 100 },
         .{ .actual = HttpStatus.ok, .expected = 200 },

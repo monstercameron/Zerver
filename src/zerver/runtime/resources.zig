@@ -11,8 +11,7 @@ const reactor_resources = @import("reactor/resources.zig");
 const sqlite_driver = &sql.dialects.sqlite.driver.driver;
 
 pub const RuntimeResources = struct {
-    allocator: std.mem.Allocator,
-    config: config_mod.AppConfig,
+    allocator: std.mem.Allocator, config: config_mod.AppConfig,
     registry: sql.db.Registry,
     connections: std.ArrayList(*sql.db.Connection),
     pool_mutex: std.Thread.Mutex = .{},
@@ -115,8 +114,7 @@ pub const RuntimeResources = struct {
     }
 
     pub const ConnectionLease = struct {
-        resources: ?*RuntimeResources,
-        conn_ptr: *sql.db.Connection,
+        resources: ?*RuntimeResources, conn_ptr: *sql.db.Connection,
 
         pub fn connection(self: *ConnectionLease) *sql.db.Connection {
             return self.conn_ptr;
@@ -141,8 +139,7 @@ pub const RuntimeResources = struct {
 
         const conn_ptr = self.connections.pop().?;
         return ConnectionLease{
-            .resources = self,
-            .conn_ptr = conn_ptr,
+            .resources = self, .conn_ptr = conn_ptr,
         };
     }
 

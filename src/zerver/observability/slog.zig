@@ -10,18 +10,18 @@
 /// - Thread-safe operations
 const std = @import("std");
 const builtin = @import("builtin");
+const time_util = @import("../util/time.zig");
+const array_list_writer = @import("../util/array_list_writer.zig");
 
 /// Log levels ordered by severity
 pub const Level = enum(i8) {
-    Debug = -4,
-    Info = 0,
+    Debug = -4, Info = 0,
     Warn = 4,
     Error = 8,
 
     pub fn string(self: Level) []const u8 {
         return switch (self) {
-            .Debug => "DEBUG",
-            .Info => "INFO",
+            .Debug => "DEBUG", .Info => "INFO",
             .Warn => "WARN",
             .Error => "ERROR",
         };
@@ -59,8 +59,7 @@ pub const Attr = struct {
         any: *const anyopaque, // for custom types
 
         pub fn format(
-            self: Value,
-            comptime fmt: []const u8,
+            self: Value, comptime fmt: []const u8,
             options: std.fmt.FormatOptions,
             writer: anytype,
         ) !void {
@@ -68,15 +67,13 @@ pub const Attr = struct {
             _ = options;
 
             switch (self) {
-                .string => |s| try writer.writeAll(s),
-                .enum_tag => |s| try writer.writeAll(s),
+                .string => |s| try writer.writeAll(s), .enum_tag => |s| try writer.writeAll(s),
                 .int => |i| try writer.print("{}", .{i}),
                 .uint => |u| try writer.print("{}", .{u}),
                 .float => |f| try writer.print("{d}", .{f}),
                 .bool => |b| try writer.print("{}", .{b}),
                 .duration => |d| try writer.print("{}ns", .{d}),
-                .any => try writer.writeAll("<any>"),
-            }
+                .any => try writer.writeAll("<any>"), }
         }
     };
 
@@ -94,8 +91,7 @@ pub const Attr = struct {
                 }
                 break :blk .{ .key = key, .value = .{ .enum_tag = @tagName(value) } };
             },
-            else => @compileError("Attr.enumeration expects an enum or tagged union"),
-        };
+            else => @compileError("Attr.enumeration expects an enum or tagged union"), };
     }
 
     pub fn int(key: []const u8, value: i64) Attr {
@@ -121,21 +117,17 @@ pub const Attr = struct {
 
 /// Handler interface for processing log records
 pub const Handler = union(enum) {
-    text: *TextHandler,
-    json: *JSONHandler,
+    text: *TextHandler, json: *JSONHandler,
 
     pub fn handle(self: Handler, record: Record) !void {
         switch (self) {
-            .text => |th| try th.handleRecord(record),
-            .json => |jh| try jh.handleRecord(record),
+            .text => |th| try th.handleRecord(record), .json => |jh| try jh.handleRecord(record),
         }
     }
 
     pub fn enabled(self: Handler, level: Level) bool {
         switch (self) {
-            .text => |th| return @intFromEnum(level) >= @intFromEnum(th.min_level),
-            .json => |jh| return @intFromEnum(level) >= @intFromEnum(jh.min_level),
-        }
+            .text => |th| return @intFromEnum(level) >= @intFromEnum(th.min_level), .json => |jh| return @intFromEnum(level) >= @intFromEnum(jh.min_level), }
     }
 };
 
@@ -161,13 +153,13 @@ pub const TextHandler = struct {
         defer self.mutex.unlock();
 
         var line = std.ArrayList(u8).initCapacity(std.heap.page_allocator, 256) catch return;
-        defer line.deinit(std.heap.page_allocator);
-
-        const writer = line.writer(std.heap.page_allocator);
+        var writer_alloc = std.Io.Writer.Allocating.fromArrayList(std.heap.page_allocator, &line);
+        var writer_done = false;
+        defer if (!writer_done) writer_alloc.deinit();
+        const writer = &writer_alloc.writer;
         writer.print("{} [{s}] {s}", .{
             @divFloor(record.time, std.time.ns_per_s),
-            record.level.string(),
-            record.message,
+            record.level.string(), record.message,
         }) catch return;
 
         for (record.attrs) |attr| {
@@ -179,8 +171,7 @@ pub const TextHandler = struct {
                     writer.writeByte('"') catch return;
                     writer.writeAll(s) catch return;
                     writer.writeByte('"') catch return;
-                },
-                .enum_tag => |s| {
+                }, .enum_tag => |s| {
                     writer.writeAll(s) catch return;
                 },
                 .int => |i| writer.print("{d}", .{i}) catch return,
@@ -188,21 +179,20 @@ pub const TextHandler = struct {
                 .float => |f| writer.print("{d}", .{f}) catch return,
                 .bool => |b| writer.print("{}", .{b}) catch return,
                 .duration => |d| writer.print("{d}ns", .{d}) catch return,
-                .any => writer.writeAll("<any>") catch return,
-            }
+                .any => writer.writeAll("<any>") catch return, }
         }
 
         writer.writeByte('\n') catch return;
 
-        const msg = line.items;
+        const msg = try writer_alloc.toOwnedSlice();
+        writer_done = true;
         _ = try self.writeFn(msg);
     }
 };
 
 /// JSON handler that outputs structured JSON log lines
 pub const JSONHandler = struct {
-    writeFn: *const fn ([]const u8) anyerror!usize,
-    min_level: Level,
+    writeFn: *const fn ([]const u8) anyerror!usize, min_level: Level,
     mutex: std.Thread.Mutex = .{},
 
     pub fn init(writeFn: *const fn ([]const u8) anyerror!usize, min_level: Level) JSONHandler {
@@ -221,21 +211,22 @@ pub const JSONHandler = struct {
         defer self.mutex.unlock();
 
         var buf = std.ArrayList(u8).initCapacity(std.heap.page_allocator, 512) catch return;
-        defer buf.deinit(std.heap.page_allocator);
-
-        const writer = buf.writer(std.heap.page_allocator);
+        var writer_alloc = std.Io.Writer.Allocating.fromArrayList(std.heap.page_allocator, &buf);
+        var writer_done = false;
+        defer if (!writer_done) writer_alloc.deinit();
+        const writer = &writer_alloc.writer;
         try writer.writeAll("{\"time\":");
         try writer.print("{}", .{record.time});
-        try writer.writeAll(",\"level\":\"");
+        try writer.writeAll(", \"level\":\"");
         try writer.writeAll(record.level.string());
-        try writer.writeAll("\",\"msg\":\"");
+        try writer.writeAll("\", \"msg\":\"");
         try writer.writeAll(record.message);
         try writer.writeAll("\"");
 
         if (record.attrs.len > 0) {
-            try writer.writeAll(",\"attrs\":{");
+            try writer.writeAll(", \"attrs\":{");
             for (record.attrs, 0..) |attr, idx| {
-                if (idx > 0) try writer.writeByte(',');
+                if (idx > 0) try writer.writeAll(", ");
                 try writer.writeByte('"');
                 try writer.writeAll(attr.key);
                 try writer.writeAll("\":");
@@ -244,34 +235,31 @@ pub const JSONHandler = struct {
                         try writer.writeByte('"');
                         try writer.writeAll(s);
                         try writer.writeByte('"');
-                    },
-                    .enum_tag => |s| {
+                    }, .enum_tag => |s| {
                         try writer.writeByte('"');
                         try writer.writeAll(s);
                         try writer.writeByte('"');
-                    },
-                    .int => |i| try writer.print("{d}", .{i}),
+                    }, .int => |i| try writer.print("{d}", .{i}),
                     .uint => |u| try writer.print("{d}", .{u}),
                     .float => |f| try writer.print("{d}", .{f}),
                     .bool => |b| try writer.print("{}", .{b}),
                     .duration => |d| try writer.print("{d}", .{d}),
-                    .any => try writer.writeAll("\"<any>\""),
-                }
+                    .any => try writer.writeAll("\"<any>\""), }
             }
             try writer.writeAll("}");
         }
 
         try writer.writeAll("}\n");
 
-        const msg = buf.items;
+        const msg = try writer_alloc.toOwnedSlice();
+        writer_done = true;
         _ = try self.writeFn(msg);
     }
 };
 
 /// Logger is the main logging interface
 pub const Logger = struct {
-    handler: Handler,
-    context: []const Attr,
+    handler: Handler, context: []const Attr,
 
     pub fn init(handler: Handler) Logger {
         return .{
@@ -286,8 +274,7 @@ pub const Logger = struct {
         new_context.appendSliceAssumeCapacity(attrs);
 
         return .{
-            .handler = self.handler,
-            .context = try new_context.toOwnedSlice(),
+            .handler = self.handler, .context = try new_context.toOwnedSlice(),
         };
     }
 
@@ -322,16 +309,14 @@ pub const Logger = struct {
         all_attrs.appendSliceAssumeCapacity(attrs);
 
         const record = Record{
-            .level = level,
-            .message = msg,
+            .level = level, .message = msg,
             .source = .{
                 .file = src.file,
                 .function = src.fn_name,
                 .line = src.line,
             },
-            .time = @intCast(std.time.nanoTimestamp()),
-            .attrs = all_attrs.toOwnedSlice(std.heap.page_allocator) catch return,
-        };
+            .time = @intCast(time_util.nanoTimestamp()),
+            .attrs = all_attrs.toOwnedSlice(std.heap.page_allocator) catch return, };
 
         self.handler.handle(record) catch {};
     }
@@ -364,8 +349,7 @@ pub fn setupDefaultLoggerWithFile(path: []const u8) !void {
     if (std.fs.path.dirname(path)) |dir| {
         if (dir.len > 0) {
             cwd.makePath(dir) catch |caught_err| switch (caught_err) {
-                error.PathAlreadyExists => {},
-                else => return caught_err,
+                error.PathAlreadyExists => {}, else => return caught_err,
             };
         }
     }
@@ -472,7 +456,9 @@ pub fn testLogger() !void {
     var buf = try std.ArrayList(u8).initCapacity(std.testing.allocator, 256);
     defer buf.deinit(std.testing.allocator);
 
-    var text_handler = TextHandler.init(buf.writer().write, .Debug);
+    var writer_helper = array_list_writer.ArrayListWriter.init(&buf, std.testing.allocator);
+    const buf_writer = writer_helper.writer();
+    var text_handler = TextHandler.init(buf_writer.write, .Debug);
     const handler = text_handler.handler();
     const logger = Logger.init(handler);
 

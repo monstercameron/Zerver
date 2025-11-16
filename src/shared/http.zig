@@ -15,16 +15,14 @@ const HTML_HEADERS = [_]zerver.types.Header{
 
 pub fn jsonResponse(status: u16, body: []const u8) zerver.Decision {
     return zerver.done(.{
-        .status = status,
-        .body = .{ .complete = body },
+        .status = status, .body = .{ .complete = body },
         .headers = &JSON_HEADERS,
     });
 }
 
 pub fn htmlResponse(status: u16, body: []const u8) zerver.Decision {
     return zerver.done(.{
-        .status = status,
-        .body = .{ .complete = body },
+        .status = status, .body = .{ .complete = body },
         .headers = &HTML_HEADERS,
     });
 }

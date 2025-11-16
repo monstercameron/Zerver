@@ -9,8 +9,8 @@ const slog = zerver.slog;
 /// Result from executing a step
 pub const StepResult = enum(c_int) {
     /// Continue to next step in pipeline
-    Continue = 0,
     /// Stop pipeline and return current response
+    Continue = 0,
     Complete = 1,
     /// Abort pipeline with error
     Error = 2,
@@ -39,17 +39,8 @@ pub const StepContext = extern struct {
 pub const ServerAdapter = extern struct {
     router: *anyopaque,
     runtime_resources: *anyopaque,
-    addRoute: *const fn (*anyopaque, c_int, [*c]const u8, usize, *const fn (*anyopaque, *anyopaque) callconv(.c) c_int) callconv(.c) c_int,
-    setStatus: *const fn (*anyopaque, c_int) callconv(.c) void,
-    setHeader: *const fn (*anyopaque, [*c]const u8, usize, [*c]const u8, usize) callconv(.c) c_int,
-    setBody: *const fn (*anyopaque, [*c]const u8, usize) callconv(.c) c_int,
-
-    // Optional slot-effect support (can be null for legacy step-based handlers)
-    createSlotContext: ?*const fn (*anyopaque, [*c]const u8, usize) callconv(.c) ?*anyopaque,
-    destroySlotContext: ?*const fn (*anyopaque) callconv(.c) void,
-    executeEffect: ?*const fn (*anyopaque, *anyopaque, *anyopaque) callconv(.c) c_int,
-    traceEvent: ?*const fn (*anyopaque, *anyopaque) callconv(.c) void,
-};
+    addRoute: *const fn (*anyopaque, c_int, [*c]const u8, usize, *const fn (*anyopaque, *anyopaque) callconv(.c) c_int) callconv(.c) c_int, setStatus: *const fn (*anyopaque, c_int) callconv(.c) void, setHeader: *const fn (*anyopaque, [*c]const u8, usize, [*c]const u8, usize) callconv(.c) c_int, setBody: *const fn (*anyopaque, [*c]const u8, usize) callconv(.c) c_int, // Optional slot-effect support (can be null for legacy step-based handlers)
+    createSlotContext: ?*const fn (*anyopaque, [*c]const u8, usize) callconv(.c) ?*anyopaque, destroySlotContext: ?*const fn (*anyopaque) callconv(.c) void, executeEffect: ?*const fn (*anyopaque, *anyopaque, *anyopaque) callconv(.c) c_int, traceEvent: ?*const fn (*anyopaque, *anyopaque) callconv(.c) void, };
 
 /// A step function exported by a DLL
 /// Takes a StepContext and returns a StepResult
@@ -57,8 +48,7 @@ pub const StepFn = *const fn (ctx: *StepContext) callconv(.c) c_int;
 
 /// A pipeline is a sequence of steps to execute
 pub const Pipeline = struct {
-    steps: []const StepFn,
-    allocator: std.mem.Allocator,
+    steps: []const StepFn, allocator: std.mem.Allocator,
 
     pub fn init(allocator: std.mem.Allocator, steps: []const StepFn) !Pipeline {
         const steps_copy = try allocator.dupe(StepFn, steps);
@@ -80,8 +70,7 @@ pub const Pipeline = struct {
 
 
             switch (result) {
-                .Continue => continue,
-                .Complete => return true,
+                .Continue => continue, .Complete => return true,
                 .Error => return false,
             }
         }
@@ -97,9 +86,7 @@ pub const PipelineBuilder = struct {
 
     pub fn init(allocator: std.mem.Allocator) PipelineBuilder {
         return .{
-            .allocator = allocator,
-            .steps = std.ArrayList(StepFn).init(allocator),
-        };
+            .allocator = allocator, .steps = std.ArrayList(StepFn).init(allocator), };
     }
 
     pub fn deinit(self: *PipelineBuilder) void {

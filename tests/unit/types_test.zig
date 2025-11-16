@@ -68,9 +68,7 @@ test "ParsedRequest.deinit releases dynamic allocations" {
     var request = zerver.types.ParsedRequest{
         .method = "GET",
         .path = "/",
-        .headers = std.StringHashMap(std.ArrayList([]const u8)).init(allocator),
-        .query = std.StringHashMap([]const u8).init(allocator),
-        .body = "payload",
+        .headers = std.StringHashMap(std.ArrayList([]const u8)).init(allocator), .query = std.StringHashMap([]const u8).init(allocator), .body = "payload",
         .client_ip = "127.0.0.1",
     };
 

@@ -1,3 +1,4 @@
+const time_util = @import("../util/time.zig");
 // src/zerver/runtime/step_queue.zig
 /// Step Queue - FIFO queue for async step execution contexts
 ///
@@ -23,35 +24,24 @@ const step_context = @import("step_context.zig");
 const slog = @import("../observability/slog.zig");
 
 pub const StepQueue = struct {
-    allocator: std.mem.Allocator,
-    mutex: std.Thread.Mutex,
+    allocator: std.mem.Allocator, mutex: std.Thread.Mutex,
     cond: std.Thread.Condition,
     queue: std.ArrayList(*step_context.StepExecutionContext),
-    accepting: std.atomic.Value(bool),
-    label: []const u8,
+    accepting: std.atomic.Value(bool), label: []const u8,
 
     // Statistics
     total_enqueued: std.atomic.Value(u64),
-    total_dequeued: std.atomic.Value(u64),
-    total_parked: std.atomic.Value(u64),
-    total_resumed: std.atomic.Value(u64),
-    peak_depth: std.atomic.Value(usize),
+    total_dequeued: std.atomic.Value(u64), total_parked: std.atomic.Value(u64),
+    total_resumed: std.atomic.Value(u64), peak_depth: std.atomic.Value(usize),
 
     pub fn init(allocator: std.mem.Allocator, label: []const u8) !*StepQueue {
         const self = try allocator.create(StepQueue);
         self.* = .{
-            .allocator = allocator,
-            .mutex = .{},
+            .allocator = allocator, .mutex = .{},
             .cond = .{},
             .queue = .{},
-            .accepting = std.atomic.Value(bool).init(true),
-            .label = label,
-            .total_enqueued = std.atomic.Value(u64).init(0),
-            .total_dequeued = std.atomic.Value(u64).init(0),
-            .total_parked = std.atomic.Value(u64).init(0),
-            .total_resumed = std.atomic.Value(u64).init(0),
-            .peak_depth = std.atomic.Value(usize).init(0),
-        };
+            .accepting = std.atomic.Value(bool).init(true), .label = label,
+            .total_enqueued = std.atomic.Value(u64).init(0), .total_dequeued = std.atomic.Value(u64).init(0), .total_parked = std.atomic.Value(u64).init(0), .total_resumed = std.atomic.Value(u64).init(0), .peak_depth = std.atomic.Value(usize).init(0), };
 
         slog.debug("step_queue_init", &.{
             slog.Attr.string("queue", self.label),
@@ -173,7 +163,7 @@ pub const StepQueue = struct {
         }
 
         // Find highest priority item (lowest score)
-        const now_ms = std.time.milliTimestamp();
+        const now_ms = std.math.lossyCast(i64, time_util.milliTimestamp());
         var best_index: usize = 0;
         var best_score: i64 = calculatePriority(self.queue.items[0], now_ms);
 
@@ -297,12 +287,9 @@ pub const StepQueue = struct {
     /// Get queue statistics
     pub fn getStats(self: *StepQueue) QueueStats {
         return .{
-            .current_depth = self.len(),
-            .peak_depth = self.peak_depth.load(.seq_cst),
-            .total_enqueued = self.total_enqueued.load(.seq_cst),
-            .total_dequeued = self.total_dequeued.load(.seq_cst),
-            .total_parked = self.total_parked.load(.seq_cst),
-            .total_resumed = self.total_resumed.load(.seq_cst),
+            .current_depth = self.len(), .peak_depth = self.peak_depth.load(.seq_cst),
+            .total_enqueued = self.total_enqueued.load(.seq_cst), .total_dequeued = self.total_dequeued.load(.seq_cst),
+            .total_parked = self.total_parked.load(.seq_cst), .total_resumed = self.total_resumed.load(.seq_cst),
             .accepting = self.accepting.load(.seq_cst),
         };
     }

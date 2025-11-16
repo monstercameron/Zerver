@@ -76,8 +76,7 @@ pub const Feature = struct {
 
 /// Get feature information as a string
 pub fn getInfo(allocator: std.mem.Allocator) ![]const u8 {
-    return std.fmt.allocPrint(allocator,
-        \\Feature: {s}
+    return std.fmt.allocPrint(allocator, \\Feature: {s}
         \\Version: {s}
         \\Description: {s}
         \\Base Path: {s}

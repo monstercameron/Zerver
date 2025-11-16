@@ -15,13 +15,14 @@ const http_connection = @import("../runtime/http/connection.zig");
 const http_headers = @import("../runtime/http/headers.zig");
 const response_sse = @import("../runtime/http/response/sse.zig");
 const response_formatter = @import("../runtime/http/response/formatter.zig");
+const compat_net = @import("../runtime/net_compat.zig");
+const time_util = @import("../util/time.zig");
 
 const default_content_type = "text/plain; charset=utf-8";
 // TODO: Content negotiation: defaulting to text/plain may conflict with negotiated media types; consider deriving from route/renderer.
 
 pub const Address = struct {
-    ip: [4]u8,
-    port: u16,
+    ip: [4]u8, port: u16,
 };
 
 pub const Config = struct {
@@ -43,11 +44,9 @@ const Flow = struct {
 
 /// Simple HTTP request parser (MVP).
 pub const ParsedRequest = struct {
-    method: types.Method,
-    path: []const u8,
+    method: types.Method, path: []const u8,
     headers: std.StringHashMap(std.ArrayList([]const u8)),
-    query: std.StringHashMap([]const u8),
-    body: []const u8,
+    query: std.StringHashMap([]const u8), body: []const u8,
 };
 
 /// Response result that can be either complete or streaming
@@ -66,11 +65,9 @@ pub const StreamingResponse = struct {
 pub const Server = struct {
     allocator: std.mem.Allocator,
     config: Config,
-    router: router_module.Router(types.RouteSpec),
-    executor: executor_module.Executor,
+    router: router_module.Router(types.RouteSpec), executor: executor_module.Executor,
     flows: std.ArrayList(Flow),
-    global_before: std.ArrayList(types.Step),
-    telemetry_options: telemetry.RequestTelemetryOptions,
+    global_before: std.ArrayList(types.Step), telemetry_options: telemetry.RequestTelemetryOptions,
 
     // Re-export SSE types and functions from response_sse module
     pub const SSEEvent = response_sse.SSEEvent;
@@ -89,15 +86,13 @@ pub const Server = struct {
     }
 
     pub fn init(
-        allocator: std.mem.Allocator,
-        cfg: Config,
+        allocator: std.mem.Allocator, cfg: Config,
         effect_handler: *const fn (*const types.Effect, u32) anyerror!types.EffectResult,
     ) !Server {
         return Server{
             .allocator = allocator,
             .config = cfg,
-            .router = try router_module.Router(types.RouteSpec).init(allocator),
-            .executor = executor_module.Executor.init(allocator, effect_handler),
+            .router = try router_module.Router(types.RouteSpec).init(allocator), .executor = executor_module.Executor.init(allocator, effect_handler),
             .flows = try std.ArrayList(Flow).initCapacity(allocator, 16),
             .global_before = try std.ArrayList(types.Step).initCapacity(allocator, 8),
             .telemetry_options = cfg.telemetry,
@@ -130,14 +125,13 @@ pub const Server = struct {
 
     /// Get all registered routes (for introspection/debugging)
     /// Caller owns the returned slice and must free it
-    pub fn getAllRoutes(self: *Server, allocator: std.mem.Allocator) ![]router_module.Router.RouteInfo {
+    pub fn getAllRoutes(self: *Server, allocator: std.mem.Allocator) ![]router_module.Router(types.RouteSpec).RouteInfo {
         return self.router.getAllRoutes(allocator);
     }
 
     /// Execute a pipeline for a request context.
     pub fn executePipeline(
-        self: *Server,
-        ctx_base: *ctx_module.CtxBase,
+        self: *Server, ctx_base: *ctx_module.CtxBase,
         telemetry_ctx: *telemetry.Telemetry,
         before_steps: []const types.Step,
         main_steps: []const types.Step,
@@ -193,8 +187,7 @@ pub const Server = struct {
             switch (err) {
                 error.MissingHostHeader => {
                     return ResponseResult{ .complete = try self.httpResponse(.{
-                        .status = http_status.bad_request,
-                        .body = .{ .complete = "Bad Request: Missing Host header (required for HTTP/1.1)" },
+                        .status = http_status.bad_request, .body = .{ .complete = "Bad Request: Missing Host header (required for HTTP/1.1)" },
                         .headers = &[_]types.Header{
                             .{ .name = "Content-Type", .value = default_content_type },
                         },
@@ -202,8 +195,7 @@ pub const Server = struct {
                 },
                 error.MultipleHostHeader => {
                     return ResponseResult{ .complete = try self.httpResponse(.{
-                        .status = http_status.bad_request,
-                        .body = .{ .complete = "Bad Request: Multiple Host headers" },
+                        .status = http_status.bad_request, .body = .{ .complete = "Bad Request: Multiple Host headers" },
                         .headers = &[_]types.Header{
                             .{ .name = "Content-Type", .value = default_content_type },
                         },
@@ -211,8 +203,7 @@ pub const Server = struct {
                 },
                 error.InvalidRequest, error.InvalidMethod, error.UnsupportedVersion, error.InvalidUri, error.UserinfoNotAllowed, error.InvalidHeaderFieldName => {
                     return ResponseResult{ .complete = try self.httpResponse(.{
-                        .status = http_status.bad_request,
-                        .body = .{ .complete = "Bad Request" },
+                        .status = http_status.bad_request, .body = .{ .complete = "Bad Request" },
                         .headers = &[_]types.Header{
                             .{ .name = "Content-Type", .value = default_content_type },
                         },
@@ -220,8 +211,7 @@ pub const Server = struct {
                 },
                 error.MultipleContentLength, error.InvalidContentLength, error.ContentLengthMismatch, error.InvalidPercentEncoding, error.InvalidChunkedEncoding, error.TransferEncodingConflict, error.TrailerFieldNotDeclared, error.TrailerHeaderWithoutChunked => {
                     return ResponseResult{ .complete = try self.httpResponse(.{
-                        .status = http_status.bad_request,
-                        .body = .{ .complete = "Bad Request: Invalid request format" },
+                        .status = http_status.bad_request, .body = .{ .complete = "Bad Request: Invalid request format" },
                         .headers = &[_]types.Header{
                             .{ .name = "Content-Type", .value = default_content_type },
                         },
@@ -229,8 +219,7 @@ pub const Server = struct {
                 },
                 error.ExpectationFailed => {
                     return ResponseResult{ .complete = try self.httpResponse(.{
-                        .status = http_status.expectation_failed,
-                        .body = .{ .complete = "Expectation Failed: Unsupported Expect header" },
+                        .status = http_status.expectation_failed, .body = .{ .complete = "Expectation Failed: Unsupported Expect header" },
                         .headers = &[_]types.Header{
                             .{ .name = "Content-Type", .value = default_content_type },
                         },
@@ -238,8 +227,7 @@ pub const Server = struct {
                 },
                 error.UnexpectedBody => {
                     return ResponseResult{ .complete = try self.httpResponse(.{
-                        .status = http_status.bad_request,
-                        .body = .{ .complete = "Bad Request: Body not allowed for this method" },
+                        .status = http_status.bad_request, .body = .{ .complete = "Bad Request: Body not allowed for this method" },
                         .headers = &[_]types.Header{
                             .{ .name = "Content-Type", .value = default_content_type },
                         },
@@ -247,8 +235,7 @@ pub const Server = struct {
                 },
                 error.ContentLengthRequired => {
                     return ResponseResult{ .complete = try self.httpResponse(.{
-                        .status = http_status.length_required,
-                        .body = .{ .complete = "Length Required: Content-Length header is required" },
+                        .status = http_status.length_required, .body = .{ .complete = "Length Required: Content-Length header is required" },
                         .headers = &[_]types.Header{
                             .{ .name = "Content-Type", .value = default_content_type },
                         },
@@ -256,8 +243,7 @@ pub const Server = struct {
                 },
                 error.UnsupportedContentEncoding => {
                     return ResponseResult{ .complete = try self.httpResponse(.{
-                        .status = http_status.unsupported_media_type,
-                        .body = .{ .complete = "Unsupported Media Type: Content-Encoding not supported" },
+                        .status = http_status.unsupported_media_type, .body = .{ .complete = "Unsupported Media Type: Content-Encoding not supported" },
                         .headers = &[_]types.Header{
                             .{ .name = "Content-Type", .value = default_content_type },
                         },
@@ -265,8 +251,7 @@ pub const Server = struct {
                 },
                 error.UnsupportedContentType => {
                     return ResponseResult{ .complete = try self.httpResponse(.{
-                        .status = http_status.unsupported_media_type,
-                        .body = .{ .complete = "Unsupported Media Type: Content-Type not supported" },
+                        .status = http_status.unsupported_media_type, .body = .{ .complete = "Unsupported Media Type: Content-Type not supported" },
                         .headers = &[_]types.Header{
                             .{ .name = "Content-Type", .value = default_content_type },
                         },
@@ -274,8 +259,7 @@ pub const Server = struct {
                 },
                 error.NotAcceptable => {
                     return ResponseResult{ .complete = try self.httpResponse(.{
-                        .status = http_status.not_acceptable,
-                        .body = .{ .complete = "Not Acceptable: Requested representation not available" },
+                        .status = http_status.not_acceptable, .body = .{ .complete = "Not Acceptable: Requested representation not available" },
                         .headers = &[_]types.Header{
                             .{ .name = "Content-Type", .value = default_content_type },
                         },
@@ -283,8 +267,7 @@ pub const Server = struct {
                 },
                 error.UnsupportedTeValue => {
                     return ResponseResult{ .complete = try self.httpResponse(.{
-                        .status = http_status.not_implemented,
-                        .body = .{ .complete = "Not Implemented: TE header contains unsupported value" },
+                        .status = http_status.not_implemented, .body = .{ .complete = "Not Implemented: TE header contains unsupported value" },
                         .headers = &[_]types.Header{
                             .{ .name = "Content-Type", .value = default_content_type },
                         },
@@ -292,8 +275,7 @@ pub const Server = struct {
                 },
                 error.UpgradeUnsupported => {
                     return ResponseResult{ .complete = try self.httpResponse(.{
-                        .status = http_status.upgrade_required,
-                        .body = .{ .complete = "Upgrade Required: Protocol upgrade not supported" },
+                        .status = http_status.upgrade_required, .body = .{ .complete = "Upgrade Required: Protocol upgrade not supported" },
                         .headers = &[_]types.Header{
                             .{ .name = "Content-Type", .value = default_content_type },
                         },
@@ -301,8 +283,7 @@ pub const Server = struct {
                 },
                 else => {
                     return ResponseResult{ .complete = try self.httpResponse(.{
-                        .status = http_status.internal_server_error,
-                        .body = .{ .complete = "Internal Server Error" },
+                        .status = http_status.internal_server_error, .body = .{ .complete = "Internal Server Error" },
                         .headers = &[_]types.Header{
                             .{ .name = "Content-Type", .value = default_content_type },
                         },
@@ -391,8 +372,7 @@ pub const Server = struct {
             };
             telemetry_ctx.recordResponseMetrics(telemetry.Telemetry.responseMetricsFromResponse(response));
             const trace_header = telemetry_ctx.finish(.{
-                .status_code = http_status.ok,
-                .outcome = "options",
+                .status_code = http_status.ok, .outcome = "options",
                 .error_ctx = null,
             }, arena) catch "";
 
@@ -401,8 +381,7 @@ pub const Server = struct {
 
         if (parsed.method == .CONNECT or parsed.method == .TRACE) {
             const response = types.Response{
-                .status = http_status.not_implemented,
-                .body = .{ .complete = if (parsed.method == .CONNECT)
+                .status = http_status.not_implemented, .body = .{ .complete = if (parsed.method == .CONNECT)
                     "Not Implemented: CONNECT tunneling unsupported"
                 else
                     "Not Implemented: TRACE diagnostics disabled" },
@@ -416,8 +395,7 @@ pub const Server = struct {
 
             telemetry_ctx.recordResponseMetrics(telemetry.Telemetry.responseMetricsFromResponse(response));
             const outcome = telemetry.RequestOutcome{
-                .status_code = response.status,
-                .outcome = if (parsed.method == .CONNECT) "ConnectNotImplemented" else "TraceNotImplemented",
+                .status_code = response.status, .outcome = if (parsed.method == .CONNECT) "ConnectNotImplemented" else "TraceNotImplemented",
                 .error_ctx = null,
             };
             const trace_header = telemetry_ctx.finish(outcome, arena) catch "";
@@ -441,13 +419,11 @@ pub const Server = struct {
             const decision = try self.executePipeline(&ctx, &telemetry_ctx, route_match.handler.before, route_match.handler.steps);
 
             var outcome = telemetry.RequestOutcome{
-                .status_code = ctx.status(),
-                .outcome = @tagName(decision),
+                .status_code = ctx.status(), .outcome = @tagName(decision),
                 .error_ctx = null,
             };
             switch (decision) {
-                .Done => |resp| outcome.status_code = resp.status,
-                .Fail => |err| {
+                .Done => |resp| outcome.status_code = resp.status, .Fail => |err| {
                     outcome.status_code = err.kind;
                     outcome.error_ctx = err.ctx;
                 },
@@ -475,8 +451,7 @@ pub const Server = struct {
 
                 telemetry_ctx.recordResponseMetrics(telemetry.Telemetry.responseMetricsFromResponse(response));
                 const outcome = telemetry.RequestOutcome{
-                    .status_code = response.status,
-                    .outcome = "MethodNotAllowed",
+                    .status_code = response.status, .outcome = "MethodNotAllowed",
                     .error_ctx = types.ErrorCtx{ .what = "routing", .key = parsed.path },
                 };
                 const trace_header = telemetry_ctx.finish(outcome, arena) catch "";
@@ -495,13 +470,11 @@ pub const Server = struct {
                     const decision = try self.executePipeline(&ctx, &telemetry_ctx, flow.spec.before, flow.spec.steps);
 
                     var outcome = telemetry.RequestOutcome{
-                        .status_code = ctx.status(),
-                        .outcome = @tagName(decision),
+                        .status_code = ctx.status(), .outcome = @tagName(decision),
                         .error_ctx = null,
                     };
                     switch (decision) {
-                        .Done => |resp| outcome.status_code = resp.status,
-                        .Fail => |err| {
+                        .Done => |resp| outcome.status_code = resp.status, .Fail => |err| {
                             outcome.status_code = err.kind;
                             outcome.error_ctx = err.ctx;
                         },
@@ -1170,8 +1143,7 @@ pub const Server = struct {
 
     /// Render a successful response.
     fn renderResponse(
-        self: *Server,
-        ctx: *ctx_module.CtxBase,
+        self: *Server, ctx: *ctx_module.CtxBase,
         telemetry_ctx: *telemetry.Telemetry,
         decision: types.Decision,
         outcome: telemetry.RequestOutcome,
@@ -1222,8 +1194,7 @@ pub const Server = struct {
             .streaming => |streaming| {
                 if (is_head) {
                     const headers_only = try self.httpResponse(.{
-                        .status = response.status,
-                        .headers = response.headers,
+                        .status = response.status, .headers = response.headers,
                         .body = .{ .complete = "" },
                     }, arena, true, keep_alive, trace_header, correlation_ctx);
 
@@ -1231,8 +1202,7 @@ pub const Server = struct {
                 }
 
                 const headers_only = try self.httpResponse(.{
-                    .status = response.status,
-                    .headers = response.headers,
+                    .status = response.status, .headers = response.headers,
                     .body = .{ .complete = "" },
                 }, arena, false, keep_alive, trace_header, correlation_ctx);
 
@@ -1252,8 +1222,7 @@ pub const Server = struct {
     }
 
     fn renderError(
-        self: *Server,
-        ctx: *ctx_module.CtxBase,
+        self: *Server, ctx: *ctx_module.CtxBase,
         telemetry_ctx: *telemetry.Telemetry,
         _err: types.Error,
         outcome: telemetry.RequestOutcome,
@@ -1268,8 +1237,7 @@ pub const Server = struct {
         var final_response = types.Response{ .status = http_status.internal_server_error, .body = .{ .complete = "Error" } };
 
         switch (response) {
-            .Continue => {},
-            .Done => |resp| final_response = resp,
+            .Continue => {}, .Done => |resp| final_response = resp,
             else => {},
         }
 
@@ -1287,12 +1255,10 @@ pub const Server = struct {
 
     /// Parse chunked transfer encoding per RFC 9112 Section 6
     fn parseChunkedBody(
-        self: *Server,
-        raw_body: []const u8,
+        self: *Server, raw_body: []const u8,
         arena: std.mem.Allocator,
         headers: *std.StringHashMap(std.ArrayList([]const u8)),
-        allowed_trailers: ?*std.StringHashMap(void),
-    ) ![]const u8 {
+        allowed_trailers: ?*std.StringHashMap(void),  ) ![]const u8 {
         _ = self;
 
         var result = try std.ArrayList(u8).initCapacity(arena, 0);
@@ -1382,8 +1348,7 @@ pub const Server = struct {
     }
 
     fn httpResponse(
-        self: *Server,
-        response: types.Response,
+        self: *Server, response: types.Response,
         arena: std.mem.Allocator,
         is_head: bool,
         keep_alive: bool,
@@ -1395,8 +1360,7 @@ pub const Server = struct {
         // Map CorrelationContext to CorrelationHeader for formatter
         const correlation_header: ?response_formatter.CorrelationHeader = if (correlation_ctx) |ctx|
             response_formatter.CorrelationHeader{
-                .name = ctx.header_name,
-                .value = ctx.header_value,
+                .name = ctx.header_name, .value = ctx.header_value,
             }
         else
             null;
@@ -1419,7 +1383,7 @@ pub const Server = struct {
             self.config.addr.ip[3],
         }) catch "0.0.0.0";
 
-        const listen_addr = std.net.Address.initIp4(self.config.addr.ip, self.config.addr.port);
+        const listen_addr = compat_net.Address.initIp4(self.config.addr.ip, self.config.addr.port);
         var listener = try listen_addr.listen(.{ .reuse_address = true });
         defer listener.deinit();
 
@@ -1430,7 +1394,7 @@ pub const Server = struct {
         });
 
         while (true) {
-            const connection = listener.accept() catch |err| {
+        const connection = listener.accept() catch |err| {
                 slog.err("Failed to accept connection", &.{
                     slog.Attr.string("error", @errorName(err)),
                 });
@@ -1447,15 +1411,16 @@ pub const Server = struct {
         }
     }
 
-    fn handleConnection(self: *Server, connection: std.net.Server.Connection) !void {
+    fn handleConnection(self: *Server, connection: compat_net.Connection) !void {
         defer connection.stream.close();
 
         const keep_alive_timeout_ms: i64 = 60 * 1000;
-        var last_activity = std.time.milliTimestamp();
+        const keep_alive_timeout_ns = keep_alive_timeout_ms * std.time.ns_per_ms;
+        var last_activity_ns = time_util.nanoTimestamp();
 
         while (true) {
-            const now = std.time.milliTimestamp();
-            if (now - last_activity > keep_alive_timeout_ms) {
+            const now_ns = time_util.nanoTimestamp();
+            if (now_ns - last_activity_ns > keep_alive_timeout_ns) {
                 slog.debug("Connection idle timeout", &.{});
                 return;
             }
@@ -1464,8 +1429,7 @@ pub const Server = struct {
             defer request_arena.deinit();
 
             const request_bytes = net_handler.readRequestWithTimeout(
-                connection,
-                request_arena.allocator(),
+                connection, request_arena.allocator(),
                 5000,
             ) catch |err| {
                 switch (err) {
@@ -1487,7 +1451,7 @@ pub const Server = struct {
                 return;
             }
 
-            last_activity = std.time.milliTimestamp();
+            last_activity_ns = time_util.nanoTimestamp();
 
             const preview_len = @min(request_bytes.len, 120);
             slog.info("Received HTTP request", &.{

@@ -5,6 +5,7 @@ const builtin = @import("builtin");
 const slog = @import("../observability/slog.zig");
 
 const atomic = std.atomic;
+const posix = std.posix;
 
 var termination_once = atomic.Value(bool).init(false);
 
@@ -38,34 +39,28 @@ fn installWindowsHandler() !void {
 
 pub export fn consoleCtrlHandler(ctrl_type: windows.DWORD) callconv(.c) windows.BOOL {
     switch (ctrl_type) {
-        windows.CTRL_C_EVENT => handleTermination("CTRL_C_EVENT"),
-        windows.CTRL_BREAK_EVENT => handleTermination("CTRL_BREAK_EVENT"),
-        windows.CTRL_CLOSE_EVENT => handleTermination("CTRL_CLOSE_EVENT"),
-        windows.CTRL_LOGOFF_EVENT => handleTermination("CTRL_LOGOFF_EVENT"),
-        windows.CTRL_SHUTDOWN_EVENT => handleTermination("CTRL_SHUTDOWN_EVENT"),
-        else => return windows.FALSE,
+        windows.CTRL_C_EVENT => handleTermination("CTRL_C_EVENT"), windows.CTRL_BREAK_EVENT => handleTermination("CTRL_BREAK_EVENT"),
+        windows.CTRL_CLOSE_EVENT => handleTermination("CTRL_CLOSE_EVENT"), windows.CTRL_LOGOFF_EVENT => handleTermination("CTRL_LOGOFF_EVENT"),
+        windows.CTRL_SHUTDOWN_EVENT => handleTermination("CTRL_SHUTDOWN_EVENT"), else => return windows.FALSE,
     }
 
     return windows.TRUE;
 }
 
 fn installPosixHandler() !void {
-    const posix = std.posix;
 
     var action = posix.Sigaction{
         .handler = .{ .handler = posixSignalHandler },
-        .mask = std.posix.sigemptyset(),
-        .flags = 0,
+        .mask = posix.sigemptyset(), .flags = 0,
     };
 
     posix.sigaction(posix.SIG.INT, &action, null);
     posix.sigaction(posix.SIG.TERM, &action, null);
 }
 
-fn posixSignalHandler(sig: c_int) callconv(.c) void {
+fn posixSignalHandler(sig: posix.SIG) callconv(.c) void {
     const signal_name = switch (sig) {
-        std.posix.SIG.INT => "SIGINT",
-        std.posix.SIG.TERM => "SIGTERM",
+        posix.SIG.INT => "SIGINT", posix.SIG.TERM => "SIGTERM",
         else => "SIGNAL",
     };
     handleTermination(signal_name);

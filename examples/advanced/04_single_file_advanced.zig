@@ -19,8 +19,7 @@ const zerver = @import("src/zerver/root.zig");
 // ═════════════════════════════════════════════════════════════════════════════
 
 pub const TodoStatus = enum {
-    pending,
-    in_progress,
+    pending, in_progress,
     completed,
     blocked,
 };
@@ -47,8 +46,7 @@ pub const Todo = struct {
 };
 
 pub const DomainError = enum(u32) {
-    InvalidInput = 1,
-    Unauthorized = 2,
+    InvalidInput = 1, Unauthorized = 2,
     Forbidden = 3,
     NotFound = 4,
     Conflict = 5,
@@ -95,8 +93,7 @@ pub const OperationLatency = struct {
 
 pub fn makeError(code: DomainError, message: []const u8, resource: []const u8) zerver.Error {
     return .{
-        .kind = @intCast(@intFromEnum(code)),
-        .ctx = .{
+        .kind = @intCast(@intFromEnum(code)), .ctx = .{
             .what = message,
             .key = resource,
         },
@@ -191,8 +188,7 @@ pub fn query_get_todo(ctx: *zerver.CtxBase) !zerver.Decision {
 pub fn render_list(ctx: *zerver.CtxBase) !zerver.Decision {
     const body = try std.fmt.allocPrint(ctx.arena, "[{{\"id\":\"todo_1\",\"title\":\"Sample\"}}]", .{});
     return zerver.done(.{
-        .status = 200,
-        .body = body,
+        .status = 200, .body = body,
     });
 }
 
@@ -200,8 +196,7 @@ pub fn render_item(ctx: *zerver.CtxBase) !zerver.Decision {
     const todo_id = ctx.slotGetString(@intFromEnum(Slot.todo_id)) orelse "unknown";
     const body = try std.fmt.allocPrint(ctx.arena, "{{\"id\":\"{s}\",\"title\":\"Sample Todo\",\"status\":\"pending\"}}", .{todo_id});
     return zerver.done(.{
-        .status = 200,
-        .body = body,
+        .status = 200, .body = body,
     });
 }
 
@@ -230,24 +225,21 @@ pub fn mutation_delete_todo(ctx: *zerver.CtxBase) !zerver.Decision {
 pub fn render_created(ctx: *zerver.CtxBase) !zerver.Decision {
     const body = try std.fmt.allocPrint(ctx.arena, "{{\"id\":\"todo_new\",\"status\":\"created\"}}", .{});
     return zerver.done(.{
-        .status = 201,
-        .body = body,
+        .status = 201, .body = body,
     });
 }
 
 pub fn render_updated(ctx: *zerver.CtxBase) !zerver.Decision {
     const body = try std.fmt.allocPrint(ctx.arena, "{{\"status\":\"updated\"}}", .{});
     return zerver.done(.{
-        .status = 200,
-        .body = body,
+        .status = 200, .body = body,
     });
 }
 
 pub fn render_deleted(ctx: *zerver.CtxBase) !zerver.Decision {
     _ = ctx;
     return zerver.done(.{
-        .status = 204,
-        .body = "",
+        .status = 204, .body = "",
     });
 }
 
@@ -260,8 +252,7 @@ fn error_handler(ctx: *zerver.CtxBase) !zerver.Decision {
     const error_code_val: DomainError = @enumFromInt(error_info.kind);
 
     const status_code: u16 = switch (error_code_val) {
-        .InvalidInput => 400,
-        .Unauthorized => 401,
+        .InvalidInput => 400, .Unauthorized => 401,
         .Forbidden => 403,
         .NotFound => 404,
         .Conflict => 409,
@@ -275,8 +266,7 @@ fn error_handler(ctx: *zerver.CtxBase) !zerver.Decision {
     const arena_allocator = ctx.arena;
     const response_body = try std.fmt.allocPrint(arena_allocator, "{{\"error\":\"{s}\"}}", .{error_info.ctx.what});
     return zerver.done(.{
-        .status = status_code,
-        .body = response_body,
+        .status = status_code, .body = response_body,
     });
 }
 

@@ -9,15 +9,13 @@ const slog = @import("../observability/slog.zig");
 
 /// A route pattern broken into segments.
 pub const Pattern = struct {
-    segments: []const Segment,
-    literal_count: usize, // number of non-param segments (for sorting priority)
+    segments: []const Segment, literal_count: usize, // number of non-param segments (for sorting priority)
     param_names: []const []const u8, // sorted order of param names
 };
 
 /// A single segment in a route pattern.
 pub const Segment = union(enum) {
-    literal: []const u8,
-    param: []const u8, // parameter name
+    literal: []const u8, param: []const u8, // parameter name
     wildcard: []const u8, // greedy parameter name
 };
 
@@ -29,8 +27,7 @@ pub fn Router(comptime HandlerType: type) type {
 
         /// A compiled route pattern with segments.
         pub const CompiledRoute = struct {
-            method: route_types.Method,
-            pattern: Pattern,
+            method: route_types.Method, pattern: Pattern,
             handler: HandlerType,
             order: usize,
         };
@@ -42,8 +39,7 @@ pub fn Router(comptime HandlerType: type) type {
         };
 
     allocator: std.mem.Allocator,
-    routes: std.ArrayList(CompiledRoute),
-    next_order: usize,
+    routes: std.ArrayList(CompiledRoute), next_order: usize,
 
     // URI Normalization Note (RFC 9110 §4.2.3):
     // Current: Routes match paths exactly as received (after URL decoding)
@@ -72,10 +68,8 @@ pub fn Router(comptime HandlerType: type) type {
             // Free individual segment strings; param names reuse the same slices
             for (route.pattern.segments) |seg| {
                 switch (seg) {
-                    .literal => |lit| self.allocator.free(lit),
-                    .param => |param| self.allocator.free(param),
-                    .wildcard => |param| self.allocator.free(param),
-                }
+                    .literal => |lit| self.allocator.free(lit), .param => |param| self.allocator.free(param),
+                    .wildcard => |param| self.allocator.free(param), }
             }
             self.allocator.free(route.pattern.segments);
             self.allocator.free(route.pattern.param_names);
@@ -87,8 +81,7 @@ pub fn Router(comptime HandlerType: type) type {
     /// Path patterns use :param_name for path parameters.
     /// Example: "/todos/:id/items/:item_id"
     pub fn addRoute(
-        self: *Self,
-        method: route_types.Method,
+        self: *Self, method: route_types.Method,
         path: []const u8,
         handler: HandlerType,
     ) !void {
@@ -155,8 +148,7 @@ pub fn Router(comptime HandlerType: type) type {
                             matched = false;
                         }
                         break :segments_loop;
-                    },
-                }
+                    }, }
             }
 
             if (!matched) continue;
@@ -181,8 +173,7 @@ pub fn Router(comptime HandlerType: type) type {
 
             if (take_match) {
                 best_match = RouteMatch{
-                    .handler = route.handler,
-                    .params = params,
+                    .handler = route.handler, .params = params,
                 };
                 best_literal_count = literal_count;
                 best_param_count = param_count;
@@ -212,8 +203,7 @@ pub fn Router(comptime HandlerType: type) type {
             if (match_found != null) {
                 if (allowed.items.len > 0) try allowed.appendSlice(arena, ", ");
                 const method_str = switch (method) {
-                    .GET => "GET",
-                    .HEAD => "HEAD",
+                    .GET => "GET", .HEAD => "HEAD",
                     .POST => "POST",
                     .PUT => "PUT",
                     .DELETE => "DELETE",
@@ -248,8 +238,7 @@ pub fn Router(comptime HandlerType: type) type {
 
         for (self.routes.items) |route| {
             const method_str = switch (route.method) {
-                .GET => "GET",
-                .POST => "POST",
+                .GET => "GET", .POST => "POST",
                 .PUT => "PUT",
                 .DELETE => "DELETE",
                 .PATCH => "PATCH",

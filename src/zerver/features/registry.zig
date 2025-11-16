@@ -35,8 +35,7 @@ pub fn FeatureRegistry(comptime features: anytype) type {
         pub fn effectHandler(effect: *const types.Effect, timeout_ms: u32) anyerror!types.EffectResult {
             slog.info("🚀 FEATURE REGISTRY CALLED 🚀", &.{});
             const token = switch (effect.*) {
-                .db_get => |e| e.token,
-                .db_put => |e| e.token,
+                .db_get => |e| e.token, .db_put => |e| e.token,
                 .db_del => |e| e.token,
                 else => 0,
             };

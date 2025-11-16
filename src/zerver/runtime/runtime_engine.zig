@@ -6,8 +6,7 @@ const resources_mod = @import("resources.zig");
 const runtime_global = @import("global.zig");
 
 pub const RuntimeEngine = struct {
-    allocator: std.mem.Allocator,
-    resources_ptr: ?*resources_mod.RuntimeResources = null,
+    allocator: std.mem.Allocator, resources_ptr: ?*resources_mod.RuntimeResources = null,
 
     pub fn init(allocator: std.mem.Allocator, config: config_mod.AppConfig) !RuntimeEngine {
         var cfg = config;

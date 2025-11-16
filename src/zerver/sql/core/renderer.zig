@@ -6,8 +6,7 @@ const dialect_pkg = @import("../dialects/dialect.zig");
 
 /// Result of rendering a query for execution.
 pub const RenderOutput = struct {
-    sql: []u8,
-    bindings: []db.BindValue,
+    sql: []u8, bindings: []db.BindValue,
 
     pub fn deinit(self: *RenderOutput, allocator: std.mem.Allocator) void {
         allocator.free(self.sql);
@@ -17,9 +16,7 @@ pub const RenderOutput = struct {
 
 /// Serialises AST fragments using dialect-specific rules.
 pub const Renderer = struct {
-    dialect: *const dialect_pkg.Dialect,
-
-    pub fn init(dialect: *const dialect_pkg.Dialect) Renderer {
+    dialect: *const dialect_pkg.Dialect, pub fn init(dialect: *const dialect_pkg.Dialect) Renderer {
         return Renderer{ .dialect = dialect };
     }
 
@@ -72,8 +69,9 @@ pub const Renderer = struct {
         }
 
         if (query.limit) |limit_value| {
-            var writer = sql_buf.writer(allocator);
-            try writer.print(" LIMIT {d}", .{limit_value});
+            var tmp: [32]u8 = undefined;
+            const limit_text = try std.fmt.bufPrint(&tmp, " LIMIT {d}", .{limit_value});
+            try sql_buf.appendSlice(allocator, limit_text);
         }
     }
 

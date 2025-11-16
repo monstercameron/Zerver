@@ -7,6 +7,7 @@ const effectors = @import("effectors.zig");
 const slog = @import("../../observability/slog.zig");
 const runtime_global = @import("../../runtime/global.zig");
 const sql = @import("../../sql/mod.zig");
+const array_list_writer = @import("../../util/array_list_writer.zig");
 
 /// DB Get effect handler (stub)
 pub fn handleDbGet(ctx: *effectors.Context, effect: types.DbGet) effectors.DispatchError!types.EffectResult {
@@ -116,8 +117,7 @@ pub fn handleDbQuery(ctx: *effectors.Context, effect: types.DbQuery) effectors.D
 
 fn resolveParam(_: *effectors.Context, param: types.DbParam) !sql.db.BindValue {
     return switch (param) {
-        .null => .null,
-        .int => |v| .{ .integer = v },
+        .null => .null, .int => |v| .{ .integer = v },
         .float => |v| .{ .float = v },
         .text => |v| .{ .text = v },
         .blob => |v| .{ .blob = v },
@@ -132,20 +132,21 @@ fn resolveParam(_: *effectors.Context, param: types.DbParam) !sql.db.BindValue {
 fn executeAndSerialize(allocator: std.mem.Allocator, stmt: *sql.db.Statement) ![]u8 {
     var results = try std.ArrayList(u8).initCapacity(allocator, 256);
     errdefer results.deinit(allocator);
-    var writer = results.writer(allocator);
+    var writer_helper = array_list_writer.ArrayListWriter.init(&results, allocator);
+    const writer = writer_helper.writer();
 
     try writer.writeAll("[");
     var first = true;
 
     while (try stmt.step() == .row) {
-        if (!first) try writer.writeAll(",");
+        if (!first) try writer.writeAll(", ");
         first = false;
 
         try writer.writeAll("{");
         const col_count = stmt.columnCount();
 
         for (0..col_count) |i| {
-            if (i > 0) try writer.writeAll(",");
+            if (i > 0) try writer.writeAll(", ");
 
             // Write column name
             const col_name = stmt.columnName(@intCast(i)) catch "unknown";
@@ -156,8 +157,7 @@ fn executeAndSerialize(allocator: std.mem.Allocator, stmt: *sql.db.Statement) ![
             defer col_value.deinit(allocator);
 
             switch (col_value) {
-                .null => try writer.writeAll("null"),
-                .integer => |val| {
+                .null => try writer.writeAll("null"), .integer => |val| {
                     try writer.print("{d}", .{val});
                 },
                 .float => |val| {
@@ -182,8 +182,7 @@ fn executeAndSerialize(allocator: std.mem.Allocator, stmt: *sql.db.Statement) ![
                         }
                     }
                     try writer.writeByte('"');
-                },
-                .blob => |val| {
+                }, .blob => |val| {
                     try writer.print("\"<blob:{d} bytes>\"", .{val.len});
                 },
             }

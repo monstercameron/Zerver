@@ -10,8 +10,7 @@ const Slot = enum(u32) { foo, count };
 
 fn slotType(comptime slot: Slot) type {
     return switch (slot) {
-        .foo => []const u8,
-        .count => usize,
+        .foo => []const u8, .count => usize,
     };
 }
 
@@ -62,8 +61,7 @@ test "core.step returns Step for CtxBase functions" {
 
     const decision = try step_def.call(&ctx);
     switch (decision) {
-        .Continue => {},
-        else => try std.testing.expect(false),
+        .Continue => {}, else => try std.testing.expect(false),
     }
     try std.testing.expectEqual(@as(usize, 42), ctx.request_bytes);
 }
@@ -82,8 +80,7 @@ test "core.step builds trampolines for CtxView handlers" {
 
     const decision = try step_def.call(&ctx);
     switch (decision) {
-        .Continue => {},
-        else => try std.testing.expect(false),
+        .Continue => {}, else => try std.testing.expect(false),
     }
 
     try std.testing.expectEqual(@as(usize, 5), ctx.request_bytes);
@@ -99,8 +96,7 @@ test "core.step builds trampolines for CtxView handlers" {
 test "core decision helpers wrap outcomes" {
     const cont = core.continue_();
     switch (cont) {
-        .Continue => {},
-        else => try std.testing.expect(false),
+        .Continue => {}, else => try std.testing.expect(false),
     }
 
     const headers = [_]zerver.Header{.{ .name = "content-type", .value = "application/json" }};
@@ -117,8 +113,7 @@ test "core decision helpers wrap outcomes" {
             try std.testing.expectEqualStrings("application/json", done_resp.headers[0].value);
             switch (done_resp.body) {
                 .complete => |body| try std.testing.expectEqualStrings("ok", body),
-                else => try std.testing.expect(false),
-            }
+                else => try std.testing.expect(false), }
         },
         else => try std.testing.expect(false),
     }

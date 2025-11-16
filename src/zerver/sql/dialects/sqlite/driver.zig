@@ -4,8 +4,7 @@ const db = @import("../../db.zig");
 const ffi = @import("ffi.zig");
 
 pub const driver = db.Driver{
-    .name = "sqlite",
-    .connect = connect,
+    .name = "sqlite", .connect = connect,
     .disconnect = disconnect,
     .prepare = prepare,
     .finalize = finalize,
@@ -29,8 +28,7 @@ const BoundSlot = union(enum) {
 
     fn deinit(self: *BoundSlot, allocator: std.mem.Allocator) void {
         switch (self.*) {
-            .text => |buffer| allocator.free(buffer),
-            .blob => |buffer| allocator.free(buffer),
+            .text => |buffer| allocator.free(buffer), .blob => |buffer| allocator.free(buffer),
             else => {},
         }
         self.* = .none;
@@ -47,8 +45,7 @@ const StatementState = struct {
     allocator: std.mem.Allocator,
     connection: *ConnectionState,
     stmt: *ffi.sqlite3_stmt,
-    bound: std.ArrayListUnmanaged(BoundSlot),
-};
+    bound: std.ArrayListUnmanaged(BoundSlot), };
 
 fn connect(allocator: std.mem.Allocator, options: db.ConnectOptions) db.Error!db.ConnectionHandle {
     const state = allocator.create(ConnectionState) catch return db.Error.ConnectionFailed;
@@ -107,8 +104,7 @@ fn prepare(allocator: std.mem.Allocator, handle: db.ConnectionHandle, sql: []con
         return db.Error.StatementFailed;
     };
     state.* = .{
-        .allocator = allocator,
-        .connection = connection,
+        .allocator = allocator, .connection = connection,
         .stmt = stmt_ptr.?,
         .bound = .{},
     };
@@ -168,8 +164,7 @@ fn step(handle: db.StatementHandle) db.Error!db.StepState {
     const state = statementFromHandle(handle);
     const rc = ffi.sqlite3_step(state.stmt);
     return switch (rc) {
-        ffi.SQLITE_ROW => db.StepState.row,
-        ffi.SQLITE_DONE => db.StepState.done,
+        ffi.SQLITE_ROW => db.StepState.row, ffi.SQLITE_DONE => db.StepState.done,
         else => db.Error.StepFailed,
     };
 }
@@ -186,8 +181,7 @@ fn readColumn(allocator: std.mem.Allocator, handle: db.StatementHandle, index: u
 
     const col_type = ffi.sqlite3_column_type(state.stmt, c_index);
     return switch (col_type) {
-        ffi.SQLITE_NULL => db.Value{ .null = {} },
-        ffi.SQLITE_INTEGER => db.Value{ .integer = ffi.sqlite3_column_int64(state.stmt, c_index) },
+        ffi.SQLITE_NULL => db.Value{ .null = {} }, ffi.SQLITE_INTEGER => db.Value{ .integer = ffi.sqlite3_column_int64(state.stmt, c_index) },
         ffi.SQLITE_FLOAT => db.Value{ .float = ffi.sqlite3_column_double(state.stmt, c_index) },
         ffi.SQLITE_TEXT => readTextColumn(allocator, state, c_index),
         ffi.SQLITE_BLOB => readBlobColumn(allocator, state, c_index),
@@ -228,7 +222,11 @@ fn exec(allocator: std.mem.Allocator, handle: db.ConnectionHandle, sql: []const 
     const rc = ffi.sqlite3_exec(connection.db, sql_cstr.ptr, null, null, &err_ptr);
     if (rc != ffi.SQLITE_OK) {
         if (err_ptr) |ptr| {
+            const msg = std.mem.sliceTo(ptr, 0);
+            std.log.err("sqlite exec error: {s}", .{msg});
             ffi.sqlite3_free(ptr);
+        } else {
+            std.log.err("sqlite exec error code={d}", .{rc});
         }
         return db.Error.StatementFailed;
     }
@@ -292,8 +290,7 @@ fn computeOpenFlags(options: db.ConnectOptions) c_int {
     var flags: c_int = if (options.read_only) ffi.SQLITE_OPEN_READONLY else ffi.SQLITE_OPEN_READWRITE;
     if (!options.read_only and options.create_if_missing) flags |= ffi.SQLITE_OPEN_CREATE;
     const target_requires_uri = switch (options.target) {
-        .uri => true,
-        else => false,
+        .uri => true, else => false,
     };
     if (options.use_uri or target_requires_uri) flags |= ffi.SQLITE_OPEN_URI;
     return flags;

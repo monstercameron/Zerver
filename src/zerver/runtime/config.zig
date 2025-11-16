@@ -3,8 +3,7 @@ const std = @import("std");
 
 /// Application-level runtime configuration loaded from config.json.
 pub const AppConfig = struct {
-    database: DatabaseConfig,
-    thread_pool: ThreadPoolConfig = .{},
+    database: DatabaseConfig, thread_pool: ThreadPoolConfig = .{},
     reactor: ReactorConfig,
     observability: ObservabilityConfig,
     server: ServerConfig,
@@ -19,8 +18,7 @@ pub const AppConfig = struct {
 };
 
 pub const DatabaseConfig = struct {
-    driver: []const u8,
-    path: []const u8,
+    driver: []const u8, path: []const u8,
     pool_size: usize = 1,
     busy_timeout_ms: u32 = 5_000,
 };
@@ -63,8 +61,7 @@ pub const ServerConfig = struct {
 };
 
 pub const ObservabilityConfig = struct {
-    otlp_endpoint: []const u8 = "",
-    otlp_headers: []const u8 = "",
+    otlp_endpoint: []const u8 = "", otlp_headers: []const u8 = "",
     service_name: []const u8,
     service_version: []const u8,
     environment: []const u8,
@@ -91,8 +88,7 @@ pub const ObservabilityConfig = struct {
 };
 
 const RawDatabaseConfig = struct {
-    driver: []const u8,
-    path: []const u8,
+    driver: []const u8, path: []const u8,
     pool_size: ?usize = null,
     busy_timeout_ms: ?u32 = null,
 };
@@ -148,13 +144,14 @@ const RawAppConfig = struct {
 };
 
 pub fn load(allocator: std.mem.Allocator, path: []const u8) !AppConfig {
-    const file = try std.fs.cwd().openFile(path, .{});
+    const cwd = std.fs.cwd();
+    var file = try cwd.openFile(path, .{});
     defer file.close();
 
     const file_size = try file.getEndPos();
     if (file_size > 1_048_576) return error.ConfigTooLarge;
 
-    const buffer = try file.readToEndAlloc(allocator, @intCast(file_size));
+    const buffer = try cwd.readFileAlloc(path, allocator, std.Io.Limit.limited64(file_size));
     defer allocator.free(buffer);
 
     var parsed = try std.json.parseFromSlice(RawAppConfig, allocator, buffer, .{
@@ -190,8 +187,7 @@ pub fn load(allocator: std.mem.Allocator, path: []const u8) !AppConfig {
             .worker_count = if (raw.thread_pool) |tp|
                 tp.worker_count orelse default_workers
             else
-                default_workers,
-        },
+                default_workers, },
         .reactor = reactor,
         .observability = observability,
         .server = server,
@@ -228,8 +224,7 @@ fn buildReactorConfig(
         (default_continuation_workers + 1) / 2;
 
     var config = ReactorConfig{
-        .enabled = DEFAULT_REACTOR_ENABLED,
-        .continuation_pool = .{
+        .enabled = DEFAULT_REACTOR_ENABLED, .continuation_pool = .{
             .size = default_continuation_workers,
             .queue_capacity = DEFAULT_CONTINUATION_QUEUE_CAPACITY,
         },
@@ -289,8 +284,7 @@ fn buildReactorConfig(
                 .disabled => {
                     config.compute_pool.size = 0;
                     config.compute_pool.queue_capacity = 0;
-                },
-                .shared => {
+                }, .shared => {
                     if (pool_raw.size) |size| {
                         if (size == 0) return error.InvalidComputePoolSize;
                         config.compute_pool.size = size;
@@ -302,8 +296,7 @@ fn buildReactorConfig(
                         if (capacity == 0) return error.InvalidComputeQueueCapacity;
                         break :blk capacity;
                     } else DEFAULT_COMPUTE_QUEUE_CAPACITY;
-                },
-                .dedicated => {
+                }, .dedicated => {
                     const workers = if (pool_raw.size) |size| blk: {
                         if (size == 0) return error.InvalidComputePoolSize;
                         break :blk size;
@@ -314,8 +307,7 @@ fn buildReactorConfig(
                         if (capacity == 0) return error.InvalidComputeQueueCapacity;
                         break :blk capacity;
                     } else DEFAULT_COMPUTE_QUEUE_CAPACITY;
-                },
-            }
+                }, }
         }
     }
 
@@ -342,8 +334,7 @@ fn parseComputePoolKind(value: []const u8) !ComputePoolKind {
 }
 
 fn buildObservabilityConfig(
-    allocator: std.mem.Allocator,
-    raw: ?RawObservabilityConfig,
+    allocator: std.mem.Allocator, raw: ?RawObservabilityConfig,
 ) !ObservabilityConfig {
     var config = ObservabilityConfig{
         .service_name = try allocator.dupe(u8, DEFAULT_SERVICE_NAME),
@@ -452,8 +443,7 @@ fn buildObservabilityConfig(
 }
 
 fn buildServerConfig(
-    allocator: std.mem.Allocator,
-    raw: ?RawServerConfig,
+    allocator: std.mem.Allocator, raw: ?RawServerConfig,
 ) !ServerConfig {
     var config = ServerConfig{};
     errdefer config.deinit(allocator);

@@ -8,20 +8,19 @@ const config_mod = @import("runtime_config");
 const job_system = @import("job_system.zig");
 const effectors = @import("effectors.zig");
 const libuv = @import("libuv.zig");
+const time_util = @import("../../util/time.zig");
 
 const AtomicOrder = std.builtin.AtomicOrder;
 
 pub const EffectorResources = struct {
-    allocator: std.mem.Allocator = undefined,
-    enabled: bool = false,
+    allocator: std.mem.Allocator = undefined, enabled: bool = false,
     effector_jobs: job_system.JobSystem = undefined,
     has_effector_jobs: bool = false,
     dispatcher: effectors.EffectDispatcher = effectors.EffectDispatcher.init(),
     loop: libuv.Loop = undefined,
     loop_initialized: bool = false,
     loop_thread: ?std.Thread = null,
-    loop_should_run: std.atomic.Value(bool) = std.atomic.Value(bool).init(false),
-    wake_handle: libuv.Async = undefined,
+    loop_should_run: std.atomic.Value(bool) = std.atomic.Value(bool).init(false), wake_handle: libuv.Async = undefined,
     wake_initialized: bool = false,
 
     pub fn init(self: *EffectorResources, allocator: std.mem.Allocator, cfg: config_mod.ReactorConfig) !void {
@@ -30,12 +29,10 @@ pub const EffectorResources = struct {
             .enabled = cfg.enabled,
             .effector_jobs = undefined,
             .has_effector_jobs = false,
-            .dispatcher = effectors.EffectDispatcher.init(),
-            .loop = undefined,
+            .dispatcher = effectors.EffectDispatcher.init(), .loop = undefined,
             .loop_initialized = false,
             .loop_thread = null,
-            .loop_should_run = std.atomic.Value(bool).init(false),
-            .wake_handle = undefined,
+            .loop_should_run = std.atomic.Value(bool).init(false), .wake_handle = undefined,
             .wake_initialized = false,
         };
 
@@ -48,8 +45,7 @@ pub const EffectorResources = struct {
         self.loop_initialized = true;
 
         try self.effector_jobs.init(.{
-            .allocator = allocator,
-            .worker_count = cfg.effector_pool.size,
+            .allocator = allocator, .worker_count = cfg.effector_pool.size,
             .queue_capacity = cfg.effector_pool.queue_capacity,
             .label = "effector_jobs",
         });
@@ -130,8 +126,7 @@ pub const EffectorResources = struct {
         if (!self.has_effector_jobs) return null;
         if (!self.loop_initialized) return null;
         return effectors.Context{
-            .allocator = self.allocator,
-            .loop = &self.loop,
+            .allocator = self.allocator, .loop = &self.loop,
             .jobs = &self.effector_jobs,
             .compute_jobs = null,
             .accelerator_jobs = null,
@@ -150,7 +145,7 @@ fn loopThreadMain(self: *EffectorResources) void {
     while (self.loop_should_run.load(AtomicOrder.seq_cst)) {
         const active = self.loop.run(.once);
         if (!active) {
-            std.Thread.sleep(1 * std.time.ns_per_ms);
+            time_util.sleep(1 * std.time.ns_per_ms);
         }
     }
 

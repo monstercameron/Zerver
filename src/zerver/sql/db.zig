@@ -3,8 +3,7 @@ const std = @import("std");
 
 /// Canonical error space for SQL driver interactions inside Zerver.
 pub const Error = error{
-    DriverNotRegistered,
-    ConnectionFailed,
+    DriverNotRegistered, ConnectionFailed,
     StatementFailed,
     StepFailed,
     BindFailed,
@@ -35,8 +34,7 @@ pub const Value = union(ValueType) {
     /// Release any owned memory and reset to `.null`.
     pub fn deinit(self: *Value, allocator: std.mem.Allocator) void {
         switch (self.*) {
-            .text => |buf| allocator.free(buf),
-            .blob => |buf| allocator.free(buf),
+            .text => |buf| allocator.free(buf), .blob => |buf| allocator.free(buf),
             else => {},
         }
         self.* = .{ .null = {} };
@@ -45,8 +43,7 @@ pub const Value = union(ValueType) {
 
 /// Parameter binding payload accepted by drivers.
 pub const BindValue = union(enum) {
-    null,
-    integer: i64,
+    null, integer: i64,
     float: f64,
     text: []const u8,
     blob: []const u8,
@@ -85,16 +82,12 @@ pub const Driver = struct {
     prepare: *const fn (allocator: std.mem.Allocator, handle: ConnectionHandle, sql: []const u8) Error!StatementHandle,
     finalize: *const fn (allocator: std.mem.Allocator, statement: StatementHandle) void,
     bind: *const fn (allocator: std.mem.Allocator, statement: StatementHandle, index: usize, value: BindValue) Error!void,
-    clearBindings: ?*const fn (statement: StatementHandle) Error!void = null,
-    step: *const fn (statement: StatementHandle) Error!StepState,
-    reset: ?*const fn (statement: StatementHandle) Error!void = null,
-    columnCount: *const fn (statement: StatementHandle) usize,
+    clearBindings: ?*const fn (statement: StatementHandle) Error!void = null, step: *const fn (statement: StatementHandle) Error!StepState,
+    reset: ?*const fn (statement: StatementHandle) Error!void = null, columnCount: *const fn (statement: StatementHandle) usize,
     readColumn: *const fn (allocator: std.mem.Allocator, statement: StatementHandle, index: usize) Error!Value,
     columnName: ?*const fn (statement: StatementHandle, index: usize) Error![]const u8 = null,
-    beginTransaction: ?*const fn (handle: ConnectionHandle) Error!void = null,
-    commit: ?*const fn (handle: ConnectionHandle) Error!void = null,
-    rollback: ?*const fn (handle: ConnectionHandle) Error!void = null,
-    exec: ?*const fn (allocator: std.mem.Allocator, handle: ConnectionHandle, sql: []const u8) Error!void = null,
+    beginTransaction: ?*const fn (handle: ConnectionHandle) Error!void = null, commit: ?*const fn (handle: ConnectionHandle) Error!void = null,
+    rollback: ?*const fn (handle: ConnectionHandle) Error!void = null, exec: ?*const fn (allocator: std.mem.Allocator, handle: ConnectionHandle, sql: []const u8) Error!void = null,
 };
 
 /// Active database connection facade.
@@ -136,8 +129,7 @@ pub const Connection = struct {
 
         while (true) {
             switch (try stmt.step()) {
-                .row => {},
-                .done => break,
+                .row => {}, .done => break,
             }
         }
     }
@@ -267,8 +259,7 @@ pub const ResultIterator = struct {
     pub fn next(self: *ResultIterator) !?[]Value {
         if (self.finished) return null;
         switch (try self.statement.step()) {
-            .row => return try self.statement.readAllColumns(),
-            .done => {
+            .row => return try self.statement.readAllColumns(), .done => {
                 self.finished = true;
                 return null;
             },
@@ -286,8 +277,7 @@ pub fn deinitRow(allocator: std.mem.Allocator, values: []Value) void {
 
 /// Transaction guard that commits or rolls back explicitly.
 pub const Transaction = struct {
-    connection: *Connection,
-    active: bool,
+    connection: *Connection, active: bool,
 
     pub fn commit(self: *Transaction) !void {
         if (!self.active) return Error.InvalidState;
@@ -317,9 +307,7 @@ pub const Transaction = struct {
 
 /// Driver registry for selecting implementations by name.
 pub const Registry = struct {
-    drivers: std.StringHashMap(*const Driver),
-
-    pub fn init(allocator: std.mem.Allocator) Registry {
+    drivers: std.StringHashMap(*const Driver), pub fn init(allocator: std.mem.Allocator) Registry {
         return Registry{ .drivers = std.StringHashMap(*const Driver).init(allocator) };
     }
 

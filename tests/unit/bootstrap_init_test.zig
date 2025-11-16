@@ -5,8 +5,7 @@ const runtime_config = @import("runtime_config");
 
 fn makeObservabilityConfig() runtime_config.ObservabilityConfig {
     return .{
-        .otlp_endpoint = "",
-        .otlp_headers = "",
+        .otlp_endpoint = "", .otlp_headers = "",
         .service_name = "svc",
         .service_version = "0.0.1",
         .environment = "test",

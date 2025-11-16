@@ -19,8 +19,7 @@ pub fn build(b: *std.Build) void {
 
     // Build as dynamic library
     const lib = b.addSharedLibrary(.{
-        .name = "test",
-        .root_module = b.createModule(.{
+        .name = "test", .root_module = b.createModule(.{
             .root_source_file = b.path("main.zig"),
             .target = target,
             .optimize = optimize,

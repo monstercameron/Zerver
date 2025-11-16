@@ -1,3 +1,4 @@
+const time_util = @import("../util/time.zig");
 // src/zerver/runtime/step_executor.zig
 /// Step Executor - Executes steps in StepExecutionContext
 ///
@@ -22,8 +23,7 @@ const libuv = @import("reactor/libuv.zig");
 const slog = @import("../observability/slog.zig");
 
 pub const ExecutionError = error{
-    StepExecutionFailed,
-    EffectExecutionFailed,
+    StepExecutionFailed, EffectExecutionFailed,
     ContinuationFailed,
     OutOfMemory,
 };
@@ -50,16 +50,14 @@ pub fn executeStepContext(
 
 /// Execute the next step in the pipeline
 fn executeNextStep(
-    ctx: *step_context.StepExecutionContext,
-    dispatcher: *effectors.EffectDispatcher,
+    ctx: *step_context.StepExecutionContext, dispatcher: *effectors.EffectDispatcher,
     effector_context: effectors.Context,
 ) !void {
     // Check if there are more steps
     if (!ctx.hasMoreSteps()) {
         // No more steps - complete with default response
         ctx.completeSuccess(.{
-            .status = 200,
-            .body = .{ .complete = "" },
+            .status = 200, .body = .{ .complete = "" },
             .headers = &.{},
         });
         return;
@@ -67,8 +65,7 @@ fn executeNextStep(
 
     const current_step = ctx.currentStep() orelse {
         ctx.completeSuccess(.{
-            .status = 200,
-            .body = .{ .complete = "" },
+            .status = 200, .body = .{ .complete = "" },
             .headers = &.{},
         });
         return;
@@ -82,11 +79,11 @@ fn executeNextStep(
         telem.stepStart(ctx.layer, current_step.name);
     }
 
-    const start_ms = std.time.milliTimestamp();
+    const start_ms = time_util.milliTimestamp();
 
     // Execute step function
     const decision = current_step.call(ctx.request_ctx) catch |err| {
-        const end_ms = std.time.milliTimestamp();
+        const end_ms = time_util.milliTimestamp();
         const duration = @as(u64, @intCast(end_ms - start_ms));
 
         slog.err("step_execution_failed", &.{
@@ -100,13 +97,12 @@ fn executeNextStep(
         }
 
         ctx.completeFailed(.{
-            .kind = types.ErrorCode.InternalError,
-            .ctx = .{ .what = "step", .key = "execution_failed" },
+            .kind = types.ErrorCode.InternalError, .ctx = .{ .what = "step", .key = "execution_failed" },
         });
         return;
     };
 
-    const end_ms = std.time.milliTimestamp();
+    const end_ms = time_util.milliTimestamp();
     const duration = @as(u64, @intCast(end_ms - start_ms));
 
     // Handle decision
@@ -115,8 +111,7 @@ fn executeNextStep(
 
 /// Handle step decision
 fn handleDecision(
-    ctx: *step_context.StepExecutionContext,
-    decision: types.Decision,
+    ctx: *step_context.StepExecutionContext, decision: types.Decision,
     step_name: []const u8,
     duration_ms: u64,
     dispatcher: *effectors.EffectDispatcher,
@@ -139,14 +134,11 @@ fn handleDecision(
             ctx.state = .ready;
 
             // Will be re-queued by worker
-        },
-
-        .need => |need| {
+        }, .need => |need| {
             // Log step pausing for effects
             if (ctx.telemetry_ctx) |telem| {
                 const need_seq = telem.needScheduled(.{
-                    .effect_count = need.effects.len,
-                    .mode = need.mode,
+                    .effect_count = need.effects.len, .mode = need.mode,
                     .join = need.join,
                 });
 
@@ -183,9 +175,7 @@ fn handleDecision(
             });
 
             ctx.completeSuccess(response);
-        },
-
-        .Fail => |err| {
+        }, .Fail => |err| {
             // Log step failure
             if (ctx.telemetry_ctx) |telem| {
                 telem.stepEnd(ctx.layer, step_name, "Fail");
@@ -199,8 +189,7 @@ fn handleDecision(
             });
 
             ctx.completeFailed(err);
-        },
-    }
+        }, }
 }
 
 /// Effect work context for libuv async execution
@@ -220,8 +209,7 @@ const EffectWork = struct {
 
 /// Execute effects asynchronously (Phase 2 - non-blocking execution)
 fn executeEffectsAsync(
-    ctx: *step_context.StepExecutionContext,
-    need: types.Need,
+    ctx: *step_context.StepExecutionContext, need: types.Need,
     dispatcher: *effectors.EffectDispatcher,
     effector_context: effectors.Context,
 ) !void {
@@ -235,35 +223,31 @@ fn executeEffectsAsync(
         var effect_seq: usize = 0;
         if (ctx.telemetry_ctx) |telem| {
             effect_seq = telem.effectStart(.{
-                .kind = kind,
-                .token = token,
+                .kind = kind, .token = token,
                 .required = required,
                 .mode = need.mode,
                 .join = need.join,
                 .timeout_ms = getEffectTimeout(effect),
-                .target = getEffectTarget(effect),
-                .need_sequence = ctx.need_sequence,
+                .target = getEffectTarget(effect), .need_sequence = ctx.need_sequence,
             });
         }
 
         // Allocate work context (will be freed in after_work callback)
         const work_ctx = try ctx.allocator.create(EffectWork);
         work_ctx.* = .{
-            .ctx = ctx,
-            .effect = effect,
+            .ctx = ctx, .effect = effect,
             .dispatcher = dispatcher,
             .effector_context = effector_context,
             .token = token,
             .required = required,
             .kind = kind,
             .effect_seq = effect_seq,
-            .start_ms = std.time.milliTimestamp(),
+            .start_ms = std.math.lossyCast(i64, time_util.milliTimestamp()),
         };
 
         // Submit to libuv thread pool
         try work_ctx.work.submit(
-            effector_context.loop,
-            effectWorkCallback,
+            effector_context.loop, effectWorkCallback,
             effectAfterWorkCallback,
             work_ctx,
         );
@@ -306,8 +290,9 @@ fn effectWorkCallback(work: *libuv.Work) void {
 fn effectAfterWorkCallback(work: *libuv.Work, status: c_int) void {
     const work_ctx: *EffectWork = @ptrCast(@alignCast(work.getUserData().?));
     const ctx = work_ctx.ctx;
-    const end_ms = std.time.milliTimestamp();
-    const duration = @as(u64, @intCast(end_ms - work_ctx.start_ms));
+    const end_ms = time_util.milliTimestamp();
+    const delta_ms: i64 = end_ms - work_ctx.start_ms;
+    const duration: u64 = if (delta_ms > 0) std.math.lossyCast(u64, delta_ms) else 0;
 
     slog.debug("effect_completed_async", &.{
         slog.Attr.string("kind", work_ctx.kind),
@@ -333,8 +318,7 @@ fn effectAfterWorkCallback(work: *libuv.Work, status: c_int) void {
         const error_ctx = if (work_ctx.result == .failure) work_ctx.result.failure.ctx else null;
 
         telem.effectEnd(.{
-            .sequence = work_ctx.effect_seq,
-            .need_sequence = ctx.need_sequence,
+            .sequence = work_ctx.effect_seq, .need_sequence = ctx.need_sequence,
             .kind = work_ctx.kind,
             .token = work_ctx.token,
             .required = work_ctx.required,
@@ -362,8 +346,7 @@ fn effectAfterWorkCallback(work: *libuv.Work, status: c_int) void {
                 });
                 // Mark as failed if we can't re-queue
                 ctx.completeFailed(.{
-                    .kind = types.ErrorCode.InternalError,
-                    .ctx = .{ .what = "requeue", .key = "failed" },
+                    .kind = types.ErrorCode.InternalError, .ctx = .{ .what = "requeue", .key = "failed" },
                 });
             };
         } else {
@@ -379,8 +362,7 @@ fn effectAfterWorkCallback(work: *libuv.Work, status: c_int) void {
 /// Execute effects blocking (Phase 1 - synchronous execution)
 /// DEPRECATED: Use executeEffectsAsync for non-blocking execution
 fn executeEffectsBlocking(
-    ctx: *step_context.StepExecutionContext,
-    need: types.Need,
+    ctx: *step_context.StepExecutionContext, need: types.Need,
     dispatcher: *effectors.EffectDispatcher,
     effector_context: effectors.Context,
 ) !void {
@@ -396,18 +378,16 @@ fn executeEffectsBlocking(
         var effect_seq: usize = 0;
         if (ctx.telemetry_ctx) |telem| {
             effect_seq = telem.effectStart(.{
-                .kind = kind,
-                .token = token,
+                .kind = kind, .token = token,
                 .required = required,
                 .mode = need.mode,
                 .join = need.join,
                 .timeout_ms = getEffectTimeout(effect),
-                .target = getEffectTarget(effect),
-                .need_sequence = ctx.need_sequence,
+                .target = getEffectTarget(effect), .need_sequence = ctx.need_sequence,
             });
         }
 
-        const start_ms = std.time.milliTimestamp();
+        const start_ms = time_util.milliTimestamp();
 
         // Execute effect via dispatcher
         const result = blk: {
@@ -426,7 +406,7 @@ fn executeEffectsBlocking(
             break :blk res;
         };
 
-        const end_ms = std.time.milliTimestamp();
+        const end_ms = time_util.milliTimestamp();
         const duration = @as(u64, @intCast(end_ms - start_ms));
 
         // Record result
@@ -438,8 +418,7 @@ fn executeEffectsBlocking(
             const error_ctx = if (result == .failure) result.failure.ctx else null;
 
             telem.effectEnd(.{
-                .sequence = effect_seq,
-                .need_sequence = ctx.need_sequence,
+                .sequence = effect_seq, .need_sequence = ctx.need_sequence,
                 .kind = kind,
                 .token = token,
                 .required = required,
@@ -472,8 +451,7 @@ fn executeEffectsBlocking(
 
 /// Execute continuation after effects complete
 fn executeContinuation(
-    ctx: *step_context.StepExecutionContext,
-    dispatcher: *effectors.EffectDispatcher,
+    ctx: *step_context.StepExecutionContext, dispatcher: *effectors.EffectDispatcher,
     effector_context: effectors.Context,
 ) !void {
     const continuation = ctx.parked_continuation orelse {
@@ -495,8 +473,7 @@ fn executeContinuation(
         });
 
         ctx.completeFailed(.{
-            .kind = types.ErrorCode.InternalError,
-            .ctx = .{ .what = "continuation", .key = "execution_failed" },
+            .kind = types.ErrorCode.InternalError, .ctx = .{ .what = "continuation", .key = "execution_failed" },
         });
         return;
     };
@@ -508,14 +485,12 @@ fn executeContinuation(
 // Helper functions to extract effect properties
 fn getEffectToken(effect: types.Effect) u32 {
     return switch (effect) {
-        inline else => |e| e.token,
-    };
+        inline else => |e| e.token, };
 }
 
 fn isEffectRequired(effect: types.Effect) bool {
     return switch (effect) {
-        inline else => |e| e.required,
-    };
+        inline else => |e| e.required, };
 }
 
 fn getEffectKind(effect: types.Effect) []const u8 {

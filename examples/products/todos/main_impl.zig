@@ -28,14 +28,12 @@ const slog = @import("../../../src/zerver/observability/slog.zig");
 /// Centralized error handler - converts domain errors to HTTP responses
 fn error_handler(ctx: *zerver.CtxBase) !zerver.Decision {
     const error_info = ctx.lastError() orelse domain.makeError(
-        .Internal,
-        "Unknown error",
+        .Internal, "Unknown error",
         "system",
     );
 
     const error_ctx: domain.ErrorContext = .{
-        .error_code = @enumFromInt(error_info.kind),
-        .message = error_info.ctx.what,
+        .error_code = @enumFromInt(error_info.kind), .message = error_info.ctx.what,
         .resource = error_info.ctx.key,
     };
 
@@ -60,8 +58,7 @@ fn error_handler(ctx: *zerver.CtxBase) !zerver.Decision {
     });
 
     return zerver.done(.{
-        .status = status_code,
-        .body = "{\"error\":\"Request processing failed\"}",
+        .status = status_code, .body = "{\"error\":\"Request processing failed\"}",
     });
 }
 
@@ -71,8 +68,7 @@ fn error_handler(ctx: *zerver.CtxBase) !zerver.Decision {
 
 /// Mock effect handler for MVP
 fn mock_effect_handler(
-    _effect: *const zerver.Effect,
-    _timeout_ms: u32,
+    _effect: *const zerver.Effect, _timeout_ms: u32,
 ) anyerror!zerver.executor.EffectResult {
     _ = _effect;
     _ = _timeout_ms;
@@ -226,8 +222,7 @@ pub fn main() !void {
     slog.infof("║ TEST 1: GET /todos - List all todos                 ║", .{});
     slog.infof("╚══════════════════════════════════════════════════════╝", .{});
     const test1 = try server.handleRequest(
-        "GET /todos HTTP/1.1\r\nAuthorization: Bearer test_user_123\r\nHost: localhost:8081\r\n\r\n",
-        allocator,
+        "GET /todos HTTP/1.1\r\nAuthorization: Bearer test_user_123\r\nHost: localhost:8081\r\n\r\n", allocator,
     );
     slog.infof("Status: {d}\nBody: {s}\n", .{ 200, test1 });
 
@@ -236,8 +231,7 @@ pub fn main() !void {
     slog.infof("║ TEST 2: GET /todos/abc123 - Get specific todo       ║", .{});
     slog.infof("╚══════════════════════════════════════════════════════╝", .{});
     const test2 = try server.handleRequest(
-        "GET /todos/abc123 HTTP/1.1\r\nAuthorization: Bearer test_user_123\r\nHost: localhost:8081\r\n\r\n",
-        allocator,
+        "GET /todos/abc123 HTTP/1.1\r\nAuthorization: Bearer test_user_123\r\nHost: localhost:8081\r\n\r\n", allocator,
     );
     slog.infof("Status: {d}\nBody: {s}\n", .{ 200, test2 });
 
@@ -246,8 +240,7 @@ pub fn main() !void {
     slog.infof("║ TEST 3: POST /todos - Create new todo               ║", .{});
     slog.infof("╚══════════════════════════════════════════════════════╝", .{});
     const test3 = try server.handleRequest(
-        "POST /todos HTTP/1.1\r\nAuthorization: Bearer test_user_123\r\nContent-Length: 0\r\nHost: localhost:8081\r\n\r\n",
-        allocator,
+        "POST /todos HTTP/1.1\r\nAuthorization: Bearer test_user_123\r\nContent-Length: 0\r\nHost: localhost:8081\r\n\r\n", allocator,
     );
     slog.infof("Status: {d}\nBody: {s}\n", .{ 201, test3 });
 
@@ -256,8 +249,7 @@ pub fn main() !void {
     slog.infof("║ TEST 4: PATCH /todos/abc123 - Update todo           ║", .{});
     slog.infof("╚══════════════════════════════════════════════════════╝", .{});
     const test4 = try server.handleRequest(
-        "PATCH /todos/abc123 HTTP/1.1\r\nAuthorization: Bearer test_user_123\r\nContent-Length: 0\r\nHost: localhost:8081\r\n\r\n",
-        allocator,
+        "PATCH /todos/abc123 HTTP/1.1\r\nAuthorization: Bearer test_user_123\r\nContent-Length: 0\r\nHost: localhost:8081\r\n\r\n", allocator,
     );
     slog.infof("Status: {d}\nBody: {s}\n", .{ 200, test4 });
 
@@ -266,8 +258,7 @@ pub fn main() !void {
     slog.infof("║ TEST 5: DELETE /todos/abc123 - Delete todo          ║", .{});
     slog.infof("╚══════════════════════════════════════════════════════╝", .{});
     const test5 = try server.handleRequest(
-        "DELETE /todos/abc123 HTTP/1.1\r\nAuthorization: Bearer test_user_123\r\nHost: localhost:8081\r\n\r\n",
-        allocator,
+        "DELETE /todos/abc123 HTTP/1.1\r\nAuthorization: Bearer test_user_123\r\nHost: localhost:8081\r\n\r\n", allocator,
     );
     slog.infof("Status: {d}\nBody: {s}\n", .{ 204, test5 });
 

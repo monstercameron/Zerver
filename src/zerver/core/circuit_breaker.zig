@@ -1,3 +1,4 @@
+const time_util = @import("../util/time.zig");
 // src/zerver/core/circuit_breaker.zig
 /// Circuit Breaker: Fault tolerance pattern for preventing cascading failures
 ///
@@ -42,8 +43,7 @@ pub const CircuitBreaker = struct {
         timeout_ms: u32,
     ) !@This() {
         return .{
-            .allocator = allocator,
-            .name = try allocator.dupe(u8, name),
+            .allocator = allocator, .name = try allocator.dupe(u8, name),
             .failure_threshold = failure_threshold,
             .success_threshold = success_threshold,
             .timeout_ms = timeout_ms,
@@ -56,7 +56,7 @@ pub const CircuitBreaker = struct {
 
     /// Check if a request should be allowed
     pub fn canExecute(self: *@This()) bool {
-        return self.canExecuteAt(std.time.milliTimestamp());
+        return self.canExecuteAt(time_util.milliTimestamp());
     }
 
     pub fn canExecuteAt(self: *@This(), now: i64) bool {
@@ -64,15 +64,14 @@ pub const CircuitBreaker = struct {
         defer self.mutex.unlock();
 
         return switch (self.stats.state) {
-            .Closed => true,
-            .Open => self.shouldAttemptReset(now),
+            .Closed => true, .Open => self.shouldAttemptReset(now),
             .HalfOpen => true,
         };
     }
 
     /// Record a successful execution
     pub fn recordSuccess(self: *@This()) void {
-        self.recordSuccessAt(std.time.milliTimestamp());
+        self.recordSuccessAt(time_util.milliTimestamp());
     }
 
     pub fn recordSuccessAt(self: *@This(), now: i64) void {
@@ -83,8 +82,7 @@ pub const CircuitBreaker = struct {
             .Closed => {
                 // Reset failure count on success
                 self.stats.failure_count = 0;
-            },
-            .HalfOpen => {
+            }, .HalfOpen => {
                 self.stats.success_count += 1;
 
                 // If enough successes, close circuit
@@ -100,7 +98,7 @@ pub const CircuitBreaker = struct {
 
     /// Record a failed execution
     pub fn recordFailure(self: *@This()) void {
-        self.recordFailureAt(std.time.milliTimestamp());
+        self.recordFailureAt(time_util.milliTimestamp());
     }
 
     pub fn recordFailureAt(self: *@This(), now: i64) void {
@@ -131,7 +129,7 @@ pub const CircuitBreaker = struct {
 
     /// Get current state
     pub fn getState(self: *@This()) CircuitBreakerState {
-        const now = std.time.milliTimestamp();
+        const now = time_util.milliTimestamp();
 
         self.mutex.lock();
         defer self.mutex.unlock();
@@ -173,8 +171,7 @@ pub const CircuitBreaker = struct {
             .Closed => {
                 self.stats.failure_count = 0;
                 self.stats.success_count = 0;
-            },
-            .Open => {
+            }, .Open => {
                 self.stats.success_count = 0;
             },
             .HalfOpen => {
@@ -193,9 +190,7 @@ pub const CircuitBreakerPool = struct {
 
     pub fn init(allocator: std.mem.Allocator) @This() {
         return .{
-            .allocator = allocator,
-            .breakers = std.StringHashMap(*CircuitBreaker).init(allocator),
-        };
+            .allocator = allocator, .breakers = std.StringHashMap(*CircuitBreaker).init(allocator), };
     }
 
     pub fn deinit(self: *@This()) void {
@@ -211,8 +206,7 @@ pub const CircuitBreakerPool = struct {
 
     /// Get or create a circuit breaker for a service
     pub fn get(
-        self: *@This(),
-        service_name: []const u8,
+        self: *@This(), service_name: []const u8,
         failure_threshold: u32,
         success_threshold: u32,
         timeout_ms: u32,
@@ -228,8 +222,7 @@ pub const CircuitBreakerPool = struct {
         errdefer self.allocator.destroy(new_breaker_ptr);
 
         new_breaker_ptr.* = try CircuitBreaker.init(
-            self.allocator,
-            service_name,
+            self.allocator, service_name,
             failure_threshold,
             success_threshold,
             timeout_ms,
@@ -268,12 +261,12 @@ pub fn testCircuitBreaker() !void {
     slog.info("Starting circuit breaker tests", &.{});
 
     // Test 1: Closed state allows requests
-    const now0 = std.time.milliTimestamp();
+    const now0 = time_util.milliTimestamp();
     std.debug.assert(breaker.canExecuteAt(now0));
     slog.info("Circuit breaker test: closed state allows requests", &.{});
 
     // Test 2: Failures accumulate
-    const now1 = std.time.milliTimestamp();
+    const now1 = time_util.milliTimestamp();
     breaker.recordFailureAt(now1);
     breaker.recordFailureAt(now1);
     std.debug.assert(breaker.getState() == .Closed); // Still closed, threshold is 3
@@ -282,12 +275,12 @@ pub fn testCircuitBreaker() !void {
     slog.info("Circuit breaker test: circuit opens after failure threshold", &.{});
 
     // Test 3: Open state blocks requests
-    std.debug.assert(!breaker.canExecuteAt(std.time.milliTimestamp()));
+    std.debug.assert(!breaker.canExecuteAt(time_util.milliTimestamp()));
     slog.info("Circuit breaker test: open state blocks requests", &.{});
 
     // Test 4: Half-open after timeout
-    std.time.sleep(1100 * std.time.ns_per_ms); // Wait for timeout
-    const after_timeout = std.time.milliTimestamp();
+    time_util.sleep(1100 * std.time.ns_per_ms); // Wait for timeout
+    const after_timeout = time_util.milliTimestamp();
     std.debug.assert(breaker.canExecuteAt(after_timeout)); // Can attempt
     std.debug.assert(breaker.getState() == .HalfOpen);
     slog.info("Circuit breaker test: transitions to half-open after timeout", &.{});
@@ -300,15 +293,15 @@ pub fn testCircuitBreaker() !void {
 
     // Test 6: Failure in half-open reopens immediately
     // Re-open the circuit
-    const reopen_now = std.time.milliTimestamp();
+    const reopen_now = time_util.milliTimestamp();
     breaker.recordFailureAt(reopen_now);
     breaker.recordFailureAt(reopen_now);
     breaker.recordFailureAt(reopen_now);
     std.debug.assert(breaker.getState() == .Open);
 
-    std.time.sleep(1100 * std.time.ns_per_ms);
+    time_util.sleep(1100 * std.time.ns_per_ms);
     std.debug.assert(breaker.getState() == .HalfOpen);
-    breaker.recordFailureAt(std.time.milliTimestamp()); // Fail in half-open
+    breaker.recordFailureAt(time_util.milliTimestamp()); // Fail in half-open
     std.debug.assert(breaker.getState() == .Open); // Immediately reopens
     slog.info("Circuit breaker test: failure in half-open immediately reopens", &.{});
 
@@ -330,7 +323,7 @@ pub fn testCircuitBreakerPool() !void {
     var db_breaker = try pool.get("database", 5, 3, 2000);
     var http_breaker = try pool.get("stripe", 3, 2, 1000);
 
-    const pool_now = std.time.milliTimestamp();
+    const pool_now = time_util.milliTimestamp();
     std.debug.assert(db_breaker.canExecuteAt(pool_now));
     std.debug.assert(http_breaker.canExecuteAt(pool_now));
 
@@ -340,10 +333,10 @@ pub fn testCircuitBreakerPool() !void {
     http_breaker.recordFailureAt(pool_now);
 
     std.debug.assert(http_breaker.getState() == .Open);
-    std.debug.assert(!http_breaker.canExecuteAt(std.time.milliTimestamp()));
+    std.debug.assert(!http_breaker.canExecuteAt(time_util.milliTimestamp()));
 
     // DB service should still be working
-    std.debug.assert(db_breaker.canExecuteAt(std.time.milliTimestamp()));
+    std.debug.assert(db_breaker.canExecuteAt(time_util.milliTimestamp()));
 
     slog.info("Circuit breaker pool test: manages multiple independent breakers", &.{});
     slog.info("Circuit breaker pool tests completed successfully", &.{});

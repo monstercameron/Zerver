@@ -2,7 +2,8 @@
 /// Bootstrap helper utilities extracted for testing
 const std = @import("std");
 const slog = @import("../observability/slog.zig");
-const runtime_config = @import("runtime_config");
+const runtime_config = @import("../runtime/config.zig");
+const compat_net = @import("../runtime/net_compat.zig");
 
 pub fn parseIpv4Host(host: []const u8) ![4]u8 {
     var parts = std.mem.splitScalar(u8, host, '.');
@@ -29,8 +30,7 @@ pub fn parseIpv4Host(host: []const u8) ![4]u8 {
 /// and its lifetime matches the application lifetime. The memory is freed during shutdown
 /// via app_config.deinit() or persists for the process lifetime if shutdown cleanup is skipped.
 pub fn detectTempoEndpoint(
-    allocator: std.mem.Allocator,
-    observability: *const runtime_config.ObservabilityConfig,
+    allocator: std.mem.Allocator, observability: *const runtime_config.ObservabilityConfig,
 ) !?[]const u8 {
     if (!observability.autodetect_enabled) {
         slog.debug("tempo_autodetect_disabled", &.{});
@@ -57,19 +57,18 @@ pub fn detectTempoEndpoint(
         return null;
     };
 
-    const address = std.net.Address.initIp4(host_ip, observability.autodetect_port);
+    const address = compat_net.Address.initIp4(host_ip, observability.autodetect_port);
     const max_attempts: u32 = 5;
 
     var attempt: u32 = 0;
     while (attempt < max_attempts) : (attempt += 1) {
-        var stream = std.net.tcpConnectToAddress(address) catch |err| {
+        var stream = compat_net.tcpConnectToAddress(address) catch |err| {
             slog.debug("tempo_detect_connection_error", &.{
                 slog.Attr.string("error", @errorName(err)),
                 slog.Attr.uint("attempt", attempt + 1),
                 slog.Attr.string("host", observability.autodetect_host),
                 slog.Attr.int("port", @as(i64, @intCast(observability.autodetect_port))),
             });
-            std.Thread.sleep(tempoDetectBackoff(attempt));
             continue;
         };
         stream.close();

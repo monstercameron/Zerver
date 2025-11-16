@@ -1,6 +1,7 @@
 // tests/unit/reactor_task_system.zig
 const std = @import("std");
 const zerver = @import("zerver");
+const time_util = zerver.time_util;
 
 const TaskSystem = zerver.reactor_task_system.TaskSystem;
 const TaskSystemConfig = zerver.reactor_task_system.TaskSystemConfig;
@@ -14,8 +15,7 @@ const ctx_module = zerver.ctx;
 const effectors = zerver.reactor_effectors;
 
 const Counter = struct {
-    value: std.atomic.Value(u32) = std.atomic.Value(u32).init(0),
-};
+    value: std.atomic.Value(u32) = std.atomic.Value(u32).init(0), };
 
 fn incrementJob(ctx: *anyopaque) void {
     const counter: *Counter = @ptrCast(@alignCast(ctx));
@@ -25,8 +25,7 @@ fn incrementJob(ctx: *anyopaque) void {
 test "task system runs continuation jobs" {
     var ts: TaskSystem = undefined;
     try ts.init(.{
-        .allocator = std.testing.allocator,
-        .continuation_workers = 2,
+        .allocator = std.testing.allocator, .continuation_workers = 2,
     });
     defer ts.deinit();
 
@@ -40,7 +39,7 @@ test "task system runs continuation jobs" {
 
     var attempt: usize = 0;
     while (counter.value.load(.seq_cst) < total and attempt < 10_000) : (attempt += 1) {
-        std.Thread.sleep(1_000_000);
+        time_util.sleep(1_000_000);
     }
 
     try std.testing.expectEqual(total, counter.value.load(.seq_cst));
@@ -49,8 +48,7 @@ test "task system runs continuation jobs" {
 test "task system runs compute jobs" {
     var ts: TaskSystem = undefined;
     try ts.init(.{
-        .allocator = std.testing.allocator,
-        .continuation_workers = 1,
+        .allocator = std.testing.allocator, .continuation_workers = 1,
         .compute_kind = ComputePoolKind.dedicated,
         .compute_workers = 1,
     });
@@ -61,7 +59,7 @@ test "task system runs compute jobs" {
 
     var attempt: usize = 0;
     while (counter.value.load(.seq_cst) < 1 and attempt < 10_000) : (attempt += 1) {
-        std.Thread.sleep(1_000_000);
+        time_util.sleep(1_000_000);
     }
 
     try std.testing.expectEqual(@as(u32, 1), counter.value.load(.seq_cst));
@@ -70,8 +68,7 @@ test "task system runs compute jobs" {
 test "task system errors when compute pool disabled" {
     var ts: TaskSystem = undefined;
     try ts.init(.{
-        .allocator = std.testing.allocator,
-        .continuation_workers = 1,
+        .allocator = std.testing.allocator, .continuation_workers = 1,
     });
     defer ts.deinit();
 
@@ -82,8 +79,7 @@ test "task system errors when compute pool disabled" {
 test "task system shared compute uses continuation pool" {
     var ts: TaskSystem = undefined;
     try ts.init(.{
-        .allocator = std.testing.allocator,
-        .continuation_workers = 1,
+        .allocator = std.testing.allocator, .continuation_workers = 1,
         .compute_kind = ComputePoolKind.shared,
     });
     defer ts.deinit();
@@ -93,7 +89,7 @@ test "task system shared compute uses continuation pool" {
 
     var attempt: usize = 0;
     while (counter.value.load(.seq_cst) < 1 and attempt < 10_000) : (attempt += 1) {
-        std.Thread.sleep(1_000_000);
+        time_util.sleep(1_000_000);
     }
 
     try std.testing.expectEqual(@as(u32, 1), counter.value.load(.seq_cst));
@@ -197,8 +193,7 @@ test "task system with step queue enabled" {
 
     var ts: TaskSystem = undefined;
     try ts.init(.{
-        .allocator = std.testing.allocator,
-        .continuation_workers = 2,
+        .allocator = std.testing.allocator, .continuation_workers = 2,
         .enable_step_queue = true,
         .step_queue_workers = 2,
         .effect_dispatcher = &dispatcher,
@@ -268,8 +263,7 @@ test "step execution context parking for effects" {
     // Create a Need decision
     const effects = [_]types.Effect{
         .{ .compute_task = .{
-            .operation = "test_op",
-            .token = 1,
+            .operation = "test_op", .token = 1,
         } },
     };
 
@@ -355,8 +349,7 @@ test "step execution context completion" {
 
     // Mark as completed
     exec_ctx.completeSuccess(.{
-        .status = 200,
-        .body = .{ .complete = "success" },
+        .status = 200, .body = .{ .complete = "success" },
         .headers = &.{},
     });
 
@@ -384,8 +377,7 @@ test "step execution context failure" {
 
     // Mark as failed
     exec_ctx.completeFailed(.{
-        .kind = types.ErrorCode.BadRequest,
-        .ctx = .{ .what = "test", .key = "error" },
+        .kind = types.ErrorCode.BadRequest, .ctx = .{ .what = "test", .key = "error" },
     });
 
     try std.testing.expectEqual(std.meta.Tag(types.Step.ExecutionState){ .failed }, exec_ctx.state);
@@ -404,8 +396,7 @@ fn testStepDone(ctx: *ctx_module.CtxBase) !types.Decision {
     _ = ctx;
     return types.Decision{
         .Done = .{
-            .status = 200,
-            .body = .{ .complete = "done" },
+            .status = 200, .body = .{ .complete = "done" },
             .headers = &.{},
         },
     };

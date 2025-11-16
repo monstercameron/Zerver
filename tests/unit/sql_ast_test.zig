@@ -4,8 +4,7 @@ const ast = zerver.sql.core.ast;
 
 test "select query structure captures metadata" {
     const identifiers = [_]ast.Identifier{
-        .{ .name = "id" },
-        .{ .name = "title" },
+        .{ .name = "id" }, .{ .name = "title" },
     };
     const orderings = [_]ast.Ordering{
         .{ .expr = .{ .column = .{ .name = "created_at" } }, .direction = .desc },

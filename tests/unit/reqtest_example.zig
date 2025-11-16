@@ -44,8 +44,7 @@ fn step_check_auth(ctx: *zerver.CtxBase) !zerver.Decision {
 fn step_success(ctx: *zerver.CtxBase) !zerver.Decision {
     _ = ctx;
     return zerver.done(.{
-        .status = 200,
-        .body = "Success",
+        .status = 200, .body = "Success",
     });
 }
 

@@ -13,22 +13,10 @@ const route_registry = @import("route_registry.zig");
 /// Enhanced server adapter with slot-effect support
 pub const SlotEffectServerAdapter = extern struct {
     // Original ServerAdapter fields
-    router: *anyopaque,
-    runtime_resources: *anyopaque,
-    addRoute: *const fn (*anyopaque, c_int, [*c]const u8, usize, *const fn (*anyopaque, *anyopaque) callconv(.c) c_int) callconv(.c) c_int,
-    setStatus: *const fn (*anyopaque, c_int) callconv(.c) void,
-    setHeader: *const fn (*anyopaque, *anyopaque, [*c]const u8, usize, [*c]const u8, usize) callconv(.c) c_int,
-    setBody: *const fn (*anyopaque, *anyopaque, [*c]const u8, usize) callconv(.c) c_int,
-
-    // New slot-effect specific fields
-    createSlotContext: *const fn (*anyopaque, [*c]const u8, usize) callconv(.c) ?*anyopaque,
-    destroySlotContext: *const fn (*anyopaque) callconv(.c) void,
-    executeEffect: *const fn (*anyopaque, *anyopaque, *const SlotEffectData) callconv(.c) c_int,
-    traceEvent: *const fn (*anyopaque, *const TraceEventData) callconv(.c) void,
-
-    // Slot-effect route registration - inlined function signature to avoid dependency loop
-    addSlotEffectRoute: *const fn (*anyopaque, c_int, [*c]const u8, usize, *const fn (*const SlotEffectServerAdapter, *anyopaque, *anyopaque) callconv(.c) c_int, ?*const RouteMetadata) callconv(.c) c_int,
-};
+    router: *anyopaque, runtime_resources: *anyopaque,
+    addRoute: *const fn (*anyopaque, c_int, [*c]const u8, usize, *const fn (*anyopaque, *anyopaque) callconv(.c) c_int) callconv(.c) c_int, setStatus: *const fn (*anyopaque, c_int) callconv(.c) void, setHeader: *const fn (*anyopaque, *anyopaque, [*c]const u8, usize, [*c]const u8, usize) callconv(.c) c_int, setBody: *const fn (*anyopaque, *anyopaque, [*c]const u8, usize) callconv(.c) c_int, // New slot-effect specific fields
+    createSlotContext: *const fn (*anyopaque, [*c]const u8, usize) callconv(.c) ?*anyopaque, destroySlotContext: *const fn (*anyopaque) callconv(.c) void, executeEffect: *const fn (*anyopaque, *anyopaque, *const SlotEffectData) callconv(.c) c_int, traceEvent: *const fn (*anyopaque, *const TraceEventData) callconv(.c) void, // Slot-effect route registration - inlined function signature to avoid dependency loop
+    addSlotEffectRoute: *const fn (*anyopaque, c_int, [*c]const u8, usize, *const fn (*const SlotEffectServerAdapter, *anyopaque, *anyopaque) callconv(.c) c_int, ?*const RouteMetadata) callconv(.c) c_int, };
 
 /// Serialized effect data for C ABI
 pub const SlotEffectData = extern struct {
@@ -85,8 +73,7 @@ pub const TraceEventData = extern struct {
 };
 
 pub const TraceEventType = enum(c_int) {
-    request_start = 0,
-    step_start = 1,
+    request_start = 0, step_start = 1,
     step_complete = 2,
     effect_start = 3,
     effect_complete = 4,
@@ -126,16 +113,14 @@ pub const GetRoutesCountFn = *const fn () callconv(.c) usize;
 
 /// Runtime bridge that converts between slot-effect and DLL boundary
 pub const SlotEffectBridge = struct {
-    allocator: std.mem.Allocator,
-    effect_executor: effect_executors.UnifiedEffectExecutor,
+    allocator: std.mem.Allocator, effect_executor: effect_executors.UnifiedEffectExecutor,
     trace_collector: slot_effect.TraceCollector,
 
     pub fn init(allocator: std.mem.Allocator, db_path: []const u8) !SlotEffectBridge {
         return .{
             .allocator = allocator,
             .effect_executor = try effect_executors.UnifiedEffectExecutor.init(allocator, db_path),
-            .trace_collector = slot_effect.TraceCollector.init(allocator),
-        };
+            .trace_collector = slot_effect.TraceCollector.init(allocator), };
     }
 
     pub fn deinit(self: *SlotEffectBridge) void {
@@ -160,8 +145,7 @@ pub const SlotEffectBridge = struct {
 
     /// Execute an effect and return the result
     pub fn executeEffect(
-        self: *SlotEffectBridge,
-        ctx: *slot_effect.CtxBase,
+        self: *SlotEffectBridge, ctx: *slot_effect.CtxBase,
         effect: slot_effect.Effect,
     ) !void {
         try self.effect_executor.execute(ctx, effect);
@@ -169,8 +153,7 @@ pub const SlotEffectBridge = struct {
 
     /// Record a trace event
     pub fn recordTrace(
-        self: *SlotEffectBridge,
-        event: slot_effect.TraceEvent,
+        self: *SlotEffectBridge, event: slot_effect.TraceEvent,
     ) !void {
         self.trace_collector.emit(event);
     }
@@ -179,8 +162,7 @@ pub const SlotEffectBridge = struct {
     pub fn buildAdapter(self: *SlotEffectBridge, router: *anyopaque) SlotEffectServerAdapter {
         return .{
             .router = router,
-            .runtime_resources = @ptrCast(self),
-            .addRoute = addRouteImpl,
+            .runtime_resources = @ptrCast(self), .addRoute = addRouteImpl,
             .setStatus = setStatusImpl,
             .setHeader = setHeaderImpl,
             .setBody = setBodyImpl,
@@ -202,7 +184,7 @@ fn addRouteImpl(
     method: c_int,
     path: [*c]const u8,
     path_len: usize,
-    handler: *const fn (*anyopaque, *anyopaque) callconv(.c) c_int,
+    handler: *const fn (*anyopaque, *anyopaque) callconv(.c) c_int, 
 ) callconv(.c) c_int {
     const registry: *route_registry.RouteRegistry = @ptrCast(@alignCast(router));
     const path_slice = path[0..path_len];
@@ -221,8 +203,7 @@ fn setStatusImpl(response: *anyopaque, status: c_int) callconv(.c) void {
 }
 
 fn setHeaderImpl(
-    response: *anyopaque,
-    runtime_resources: *anyopaque,
+    response: *anyopaque, runtime_resources: *anyopaque,
     name: [*c]const u8,
     name_len: usize,
     value: [*c]const u8,
@@ -241,8 +222,7 @@ fn setHeaderImpl(
 }
 
 fn setBodyImpl(
-    response: *anyopaque,
-    runtime_resources: *anyopaque,
+    response: *anyopaque, runtime_resources: *anyopaque,
     data: [*c]const u8,
     data_len: usize,
 ) callconv(.c) c_int {
@@ -260,8 +240,7 @@ fn setBodyImpl(
 }
 
 fn createSlotContextImpl(
-    runtime_resources: *anyopaque,
-    request_id: [*c]const u8,
+    runtime_resources: *anyopaque, request_id: [*c]const u8,
     request_id_len: usize,
 ) callconv(.c) ?*anyopaque {
     const bridge: *SlotEffectBridge = @ptrCast(@alignCast(runtime_resources));
@@ -281,8 +260,7 @@ fn destroySlotContextImpl(ctx: *anyopaque) callconv(.c) void {
 }
 
 fn executeEffectImpl(
-    runtime_resources: *anyopaque,
-    ctx: *anyopaque,
+    runtime_resources: *anyopaque, ctx: *anyopaque,
     effect_data: *const SlotEffectData,
 ) callconv(.c) c_int {
     const bridge: *SlotEffectBridge = @ptrCast(@alignCast(runtime_resources));
@@ -301,8 +279,7 @@ fn executeEffectImpl(
 }
 
 fn traceEventImpl(
-    runtime_resources: *anyopaque,
-    event_data: *const TraceEventData,
+    runtime_resources: *anyopaque, event_data: *const TraceEventData,
 ) callconv(.c) void {
     const bridge: *SlotEffectBridge = @ptrCast(@alignCast(runtime_resources));
     const request_id_slice = event_data.request_id[0..event_data.request_id_len];
@@ -317,12 +294,10 @@ fn traceEventImpl(
 }
 
 fn addSlotEffectRouteImpl(
-    router: *anyopaque,
-    method: c_int,
+    router: *anyopaque, method: c_int,
     path: [*c]const u8,
     path_len: usize,
-    handler: *const fn (*const SlotEffectServerAdapter, *anyopaque, *anyopaque) callconv(.c) c_int,
-    metadata: ?*const RouteMetadata,
+    handler: *const fn (*const SlotEffectServerAdapter, *anyopaque, *anyopaque) callconv(.c) c_int, metadata: ?*const RouteMetadata,
 ) callconv(.c) c_int {
     const registry: *route_registry.RouteRegistry = @ptrCast(@alignCast(router));
     const path_slice = path[0..path_len];
@@ -332,8 +307,7 @@ fn addSlotEffectRouteImpl(
     if (metadata) |meta| {
         const desc = meta.description[0..meta.description_len];
         route_metadata = .{
-            .description = desc,
-            .max_body_size = meta.max_body_size,
+            .description = desc, .max_body_size = meta.max_body_size,
             .timeout_ms = meta.timeout_ms,
             .requires_auth = meta.requires_auth,
         };
@@ -356,8 +330,7 @@ fn deserializeEffect(effect_data: *const SlotEffectData) !slot_effect.Effect {
             const data: *const DbGetEffectData = @ptrCast(@alignCast(effect_data.data));
             break :blk slot_effect.Effect{
                 .db_get = .{
-                    .database = data.database[0..data.database_len],
-                    .key = data.key[0..data.key_len],
+                    .database = data.database[0..data.database_len], .key = data.key[0..data.key_len],
                     .result_slot = data.result_slot,
                 },
             };
@@ -369,8 +342,7 @@ fn deserializeEffect(effect_data: *const SlotEffectData) !slot_effect.Effect {
                     .database = data.database[0..data.database_len],
                     .key = data.key[0..data.key_len],
                     .value = data.value[0..data.value_len],
-                    .result_slot = if (data.result_slot == 0xFFFFFFFF) null else data.result_slot,
-                },
+                    .result_slot = if (data.result_slot == 0xFFFFFFFF) null else data.result_slot, },
             };
         },
         .db_del => blk: {
@@ -379,8 +351,7 @@ fn deserializeEffect(effect_data: *const SlotEffectData) !slot_effect.Effect {
                 .db_del = .{
                     .database = data.database[0..data.database_len],
                     .key = data.key[0..data.key_len],
-                    .result_slot = if (data.result_slot == 0xFFFFFFFF) null else data.result_slot,
-                },
+                    .result_slot = if (data.result_slot == 0xFFFFFFFF) null else data.result_slot, },
             };
         },
         // Other effect types not yet implemented
@@ -395,8 +366,7 @@ fn deserializeTraceEvent(
     return switch (event_data.event_type) {
         .request_start => slot_effect.TraceEvent{
             .request_start = .{
-                .request_id = request_id,
-                .timestamp_ns = event_data.timestamp_ns,
+                .request_id = request_id, .timestamp_ns = event_data.timestamp_ns,
                 .method = "", // TODO: Extract from data
                 .path = "", // TODO: Extract from data
             },
@@ -427,13 +397,11 @@ pub const HandlerBuilder = struct {
 
     /// Wrap a slot-effect pipeline into a C-compatible handler
     pub fn wrapPipeline(
-        comptime SlotEnum: type,
-        comptime pipeline: anytype,
+        comptime SlotEnum: type, comptime pipeline: anytype,
     ) SlotEffectHandlerFn {
         const Handler = struct {
             fn handle(
-                server: *const SlotEffectServerAdapter,
-                request: *anyopaque,
+                server: *const SlotEffectServerAdapter, request: *anyopaque,
                 response: *anyopaque,
             ) callconv(.c) c_int {
                 _ = server;
@@ -482,8 +450,7 @@ test "SlotEffectBridge - adapter building" {
 test "SlotEffectRoute - struct layout" {
     // Verify extern struct compiles correctly
     const route = SlotEffectRoute{
-        .method = 1,
-        .path = "test",
+        .method = 1, .path = "test",
         .path_len = 4,
         .handler = undefined,
         .metadata = null,
@@ -519,8 +486,7 @@ test "DLL C ABI - response building integration" {
 
     // Test setHeader
     const result1 = adapter.setHeader(
-        @ptrCast(&response),
-        adapter.runtime_resources,
+        @ptrCast(&response), adapter.runtime_resources,
         "Content-Type",
         12,
         "application/json",
@@ -532,8 +498,7 @@ test "DLL C ABI - response building integration" {
     // Test setBody
     const body_data = "test body content";
     const result2 = adapter.setBody(
-        @ptrCast(&response),
-        adapter.runtime_resources,
+        @ptrCast(&response), adapter.runtime_resources,
         body_data.ptr,
         body_data.len,
     );
@@ -555,8 +520,7 @@ test "DLL C ABI - effect deserialization" {
 
     const effect_data = SlotEffectData{
         .effect_type = .db_get,
-        .data = @ptrCast(&db_get_data),
-    };
+        .data = @ptrCast(&db_get_data), };
 
     const effect = try deserializeEffect(&effect_data);
     try testing.expect(effect == .db_get);
@@ -566,8 +530,7 @@ test "DLL C ABI - effect deserialization" {
 
     // Test db_put deserialization with optional result_slot
     var db_put_data = DbPutEffectData{
-        .database = "test_db",
-        .database_len = 7,
+        .database = "test_db", .database_len = 7,
         .key = "key",
         .key_len = 3,
         .value = "value",
@@ -597,8 +560,7 @@ test "DLL C ABI - end-to-end route execution" {
     // Mock DLL handler that builds a response using C ABI
     const MockHandler = struct {
         fn handle(
-            server: *const SlotEffectServerAdapter,
-            request: *anyopaque,
+            server: *const SlotEffectServerAdapter, request: *anyopaque,
             response: *anyopaque,
         ) callconv(.c) c_int {
             _ = request;
@@ -607,8 +569,7 @@ test "DLL C ABI - end-to-end route execution" {
             server.setStatus(response, 200);
 
             _ = server.setHeader(
-                response,
-                server.runtime_resources,
+                response, server.runtime_resources,
                 "X-Custom-Header",
                 15,
                 "test-value",
@@ -617,8 +578,7 @@ test "DLL C ABI - end-to-end route execution" {
 
             const body = "{\"status\":\"success\"}";
             _ = server.setBody(
-                response,
-                server.runtime_resources,
+                response, server.runtime_resources,
                 body.ptr,
                 body.len,
             );
@@ -633,8 +593,7 @@ test "DLL C ABI - end-to-end route execution" {
     // Register route using C ABI
     const path = "/api/test";
     const result = adapter.addSlotEffectRoute(
-        adapter.router,
-        0, // GET
+        adapter.router, 0, // GET
         path.ptr,
         path.len,
         MockHandler.handle,

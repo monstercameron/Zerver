@@ -10,8 +10,7 @@ const slot_effect_dll = @import("slot_effect_dll.zig");
 
 /// Pipeline executor that manages complete request lifecycle
 pub const PipelineExecutor = struct {
-    allocator: std.mem.Allocator,
-    bridge: *slot_effect_dll.SlotEffectBridge,
+    allocator: std.mem.Allocator, bridge: *slot_effect_dll.SlotEffectBridge,
     max_iterations: u32,
 
     const DEFAULT_MAX_ITERATIONS = 100;
@@ -26,8 +25,7 @@ pub const PipelineExecutor = struct {
 
     /// Execute a pipeline with the given steps
     pub fn execute(
-        self: *PipelineExecutor,
-        ctx: *slot_effect.CtxBase,
+        self: *PipelineExecutor, ctx: *slot_effect.CtxBase,
         steps: []const slot_effect.StepFn,
     ) !slot_effect.Response {
         var interpreter = slot_effect.Interpreter.init(steps);
@@ -40,9 +38,7 @@ pub const PipelineExecutor = struct {
             switch (decision) {
                 .Done => |response| {
                     return response;
-                },
-
-                .Fail => |err| {
+                }, .Fail => |err| {
 
                     // Build error response
                     return self.buildErrorResponse(err);
@@ -59,9 +55,7 @@ pub const PipelineExecutor = struct {
                     } else if (resume_decision == .Fail) {
                         return self.buildErrorResponse(resume_decision.Fail);
                     }
-                },
-
-                .Continue => {
+                }, .Continue => {
                     // Should not happen - evalUntilNeedOrDone stops at need/Done/Fail
                     return error.UnexpectedContinue;
                 },
@@ -79,21 +73,18 @@ pub const PipelineExecutor = struct {
     fn buildErrorResponse(self: *PipelineExecutor, err: slot_effect.Error) !slot_effect.Response {
         // Build JSON error response
         const error_json = try std.fmt.allocPrint(
-            self.allocator,
-            "{{\"error\":\"{s}\",\"code\":{d}}}",
+            self.allocator, "{{\"error\":\"{s}\",\"code\":{d}}}",
             .{ err.message, err.code },
         );
 
         var response = slot_effect.Response{
-            .status = @intCast(err.code),
-            .headers = slot_effect.Response.Headers.init(self.allocator),
+            .status = @intCast(err.code), .headers = slot_effect.Response.Headers.init(self.allocator),
             .body = slot_effect.Body{ .json = error_json },
         };
 
         // Add content-type header
         try response.headers.append(.{
-            .name = "Content-Type",
-            .value = "application/json",
+            .name = "Content-Type", .value = "application/json",
         });
 
         return response;
@@ -110,8 +101,7 @@ pub const RequestContextBuilder = struct {
 
     /// Build a slot context from HTTP request data
     pub fn buildFromHttp(
-        self: *RequestContextBuilder,
-        request_id: []const u8,
+        self: *RequestContextBuilder, request_id: []const u8,
         method: []const u8,
         path: []const u8,
         headers: []const Header,
@@ -165,8 +155,7 @@ pub const ResponseSerializer = struct {
 
     /// Serialize response to HTTP format
     pub fn serialize(
-        self: *ResponseSerializer,
-        response: slot_effect.Response,
+        self: *ResponseSerializer, response: slot_effect.Response,
     ) !SerializedResponse {
         var headers = std.ArrayList(ResponseHeader){};
         errdefer headers.deinit(self.allocator);
@@ -193,16 +182,14 @@ pub const ResponseSerializer = struct {
 
         // Get body content
         const body_content = switch (response.body) {
-            .complete => |complete| complete,
-            .streaming => "",
+            .complete => |complete| complete, .streaming => "",
         };
 
         const body_copy = try self.allocator.dupe(u8, body_content);
 
         return .{
             .status = response.status,
-            .headers = try headers.toOwnedSlice(self.allocator),
-            .body = body_copy,
+            .headers = try headers.toOwnedSlice(self.allocator), .body = body_copy,
         };
     }
 
@@ -242,8 +229,7 @@ test "PipelineExecutor - simple pipeline" {
         fn step(step_ctx: *slot_effect.CtxBase) !slot_effect.Decision {
             _ = step_ctx;
             const response = slot_effect.Response{
-                .status = 200,
-                .headers = slot_effect.Response.Headers.init(testing.allocator),
+                .status = 200, .headers = slot_effect.Response.Headers.init(testing.allocator),
                 .body = slot_effect.Body{ .text = "Success" },
             };
             return slot_effect.done(response);
@@ -318,14 +304,12 @@ test "ResponseSerializer - serialize response" {
     var serializer = ResponseSerializer.init(testing.allocator);
 
     var response = slot_effect.Response{
-        .status = 201,
-        .headers = slot_effect.Response.Headers.init(testing.allocator),
+        .status = 201, .headers = slot_effect.Response.Headers.init(testing.allocator),
         .body = slot_effect.Body{ .json = "{\"id\":42}" },
     };
 
     try response.headers.append(.{
-        .name = "Content-Type",
-        .value = "application/json",
+        .name = "Content-Type", .value = "application/json",
     });
 
     var serialized = try serializer.serialize(response);

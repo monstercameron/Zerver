@@ -88,3 +88,4 @@ docs/.vuepress/dist/
 
 # CI/CD Artifacts
 .github/workflows/*.log
+.zig-cache-global/

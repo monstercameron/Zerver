@@ -7,8 +7,7 @@ const std = @import("std");
 
 /// Slot enum defines all per-request state that can be stored
 pub const Slot = enum {
-    TodoId,
-    TodoItem,
+    TodoId, TodoItem,
     UserId,
     UserRole,
     DbResult,

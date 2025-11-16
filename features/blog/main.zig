@@ -43,8 +43,7 @@ pub const ErrorResponse = struct {
 
 // Slot definitions
 const Slot = enum(u32) {
-    PostList = 1,
-    Post = 2,
+    PostList = 1, Post = 2,
     PostPayload = 3,
     UpdatePayload = 4,
     CommentList = 6,
@@ -282,8 +281,7 @@ fn step_delete_comment(ctx: *CtxBase) !Decision {
 
 // These would be registered with the router during registerRoutes()
 const load_posts_step = Step{
-    .name = "load_posts",
-    .call = step_load_posts,
+    .name = "load_posts", .call = step_load_posts,
     .reads = &.{},
     .writes = &.{@intFromEnum(Slot.PostList)},
 };
@@ -291,8 +289,7 @@ const load_posts_step = Step{
 const render_list_step = Step{
     .name = "render_list",
     .call = step_render_post_list,
-    .reads = &.{@intFromEnum(Slot.PostList)},
-    .writes = &.{},
+    .reads = &.{@intFromEnum(Slot.PostList)}, .writes = &.{},
 };
 
 const get_post_step = Step{
@@ -305,8 +302,7 @@ const get_post_step = Step{
 const render_post_step = Step{
     .name = "render_post",
     .call = step_render_post,
-    .reads = &.{@intFromEnum(Slot.Post)},
-    .writes = &.{},
+    .reads = &.{@intFromEnum(Slot.Post)}, .writes = &.{},
 };
 
 const parse_post_step = Step{
@@ -319,8 +315,7 @@ const parse_post_step = Step{
 const save_post_step = Step{
     .name = "save_post",
     .call = step_save_post,
-    .reads = &.{@intFromEnum(Slot.PostPayload)},
-    .writes = &.{},
+    .reads = &.{@intFromEnum(Slot.PostPayload)}, .writes = &.{},
 };
 
 const render_created_step = Step{
@@ -334,8 +329,7 @@ const parse_update_step = Step{
     .name = "parse_update",
     .call = step_parse_update,
     .reads = &.{},
-    .writes = &.{@intFromEnum(Slot.UpdatePayload)},
-};
+    .writes = &.{@intFromEnum(Slot.UpdatePayload)}, };
 
 const save_update_step = Step{
     .name = "save_update",
@@ -347,8 +341,7 @@ const save_update_step = Step{
 const render_updated_step = Step{
     .name = "render_updated",
     .call = step_render_updated_post,
-    .reads = &.{@intFromEnum(Slot.UpdatePayload)},
-    .writes = &.{},
+    .reads = &.{@intFromEnum(Slot.UpdatePayload)}, .writes = &.{},
 };
 
 const delete_post_step = Step{
@@ -361,8 +354,7 @@ const delete_post_step = Step{
 const render_deleted_step = Step{
     .name = "render_deleted",
     .call = step_render_deleted,
-    .reads = &.{@intFromEnum(Slot.Post)},
-    .writes = &.{},
+    .reads = &.{@intFromEnum(Slot.Post)}, .writes = &.{},
 };
 
 const load_comments_step = Step{
@@ -375,8 +367,7 @@ const load_comments_step = Step{
 const render_comments_step = Step{
     .name = "render_comments",
     .call = step_render_comment_list,
-    .reads = &.{@intFromEnum(Slot.CommentList)},
-    .writes = &.{},
+    .reads = &.{@intFromEnum(Slot.CommentList)}, .writes = &.{},
 };
 
 const parse_comment_step = Step{
@@ -389,8 +380,7 @@ const parse_comment_step = Step{
 const save_comment_step = Step{
     .name = "save_comment",
     .call = step_save_comment,
-    .reads = &.{@intFromEnum(Slot.Comment)},
-    .writes = &.{},
+    .reads = &.{@intFromEnum(Slot.Comment)}, .writes = &.{},
 };
 
 const render_created_comment_step = Step{

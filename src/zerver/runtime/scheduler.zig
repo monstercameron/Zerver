@@ -5,8 +5,7 @@ const job_system = @import("reactor/job_system.zig");
 const slog = @import("../observability/slog.zig");
 
 pub const SchedulerConfig = struct {
-    allocator: std.mem.Allocator,
-    continuation_workers: usize,
+    allocator: std.mem.Allocator, continuation_workers: usize,
     continuation_queue_capacity: usize = 0,
     compute_kind: task_system.ComputePoolKind = .disabled,
     compute_workers: usize = 0,
@@ -22,8 +21,7 @@ pub const Scheduler = struct {
     pub fn init(self: *Scheduler, cfg: SchedulerConfig) !void {
         self.label = cfg.label;
         try self.inner.init(.{
-            .allocator = cfg.allocator,
-            .continuation_workers = cfg.continuation_workers,
+            .allocator = cfg.allocator, .continuation_workers = cfg.continuation_workers,
             .continuation_queue_capacity = cfg.continuation_queue_capacity,
             .compute_kind = cfg.compute_kind,
             .compute_workers = cfg.compute_workers,

@@ -1,5 +1,7 @@
+const time_util = @import("../util/time.zig");
 // src/zerver/observability/otel.zig
 const std = @import("std");
+const array_list_writer = @import("../util/array_list_writer.zig");
 const telemetry = @import("telemetry.zig");
 const types = @import("../core/types.zig");
 const slog = @import("slog.zig");
@@ -8,8 +10,7 @@ const http = std.http;
 const hex_digits = "0123456789abcdef";
 
 const SpanKind = enum {
-    server,
-    internal,
+    server, internal,
     client,
 };
 
@@ -38,8 +39,8 @@ pub const OtelConfig = struct {
     instrumentation_scope_name: []const u8 = "zerver.telemetry",
     instrumentation_scope_version: []const u8 = "0.1.0",
     /// Minimum queue wait time (ms) before promoting job to a dedicated span
-    promote_queue_threshold_ms: i64 = 5,
     /// Minimum park duration (ms) before promoting job to a dedicated span
+    promote_queue_threshold_ms: i64 = 5,
     promote_park_threshold_ms: i64 = 5,
 };
 
@@ -52,14 +53,12 @@ const SpanStatusCode = enum {
 
 /// Attribute value representation matching OTLP JSON encoding.
 const AttributeValue = union(enum) {
-    string: []const u8,
-    int: i64,
+    string: []const u8, int: i64,
     bool: bool,
 
     fn deinit(self: *AttributeValue, allocator: std.mem.Allocator) void {
         switch (self.*) {
-            .string => |slice| allocator.free(slice),
-            else => {},
+            .string => |slice| allocator.free(slice), else => {},
         }
         self.* = undefined;
     }
@@ -101,8 +100,7 @@ const Attribute = struct {
 
 /// Request span event with owned allocations.
 const RequestEvent = struct {
-    allocator: std.mem.Allocator,
-    name: []const u8,
+    allocator: std.mem.Allocator, name: []const u8,
     time_unix_ns: u64,
     attributes: std.ArrayList(Attribute),
 
@@ -133,8 +131,7 @@ const RequestEvent = struct {
 
 /// Owned copy of error context used for OTLP attributes.
 const ErrorCtxCopy = struct {
-    allocator: std.mem.Allocator,
-    what: []const u8,
+    allocator: std.mem.Allocator, what: []const u8,
     key: []const u8,
 
     fn init(allocator: std.mem.Allocator, ctx: types.ErrorCtx) !ErrorCtxCopy {
@@ -154,8 +151,7 @@ const ErrorCtxCopy = struct {
 
 /// A single parking episode during job execution.
 const ParkEpisode = struct {
-    allocator: std.mem.Allocator,
-    cause: []const u8, // io_wait|rate_limit|backpressure|lock|timer|other
+    allocator: std.mem.Allocator, cause: []const u8, // io_wait|rate_limit|backpressure|lock|timer|other
     token: ?u32,
     park_ts: i64,
     resume_ts: ?i64,
@@ -187,8 +183,7 @@ const ParkEpisode = struct {
 
 /// Job execution state tracking for threshold-based span promotion.
 const JobState = struct {
-    allocator: std.mem.Allocator,
-    job_type: enum { effect, step },
+    allocator: std.mem.Allocator, job_type: enum { effect, step },
     sequence: usize,
     enqueue_ts: i64,
     take_ts: ?i64,
@@ -203,8 +198,7 @@ const JobState = struct {
     queue_depth_end: ?usize,
 
     fn init(
-        allocator: std.mem.Allocator,
-        job_type: @TypeOf(@as(JobState, undefined).job_type),
+        allocator: std.mem.Allocator, job_type: @TypeOf(@as(JobState, undefined).job_type),
         sequence: usize,
         enqueue_ts: i64,
         queue: []const u8,
@@ -239,8 +233,7 @@ const JobState = struct {
 
 /// Computed durations from JobState for threshold-based decisions.
 const JobDurations = struct {
-    queue_wait_ms: i64,
-    dispatch_ms: i64,
+    queue_wait_ms: i64, dispatch_ms: i64,
     park_wait_ms_total: i64,
     run_active_ms: i64,
     total_ms: i64,
@@ -294,16 +287,14 @@ fn computeJobDurations(state: *const JobState) JobDurations {
 
 /// In-flight request bookkeeping until the span is exported.
 const ChildSpan = struct {
-    allocator: std.mem.Allocator,
-    span_id: [8]u8,
+    allocator: std.mem.Allocator, span_id: [8]u8,
     parent_span_id: [8]u8,
     name: []const u8,
     kind: SpanKind,
     start_time_unix_ns: u64,
     end_time_unix_ns: u64,
     attributes: std.ArrayList(Attribute),
-    events: std.ArrayList(RequestEvent),
-    status: SpanStatusCode,
+    events: std.ArrayList(RequestEvent), status: SpanStatusCode,
     status_message: ?[]const u8,
 
     fn create(
@@ -317,8 +308,7 @@ const ChildSpan = struct {
         errdefer allocator.destroy(span);
 
         span.* = .{
-            .allocator = allocator,
-            .span_id = randomSpanId(),
+            .allocator = allocator, .span_id = randomSpanId(),
             .parent_span_id = parent_span_id,
             .name = try allocator.dupe(u8, name),
             .kind = kind,
@@ -377,16 +367,14 @@ const ChildSpan = struct {
 };
 
 const RequestRecord = struct {
-    allocator: std.mem.Allocator,
-    request_id: []const u8,
+    allocator: std.mem.Allocator, request_id: []const u8,
     trace_id: [16]u8,
     span_id: [8]u8,
     span_name: []const u8,
     start_time_unix_ns: u64,
     end_time_unix_ns: u64,
     attributes: std.ArrayList(Attribute),
-    events: std.ArrayList(RequestEvent),
-    status_code: ?u16,
+    events: std.ArrayList(RequestEvent), status_code: ?u16,
     outcome: []const u8,
     response_content_type: []const u8,
     response_body_bytes: usize,
@@ -397,24 +385,20 @@ const RequestRecord = struct {
     child_spans: std.ArrayList(*ChildSpan),
     step_spans: std.AutoHashMap(usize, *ChildSpan),
     effect_spans: std.AutoHashMap(usize, *ChildSpan),
-    step_stack: std.ArrayList(*ChildSpan),
-    job_states: std.AutoHashMap(usize, JobState),
+    step_stack: std.ArrayList(*ChildSpan), job_states: std.AutoHashMap(usize, JobState),
     promote_queue_threshold_ms: i64,
     promote_park_threshold_ms: i64,
 
     fn create(
-        allocator: std.mem.Allocator,
-        event: telemetry.RequestStartEvent,
+        allocator: std.mem.Allocator, event: telemetry.RequestStartEvent,
         promote_queue_threshold_ms: i64,
         promote_park_threshold_ms: i64,
     ) !*RequestRecord {
         var record = try allocator.create(RequestRecord);
         errdefer allocator.destroy(record);
         record.* = .{
-            .allocator = allocator,
-            .request_id = try allocator.dupe(u8, event.request_id),
-            .trace_id = randomTraceId(),
-            .span_id = randomSpanId(),
+            .allocator = allocator, .request_id = try allocator.dupe(u8, event.request_id),
+            .trace_id = randomTraceId(), .span_id = randomSpanId(),
             .span_name = try std.fmt.allocPrint(allocator, "{s} {s}", .{ event.method, event.path }),
             .start_time_unix_ns = event.timestamp_ms * std.time.ns_per_ms,
             .end_time_unix_ns = event.timestamp_ms * std.time.ns_per_ms,
@@ -429,11 +413,8 @@ const RequestRecord = struct {
             .status_message = null,
             .error_ctx = null,
             .child_spans = try std.ArrayList(*ChildSpan).initCapacity(allocator, 4),
-            .step_spans = std.AutoHashMap(usize, *ChildSpan).init(allocator),
-            .effect_spans = std.AutoHashMap(usize, *ChildSpan).init(allocator),
-            .step_stack = try std.ArrayList(*ChildSpan).initCapacity(allocator, 4),
-            .job_states = std.AutoHashMap(usize, JobState).init(allocator),
-            .promote_queue_threshold_ms = promote_queue_threshold_ms,
+            .step_spans = std.AutoHashMap(usize, *ChildSpan).init(allocator), .effect_spans = std.AutoHashMap(usize, *ChildSpan).init(allocator), .step_stack = try std.ArrayList(*ChildSpan).initCapacity(allocator, 4),
+            .job_states = std.AutoHashMap(usize, JobState).init(allocator), .promote_queue_threshold_ms = promote_queue_threshold_ms,
             .promote_park_threshold_ms = promote_park_threshold_ms,
         };
         errdefer {
@@ -717,8 +698,7 @@ const RequestRecord = struct {
         // Create JobState instead of immediately creating a span
         const enqueue_ts = @as(i64, @intCast(event.timestamp_ms));
         var job_state = try JobState.init(
-            self.allocator,
-            .effect,
+            self.allocator, .effect,
             event.effect_sequence,
             enqueue_ts,
             event.queue,
@@ -731,8 +711,7 @@ const RequestRecord = struct {
         const effect_parent = self.effect_spans.get(event.effect_sequence);
         if (effect_parent) |parent_span| {
             var job_event = try self.buildJobStageEvent(
-                "zerver.effect_job_enqueued",
-                event.timestamp_ms,
+                "zerver.effect_job_enqueued", event.timestamp_ms,
                 event.need_sequence,
                 event.effect_sequence,
                 event.queue,
@@ -760,8 +739,7 @@ const RequestRecord = struct {
         const effect_parent = self.effect_spans.get(event.effect_sequence);
         if (effect_parent) |parent_span| {
             var job_event = try self.buildJobStageEvent(
-                "zerver.effect_job_started",
-                event.timestamp_ms,
+                "zerver.effect_job_started", event.timestamp_ms,
                 event.need_sequence,
                 event.effect_sequence,
                 event.queue,
@@ -784,8 +762,7 @@ const RequestRecord = struct {
     fn backfillJobEvents(self: *RequestRecord, span: *ChildSpan, job_state: *const JobState) !void {
         // Event 1: Job enqueued
         var enqueue_event = try RequestEvent.init(
-            self.allocator,
-            if (job_state.job_type == .effect) "zerver.effect_job_enqueued" else "zerver.step_job_enqueued",
+            self.allocator, if (job_state.job_type == .effect) "zerver.effect_job_enqueued" else "zerver.step_job_enqueued",
             @as(u64, @intCast(job_state.enqueue_ts)) * std.time.ns_per_ms,
         );
         errdefer enqueue_event.deinit();
@@ -796,8 +773,7 @@ const RequestRecord = struct {
         // Event 2: Job taken (if timestamp exists)
         if (job_state.take_ts) |take_ts| {
             var taken_event = try RequestEvent.init(
-                self.allocator,
-                if (job_state.job_type == .effect) "zerver.effect_job_taken" else "zerver.step_job_taken",
+                self.allocator, if (job_state.job_type == .effect) "zerver.effect_job_taken" else "zerver.step_job_taken",
                 @as(u64, @intCast(take_ts)) * std.time.ns_per_ms,
             );
             errdefer taken_event.deinit();
@@ -812,8 +788,7 @@ const RequestRecord = struct {
         // Event 3: Job started (if timestamp exists)
         if (job_state.start_ts) |start_ts| {
             var started_event = try RequestEvent.init(
-                self.allocator,
-                if (job_state.job_type == .effect) "zerver.effect_job_started" else "zerver.step_job_started",
+                self.allocator, if (job_state.job_type == .effect) "zerver.effect_job_started" else "zerver.step_job_started",
                 @as(u64, @intCast(start_ts)) * std.time.ns_per_ms,
             );
             errdefer started_event.deinit();
@@ -829,8 +804,7 @@ const RequestRecord = struct {
         for (job_state.park_episodes.items) |episode| {
             // Park event
             var parked_event = try RequestEvent.init(
-                self.allocator,
-                if (job_state.job_type == .effect) "zerver.effect_job_parked" else "zerver.step_job_parked",
+                self.allocator, if (job_state.job_type == .effect) "zerver.effect_job_parked" else "zerver.step_job_parked",
                 @as(u64, @intCast(episode.park_ts)) * std.time.ns_per_ms,
             );
             errdefer parked_event.deinit();
@@ -851,8 +825,7 @@ const RequestRecord = struct {
             // Resume event (if timestamp exists)
             if (episode.resume_ts) |resume_ts| {
                 var resumed_event = try RequestEvent.init(
-                    self.allocator,
-                    if (job_state.job_type == .effect) "zerver.effect_job_resumed" else "zerver.step_job_resumed",
+                    self.allocator, if (job_state.job_type == .effect) "zerver.effect_job_resumed" else "zerver.step_job_resumed",
                     @as(u64, @intCast(resume_ts)) * std.time.ns_per_ms,
                 );
                 errdefer resumed_event.deinit();
@@ -870,8 +843,7 @@ const RequestRecord = struct {
         // Final event: Job completed (if timestamp exists)
         if (job_state.end_ts) |end_ts| {
             var completed_event = try RequestEvent.init(
-                self.allocator,
-                if (job_state.job_type == .effect) "zerver.effect_job_completed" else "zerver.step_job_completed",
+                self.allocator, if (job_state.job_type == .effect) "zerver.effect_job_completed" else "zerver.step_job_completed",
                 @as(u64, @intCast(end_ts)) * std.time.ns_per_ms,
             );
             errdefer completed_event.deinit();
@@ -906,8 +878,7 @@ const RequestRecord = struct {
                 const effect_parent = self.effect_spans.get(event.effect_sequence);
                 if (effect_parent) |parent_span| {
                     const job_span = try ChildSpan.create(
-                        self.allocator,
-                        "zerver.job.effect",
+                        self.allocator, "zerver.job.effect",
                         .internal,
                         parent_span.span_id,
                         @as(u64, @intCast(state.enqueue_ts)) * std.time.ns_per_ms,
@@ -951,8 +922,7 @@ const RequestRecord = struct {
 
                     // Add job span to parent effect span's children
                     try parent_span.pushEvent(try RequestEvent.init(
-                        self.allocator,
-                        "zerver.job_promoted",
+                        self.allocator, "zerver.job_promoted",
                         event.timestamp_ms * std.time.ns_per_ms,
                     ));
 
@@ -973,8 +943,7 @@ const RequestRecord = struct {
         const effect_parent = self.effect_spans.get(event.effect_sequence);
         if (effect_parent) |parent_span| {
             var completion_event = try self.buildJobStageEvent(
-                "zerver.effect_job_completed",
-                event.timestamp_ms,
+                "zerver.effect_job_completed", event.timestamp_ms,
                 event.need_sequence,
                 event.effect_sequence,
                 event.queue,
@@ -996,8 +965,7 @@ const RequestRecord = struct {
         // Create JobState instead of immediately creating a span
         const enqueue_ts = @as(i64, @intCast(event.timestamp_ms));
         var job_state = try JobState.init(
-            self.allocator,
-            .step,
+            self.allocator, .step,
             event.job_ctx,
             enqueue_ts,
             event.queue,
@@ -1008,8 +976,7 @@ const RequestRecord = struct {
 
         // Record event on root request span (no parent step span at this stage)
         var request_event = try self.buildStepJobStageEvent(
-            "zerver.step_job_enqueued",
-            event.timestamp_ms,
+            "zerver.step_job_enqueued", event.timestamp_ms,
             event.need_sequence,
             event.job_ctx,
             event.queue,
@@ -1032,8 +999,7 @@ const RequestRecord = struct {
 
         // Record event on root request span only
         var request_event = try self.buildStepJobStageEvent(
-            "zerver.step_job_started",
-            event.timestamp_ms,
+            "zerver.step_job_started", event.timestamp_ms,
             event.need_sequence,
             event.job_ctx,
             event.queue,
@@ -1062,8 +1028,7 @@ const RequestRecord = struct {
                 // Create job span for promotion
                 // Step jobs are children of root request span since they may not have a parent step span
                 const job_span = try ChildSpan.create(
-                    self.allocator,
-                    "zerver.job.step",
+                    self.allocator, "zerver.job.step",
                     .internal,
                     self.span_id,
                     @as(u64, @intCast(state.enqueue_ts)) * std.time.ns_per_ms,
@@ -1100,8 +1065,7 @@ const RequestRecord = struct {
 
                 // Store a promotion event on root span
                 try self.pushEvent(try RequestEvent.init(
-                    self.allocator,
-                    "zerver.step_job_promoted",
+                    self.allocator, "zerver.step_job_promoted",
                     event.timestamp_ms * std.time.ns_per_ms,
                 ));
 
@@ -1119,8 +1083,7 @@ const RequestRecord = struct {
 
         // Record completion event on root request span
         var request_event = try self.buildStepJobStageEvent(
-            "zerver.step_job_completed",
-            event.timestamp_ms,
+            "zerver.step_job_completed", event.timestamp_ms,
             event.need_sequence,
             event.job_ctx,
             event.queue,
@@ -1154,8 +1117,7 @@ const RequestRecord = struct {
         const effect_parent = self.effect_spans.get(event.effect_sequence);
         if (effect_parent) |parent_span| {
             var job_event = try self.buildJobStageEvent(
-                "zerver.effect_job_taken",
-                event.timestamp_ms,
+                "zerver.effect_job_taken", event.timestamp_ms,
                 event.need_sequence,
                 event.effect_sequence,
                 event.queue,
@@ -1172,8 +1134,7 @@ const RequestRecord = struct {
         // Look up JobState and append ParkEpisode
         if (self.job_states.getPtr(event.effect_sequence)) |job_state| {
             var episode = try ParkEpisode.init(
-                self.allocator,
-                event.cause,
+                self.allocator, event.cause,
                 event.token,
                 @as(i64, @intCast(event.timestamp_ms)),
             );
@@ -1188,8 +1149,7 @@ const RequestRecord = struct {
         const effect_parent = self.effect_spans.get(event.effect_sequence);
         if (effect_parent) |parent_span| {
             var job_event = try self.buildJobStageEvent(
-                "zerver.effect_job_parked",
-                event.timestamp_ms,
+                "zerver.effect_job_parked", event.timestamp_ms,
                 event.need_sequence,
                 event.effect_sequence,
                 event.queue,
@@ -1229,8 +1189,7 @@ const RequestRecord = struct {
         const effect_parent = self.effect_spans.get(event.effect_sequence);
         if (effect_parent) |parent_span| {
             var job_event = try self.buildJobStageEvent(
-                "zerver.effect_job_resumed",
-                event.timestamp_ms,
+                "zerver.effect_job_resumed", event.timestamp_ms,
                 event.need_sequence,
                 event.effect_sequence,
                 event.queue,
@@ -1251,8 +1210,7 @@ const RequestRecord = struct {
 
         // Record event on root request span (no parent step span at this stage)
         var request_event = try self.buildStepJobStageEvent(
-            "zerver.step_job_taken",
-            event.timestamp_ms,
+            "zerver.step_job_taken", event.timestamp_ms,
             event.need_sequence,
             event.job_ctx,
             event.queue,
@@ -1268,8 +1226,7 @@ const RequestRecord = struct {
         // Look up JobState and append ParkEpisode
         if (self.job_states.getPtr(event.job_ctx)) |job_state| {
             var episode = try ParkEpisode.init(
-                self.allocator,
-                event.cause,
+                self.allocator, event.cause,
                 event.token,
                 @as(i64, @intCast(event.timestamp_ms)),
             );
@@ -1282,8 +1239,7 @@ const RequestRecord = struct {
 
         // Record event on root request span
         var request_event = try self.buildStepJobStageEvent(
-            "zerver.step_job_parked",
-            event.timestamp_ms,
+            "zerver.step_job_parked", event.timestamp_ms,
             event.need_sequence,
             event.job_ctx,
             event.queue,
@@ -1321,8 +1277,7 @@ const RequestRecord = struct {
 
         // Record event on root request span
         var request_event = try self.buildStepJobStageEvent(
-            "zerver.step_job_resumed",
-            event.timestamp_ms,
+            "zerver.step_job_resumed", event.timestamp_ms,
             event.need_sequence,
             event.job_ctx,
             event.queue,
@@ -1439,8 +1394,7 @@ const RequestRecord = struct {
     }
 
     fn buildJobStageEvent(
-        self: *RequestRecord,
-        name: []const u8,
+        self: *RequestRecord, name: []const u8,
         timestamp_ms: u64,
         need_sequence: usize,
         effect_sequence: usize,
@@ -1462,8 +1416,7 @@ const RequestRecord = struct {
     }
 
     fn buildStepJobStageEvent(
-        self: *RequestRecord,
-        name: []const u8,
+        self: *RequestRecord, name: []const u8,
         timestamp_ms: u64,
         need_sequence: usize,
         job_ctx: usize,
@@ -1493,13 +1446,12 @@ const RequestRecord = struct {
 pub const OtelExporter = struct {
     allocator: std.mem.Allocator,
     client: http.Client,
+    threaded: std.Io.Threaded,
     endpoint: []const u8,
     scope_name: []const u8,
     scope_version: []const u8,
-    resource_attributes: std.ArrayList(Attribute),
-    headers: std.ArrayList(http.Header),
-    requests: std.StringHashMap(*RequestRecord),
-    mutex: std.Thread.Mutex = .{},
+    resource_attributes: std.ArrayList(Attribute), headers: std.ArrayList(http.Header),
+    requests: std.StringHashMap(*RequestRecord), mutex: std.Thread.Mutex = .{},
     promote_queue_threshold_ms: i64,
     promote_park_threshold_ms: i64,
 
@@ -1513,7 +1465,9 @@ pub const OtelExporter = struct {
 
     fn init(self: *OtelExporter, allocator: std.mem.Allocator, config: OtelConfig) !void {
         self.allocator = allocator;
-        self.client = http.Client{ .allocator = allocator };
+        self.threaded = std.Io.Threaded.init_single_threaded;
+        errdefer self.threaded.deinit();
+        self.client = http.Client{ .allocator = allocator, .io = self.threaded.io() };
         self.endpoint = try allocator.dupe(u8, config.endpoint);
         self.scope_name = try allocator.dupe(u8, config.instrumentation_scope_name);
         self.scope_version = try allocator.dupe(u8, config.instrumentation_scope_version);
@@ -1539,6 +1493,7 @@ pub const OtelExporter = struct {
 
     pub fn deinit(self: *OtelExporter) void {
         self.client.deinit();
+        self.threaded.deinit();
         self.allocator.free(self.endpoint);
         self.allocator.free(self.scope_name);
         self.allocator.free(self.scope_version);
@@ -1624,8 +1579,7 @@ pub const OtelExporter = struct {
                         break :blk null;
                     }
                     var record = try RequestRecord.create(
-                        self.allocator,
-                        start,
+                        self.allocator, start,
                         self.promote_queue_threshold_ms,
                         self.promote_park_threshold_ms,
                     );
@@ -1650,118 +1604,95 @@ pub const OtelExporter = struct {
                     if (self.requests.get(payload.request_id)) |record| {
                         try record.recordStepStart(payload);
                     }
-                },
-                .step_end => |payload| {
+                }, .step_end => |payload| {
                     if (self.requests.get(payload.request_id)) |record| {
                         try record.recordStepEnd(payload);
                     }
-                },
-                .need_scheduled => |payload| {
+                }, .need_scheduled => |payload| {
                     if (self.requests.get(payload.request_id)) |record| {
                         try record.recordNeedScheduled(payload);
                     }
-                },
-                .effect_start => |payload| {
+                }, .effect_start => |payload| {
                     if (self.requests.get(payload.request_id)) |record| {
                         try record.recordEffectStart(payload);
                     }
-                },
-                .effect_end => |payload| {
+                }, .effect_end => |payload| {
                     if (self.requests.get(payload.request_id)) |record| {
                         try record.recordEffectEnd(payload);
                     }
-                },
-                .step_resume => |payload| {
+                }, .step_resume => |payload| {
                     if (self.requests.get(payload.request_id)) |record| {
                         try record.recordStepResume(payload);
                     }
-                },
-                .executor_crash => |payload| {
+                }, .executor_crash => |payload| {
                     if (self.requests.get(payload.request_id)) |record| {
                         try record.recordExecutorCrash(payload);
                     }
-                },
-                .effect_job_enqueued => |payload| {
+                }, .effect_job_enqueued => |payload| {
                     if (self.requests.get(payload.request_id)) |record| {
                         try record.recordEffectJobEnqueued(payload);
                     }
-                },
-                .effect_job_started => |payload| {
+                }, .effect_job_started => |payload| {
                     if (self.requests.get(payload.request_id)) |record| {
                         try record.recordEffectJobStarted(payload);
                     }
-                },
-                .effect_job_completed => |payload| {
+                }, .effect_job_completed => |payload| {
                     if (self.requests.get(payload.request_id)) |record| {
                         try record.recordEffectJobCompleted(payload);
                     }
-                },
-                .step_job_enqueued => |payload| {
+                }, .step_job_enqueued => |payload| {
                     if (self.requests.get(payload.request_id)) |record| {
                         try record.recordStepJobEnqueued(payload);
                     }
-                },
-                .step_job_started => |payload| {
+                }, .step_job_started => |payload| {
                     if (self.requests.get(payload.request_id)) |record| {
                         try record.recordStepJobStarted(payload);
                     }
-                },
-                .step_job_completed => |payload| {
+                }, .step_job_completed => |payload| {
                     if (self.requests.get(payload.request_id)) |record| {
                         try record.recordStepJobCompleted(payload);
                     }
-                },
-                .step_wait => |payload| {
+                }, .step_wait => |payload| {
                     if (self.requests.get(payload.request_id)) |record| {
                         try record.recordStepWait(payload);
                     }
-                },
-                .effect_job_taken => |payload| {
+                }, .effect_job_taken => |payload| {
                     if (self.requests.get(payload.request_id)) |record| {
                         try record.recordEffectJobTaken(payload);
                     }
-                },
-                .effect_job_parked => |payload| {
+                }, .effect_job_parked => |payload| {
                     if (self.requests.get(payload.request_id)) |record| {
                         try record.recordEffectJobParked(payload);
                     }
-                },
-                .effect_job_resumed => |payload| {
+                }, .effect_job_resumed => |payload| {
                     if (self.requests.get(payload.request_id)) |record| {
                         try record.recordEffectJobResumed(payload);
                     }
-                },
-                .step_job_taken => |payload| {
+                }, .step_job_taken => |payload| {
                     if (self.requests.get(payload.request_id)) |record| {
                         try record.recordStepJobTaken(payload);
                     }
-                },
-                .step_job_parked => |payload| {
+                }, .step_job_parked => |payload| {
                     if (self.requests.get(payload.request_id)) |record| {
                         try record.recordStepJobParked(payload);
                     }
-                },
-                .step_job_resumed => |payload| {
+                }, .step_job_resumed => |payload| {
                     if (self.requests.get(payload.request_id)) |record| {
                         try record.recordStepJobResumed(payload);
                     }
-                },
-                .compute_budget_registered => |payload| {
+                }, .compute_budget_registered => |payload| {
                     if (self.requests.get(payload.request_id)) |record| {
                         try record.recordComputeBudgetRegistered(payload);
                     }
-                },
-                .compute_budget_exceeded => |payload| {
+                }, .compute_budget_exceeded => |payload| {
                     if (self.requests.get(payload.request_id)) |record| {
                         try record.recordComputeBudgetExceeded(payload);
                     }
-                },
-                .compute_budget_yield => |payload| {
+                }, .compute_budget_yield => |payload| {
                     if (self.requests.get(payload.request_id)) |record| {
                         try record.recordComputeBudgetYield(payload);
                     }
-                },
-            }
+                }, }
 
             if (to_export) |record| {
                 break :blk ExportContext{ .record = record, .end_event = end_event };
@@ -1814,17 +1745,15 @@ pub const OtelExporter = struct {
         var attempt: u8 = 0;
         while (attempt < max_attempts) : (attempt += 1) {
             response_body.clearRetainingCapacity();
-            var list_writer = response_body.writer(alloc);
-            var bridge_buffer: [128]u8 = undefined;
-            var writer_adapter = list_writer.adaptToNewApi(bridge_buffer[0..]);
+            var writer_helper = array_list_writer.ArrayListWriter.init(&response_body, alloc);
+            const response_writer = writer_helper.writer();
 
             const fetch_result = self.client.fetch(.{
-                .location = .{ .uri = uri },
-                .method = .POST,
+                .location = .{ .uri = uri }, .method = .POST,
                 .payload = payload,
                 .extra_headers = self.headers.items,
                 .keep_alive = true,
-                .response_writer = &writer_adapter.new_interface,
+                .response_writer = response_writer,
             }) catch |err| {
                 slog.warn("otel_export_transport_error", &.{
                     slog.Attr.string("error", @errorName(err)),
@@ -1833,25 +1762,9 @@ pub const OtelExporter = struct {
                 });
 
                 if (attempt + 1 == max_attempts) return;
-                std.Thread.sleep(backoffForAttempt(attempt));
+                time_util.sleep(backoffForAttempt(attempt));
                 continue;
             };
-
-            writer_adapter.new_interface.flush() catch |flush_err| {
-                slog.warn("otel_export_response_flush_failed", &.{
-                    slog.Attr.string("error", @errorName(flush_err)),
-                    slog.Attr.string("request_id", record.request_id),
-                    slog.Attr.uint("attempt", attempt + 1),
-                });
-            };
-
-            if (writer_adapter.err) |write_err| {
-                slog.warn("otel_export_response_write_failed", &.{
-                    slog.Attr.string("error", @errorName(write_err)),
-                    slog.Attr.string("request_id", record.request_id),
-                    slog.Attr.uint("attempt", attempt + 1),
-                });
-            }
 
             const status = fetch_result.status;
             if (status.class() == .success or status == .accepted) {
@@ -1875,7 +1788,7 @@ pub const OtelExporter = struct {
                 return;
             }
 
-            std.Thread.sleep(backoffForAttempt(attempt));
+            time_util.sleep(backoffForAttempt(attempt));
         }
     }
 
@@ -1888,8 +1801,7 @@ pub const OtelExporter = struct {
         const base_ms: u64 = 100;
         const capped: u8 = if (attempt < 4) attempt else 4;
         const factor: u64 = switch (capped) {
-            0 => 1,
-            1 => 2,
+            0 => 1, 1 => 2,
             2 => 4,
             3 => 8,
             else => 16,
@@ -1901,27 +1813,27 @@ pub const OtelExporter = struct {
 fn buildPayload(allocator: std.mem.Allocator, exporter: *const OtelExporter, record: *const RequestRecord) ![]u8 {
     var buffer = try std.ArrayList(u8).initCapacity(allocator, 0);
     errdefer buffer.deinit(allocator);
-    var writer = buffer.writer(allocator);
+    var writer_helper = array_list_writer.ArrayListWriter.init(&buffer, allocator);
+    const writer = writer_helper.writer();
 
-    try writer.writeAll("{\"resourceSpans\":[{");
+    try writer.*.writeAll("{\"resourceSpans\":[{");
 
     // Resource attributes
-    try writer.writeAll("\"resource\":{\"attributes\":");
-    try writeAttributes(&writer, exporter.resource_attributes.items);
-    try writer.writeByte('}');
+        try writer.*.writeAll("\"resource\":{\"attributes\":");
+        try writeAttributes(&writer, exporter.resource_attributes.items);
+        try writer.*.writeByte('}');
 
-    try writer.writeAll(",\"scopeSpans\":[{");
-    try writer.writeAll("\"scope\":{\"name\":");
+    try writer.*.writeAll(", \"scopeSpans\":[{");
+    try writer.*.writeAll("\"scope\":{\"name\":");
     try writeJsonString(&writer, exporter.scope_name);
-    try writer.writeAll(",\"version\":");
+    try writer.*.writeAll(", \"version\":");
     try writeJsonString(&writer, exporter.scope_version);
-    try writer.writeByte('}');
+    try writer.*.writeByte('}');
 
-    try writer.writeAll(",\"spans\":[");
+    try writer.*.writeAll(", \"spans\":[");
     var first_span = true;
     try writeSpanEntry(
-        &writer,
-        record.trace_id,
+        &writer, record.trace_id,
         record.span_id,
         null,
         .server,
@@ -1936,10 +1848,9 @@ fn buildPayload(allocator: std.mem.Allocator, exporter: *const OtelExporter, rec
     first_span = false;
 
     for (record.child_spans.items) |span| {
-        if (!first_span) try writer.writeByte(',');
+        if (!first_span) try writer.*.writeAll(", ");
         try writeSpanEntry(
-            &writer,
-            record.trace_id,
+            &writer, record.trace_id,
             span.span_id,
             span.parent_span_id,
             span.kind,
@@ -1954,18 +1865,17 @@ fn buildPayload(allocator: std.mem.Allocator, exporter: *const OtelExporter, rec
         first_span = false;
     }
 
-    try writer.writeByte(']'); // close spans array
-    try writer.writeByte('}'); // close scopeSpan object
-    try writer.writeByte(']'); // close scopeSpans array
-    try writer.writeByte('}'); // close resourceSpan object
-    try writer.writeByte(']'); // close resourceSpans array
-    try writer.writeByte('}'); // close top-level object
+    try writer.*.writeByte(']'); // close spans array
+    try writer.*.writeByte('}'); // close scopeSpan object
+    try writer.*.writeByte(']'); // close scopeSpans array
+    try writer.*.writeByte('}'); // close resourceSpan object
+    try writer.*.writeByte(']'); // close resourceSpans array
+    try writer.*.writeByte('}'); // close top-level object
     return buffer.toOwnedSlice(allocator);
 }
 
 fn writeSpanEntry(
-    writer: anytype,
-    trace_id: [16]u8,
+    writer: anytype, trace_id: [16]u8,
     span_id: [8]u8,
     parent_span_id: ?[8]u8,
     kind: SpanKind,
@@ -1977,120 +1887,113 @@ fn writeSpanEntry(
     status: SpanStatusCode,
     status_message: ?[]const u8,
 ) !void {
-    try writer.writeByte('{');
-    try writer.writeAll("\"traceId\":");
+    try writer.*.writeByte('{');
+    try writer.*.writeAll("\"traceId\":");
     try writeHexQuoted(writer, trace_id[0..]);
-    try writer.writeAll(",\"spanId\":");
+    try writer.*.writeAll(", \"spanId\":");
     try writeHexQuoted(writer, span_id[0..]);
-    try writer.writeAll(",\"parentSpanId\":");
+    try writer.*.writeAll(", \"parentSpanId\":");
     if (parent_span_id) |pid| {
         try writeHexQuoted(writer, pid[0..]);
     } else {
-        try writer.writeAll("\"\"");
+        try writer.*.writeAll("\"\"");
     }
-    try writer.writeAll(",\"name\":");
+    try writer.*.writeAll(", \"name\":");
     try writeJsonString(writer, name);
-    try writer.writeAll(",\"kind\":");
-    try writer.print("\"{s}\"", .{spanKindString(kind)});
-    try writer.writeAll(",\"startTimeUnixNano\":");
-    try writer.print("\"{d}\"", .{start_time_unix_ns});
-    try writer.writeAll(",\"endTimeUnixNano\":");
-    try writer.print("\"{d}\"", .{end_time_unix_ns});
+    try writer.*.writeAll(", \"kind\":");
+    try writer.*.print("\"{s}\"", .{spanKindString(kind)});
+    try writer.*.writeAll(", \"startTimeUnixNano\":");
+    try writer.*.print("\"{d}\"", .{start_time_unix_ns});
+    try writer.*.writeAll(", \"endTimeUnixNano\":");
+    try writer.*.print("\"{d}\"", .{end_time_unix_ns});
 
-    try writer.writeAll(",\"attributes\":");
+    try writer.*.writeAll(", \"attributes\":");
     try writeAttributes(writer, attributes);
 
-    try writer.writeAll(",\"events\":");
+    try writer.*.writeAll(", \"events\":");
     try writeEvents(writer, events);
 
-    try writer.writeAll(",\"status\":{\"code\":");
-    try writer.print("\"{s}\"", .{spanStatusCodeString(status)});
+    try writer.*.writeAll(", \"status\":{\"code\":");
+    try writer.*.print("\"{s}\"", .{spanStatusCodeString(status)});
     if (status_message) |msg| {
-        try writer.writeAll(",\"message\":");
+        try writer.*.writeAll(", \"message\":");
         try writeJsonString(writer, msg);
     }
-    try writer.writeByte('}');
+    try writer.*.writeByte('}');
 
-    try writer.writeByte('}');
+    try writer.*.writeByte('}');
 }
 
 fn writeAttributes(writer: anytype, attrs: []const Attribute) !void {
-    try writer.writeByte('[');
+    try writer.*.writeByte('[');
     for (attrs, 0..) |attr, idx| {
-        if (idx != 0) try writer.writeByte(',');
-        try writer.writeByte('{');
-        try writer.writeAll("\"key\":");
+        if (idx != 0) try writer.*.writeAll(", ");
+        try writer.*.writeByte('{');
+        try writer.*.writeAll("\"key\":");
         try writeJsonString(writer, attr.key);
-        try writer.writeAll(",\"value\":{");
+        try writer.*.writeAll(", \"value\":{");
         switch (attr.value) {
             .string => |value| {
-                try writer.writeAll("\"stringValue\":");
+                try writer.*.writeAll("\"stringValue\":");
                 try writeJsonString(writer, value);
             },
             .int => |value| {
-                try writer.writeAll("\"intValue\":");
-                try writer.print("\"{d}\"", .{value});
+                try writer.*.writeAll("\"intValue\":");
+                try writer.*.print("\"{d}\"", .{value});
             },
             .bool => |value| {
-                try writer.writeAll("\"boolValue\":");
-                try writer.writeAll(if (value) "true" else "false");
-            },
-        }
-        try writer.writeByte('}');
-        try writer.writeByte('}');
+                try writer.*.writeAll("\"boolValue\":");
+                try writer.*.writeAll(if (value) "true" else "false");
+            }, }
+        try writer.*.writeByte('}');
+        try writer.*.writeByte('}');
     }
-    try writer.writeByte(']');
+    try writer.*.writeByte(']');
 }
 
 fn writeEvents(writer: anytype, events: []const RequestEvent) !void {
-    try writer.writeByte('[');
+    try writer.*.writeByte('[');
     for (events, 0..) |event, idx| {
-        if (idx != 0) try writer.writeByte(',');
-        try writer.writeByte('{');
-        try writer.writeAll("\"name\":");
+        if (idx != 0) try writer.*.writeAll(", ");
+        try writer.*.writeByte('{');
+        try writer.*.writeAll("\"name\":");
         try writeJsonString(writer, event.name);
-        try writer.writeAll(",\"timeUnixNano\":");
-        try writer.print("\"{d}\"", .{event.time_unix_ns});
-        try writer.writeAll(",\"attributes\":");
+        try writer.*.writeAll(", \"timeUnixNano\":");
+        try writer.*.print("\"{d}\"", .{event.time_unix_ns});
+        try writer.*.writeAll(", \"attributes\":");
         try writeAttributes(writer, event.attributes.items);
-        try writer.writeByte('}');
+        try writer.*.writeByte('}');
     }
-    try writer.writeByte(']');
+    try writer.*.writeByte(']');
 }
 
 fn writeJsonString(writer: anytype, value: []const u8) !void {
-    try writer.writeByte('"');
+    try writer.*.writeByte('"');
     for (value) |c| {
         switch (c) {
-            '"' => try writer.writeAll("\\\""),
-            '\\' => try writer.writeAll("\\\\"),
-            '\n' => try writer.writeAll("\\n"),
-            '\r' => try writer.writeAll("\\r"),
-            '\t' => try writer.writeAll("\\t"),
-            else => {
+            '"' => try writer.*.writeAll("\\\""), '\\' => try writer.*.writeAll("\\\\"),
+            '\n' => try writer.*.writeAll("\\n"), '\r' => try writer.*.writeAll("\\r"),
+            '\t' => try writer.*.writeAll("\\t"), else => {
                 if (c < 0x20) {
-                    try writer.print("\\u{x:0>4}", .{@as(u16, c)});
+                    try writer.*.print("\\u{x:0>4}", .{@as(u16, c)});
                 } else {
-                    try writer.writeByte(c);
+                    try writer.*.writeByte(c);
                 }
-            },
-        }
+            }, }
     }
-    try writer.writeByte('"');
+    try writer.*.writeByte('"');
 }
 
 fn spanStatusCodeString(code: SpanStatusCode) []const u8 {
     return switch (code) {
-        .unset => "STATUS_CODE_UNSET",
-        .ok => "STATUS_CODE_OK",
+        .unset => "STATUS_CODE_UNSET", .ok => "STATUS_CODE_OK",
         .@"error" => "STATUS_CODE_ERROR",
     };
 }
 
 fn spanKindString(kind: SpanKind) []const u8 {
     return switch (kind) {
-        .server => "SPAN_KIND_SERVER",
-        .internal => "SPAN_KIND_INTERNAL",
+        .server => "SPAN_KIND_SERVER", .internal => "SPAN_KIND_INTERNAL",
         .client => "SPAN_KIND_CLIENT",
     };
 }
@@ -2108,22 +2011,22 @@ fn randomSpanId() [8]u8 {
 }
 
 fn nowUnixNano() u64 {
-    const ms = std.time.milliTimestamp();
+    const ms = time_util.milliTimestamp();
     return @as(u64, @intCast(ms)) * std.time.ns_per_ms;
 }
 
 fn writeHexQuoted(writer: anytype, bytes: []const u8) !void {
-    try writer.writeByte('"');
+    try writer.*.writeByte('"');
     for (bytes) |byte| {
         const hi = hex_digits[@as(usize, byte >> 4)];
         const lo = hex_digits[@as(usize, byte & 0x0f)];
-        try writer.writeByte(hi);
-        try writer.writeByte(lo);
+        try writer.*.writeByte(hi);
+        try writer.*.writeByte(lo);
     }
-    try writer.writeByte('"');
+    try writer.*.writeByte('"');
 }
 
-/// Parse a comma-separated list of headers like "key=value,foo=bar".
+/// Parse a comma-separated list of headers like "key=value, foo=bar".
 pub fn parseHeaderList(allocator: std.mem.Allocator, raw: []const u8) ![]Header {
     var list = std.ArrayListUnmanaged(Header){};
     var cleanup = true;

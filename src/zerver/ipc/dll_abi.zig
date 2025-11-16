@@ -16,8 +16,7 @@ const std = @import("std");
 // ============================================================================
 
 pub const Method = enum(c_int) {
-    GET = 0,
-    POST = 1,
+    GET = 0, POST = 1,
     PUT = 2,
     PATCH = 3,
     DELETE = 4,
@@ -55,14 +54,12 @@ pub const HandlerFn = *const fn (
 
 /// Set HTTP status code
 pub const SetStatusFn = *const fn (
-    response: *ResponseBuilder,
-    status: c_int,
+    response: *ResponseBuilder, status: c_int,
 ) callconv(.c) void;
 
 /// Set response header
 pub const SetHeaderFn = *const fn (
-    response: *ResponseBuilder,
-    name_ptr: [*c]const u8,
+    response: *ResponseBuilder, name_ptr: [*c]const u8,
     name_len: usize,
     value_ptr: [*c]const u8,
     value_len: usize,
@@ -70,8 +67,7 @@ pub const SetHeaderFn = *const fn (
 
 /// Set response body
 pub const SetBodyFn = *const fn (
-    response: *ResponseBuilder,
-    body_ptr: [*c]const u8,
+    response: *ResponseBuilder, body_ptr: [*c]const u8,
     body_len: usize,
 ) callconv(.c) c_int;
 
@@ -81,8 +77,7 @@ pub const SetBodyFn = *const fn (
 
 /// Register a route with a C-compatible handler
 pub const AddRouteFn = *const fn (
-    router: *anyopaque,
-    method: c_int,
+    router: *anyopaque, method: c_int,
     path_ptr: [*c]const u8,
     path_len: usize,
     handler: HandlerFn,
@@ -96,9 +91,8 @@ pub const AddRouteFn = *const fn (
 /// Uses extern struct for stable C ABI
 pub const ServerAdapter = extern struct {
     /// Opaque pointer to atomic router
-    router: *anyopaque,
-
     /// Opaque pointer to runtime resources
+    router: *anyopaque,
     runtime_resources: *anyopaque,
 
     /// Function to register routes

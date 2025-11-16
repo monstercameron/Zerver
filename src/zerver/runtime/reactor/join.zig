@@ -6,8 +6,7 @@ pub const Mode = types.Mode;
 pub const Join = types.Join;
 
 pub const Status = enum {
-    success,
-    failure,
+    success, failure,
 };
 
 pub const Resolution = union(enum) {
@@ -39,8 +38,7 @@ pub const JoinState = struct {
         std.debug.assert(total_effects > 0);
         std.debug.assert(required_effects <= total_effects);
         return .{
-            .config = config,
-            .outstanding = total_effects,
+            .config = config, .outstanding = total_effects,
             .required_remaining = required_effects,
             .success_seen = false,
             .required_failure = false,
@@ -69,8 +67,7 @@ pub const JoinState = struct {
                 self.resumed = true;
                 const status: Status = if (completion.success) .success else .failure;
                 return .{ .Resume = .{ .status = status } };
-            },
-            .first_success => {
+            }, .first_success => {
                 if (completion.success) {
                     self.resumed = true;
                     return .{ .Resume = .{ .status = .success } };
@@ -83,8 +80,7 @@ pub const JoinState = struct {
                     self.resumed = true;
                     return .{ .Resume = .{ .status = .failure } };
                 }
-            },
-            .all => {
+            }, .all => {
                 if (self.required_failure) {
                     self.resumed = true;
                     return .{ .Resume = .{ .status = .failure } };
@@ -93,8 +89,7 @@ pub const JoinState = struct {
                     self.resumed = true;
                     return .{ .Resume = .{ .status = .success } };
                 }
-            },
-            .all_required => {
+            }, .all_required => {
                 if (self.required_failure) {
                     self.resumed = true;
                     return .{ .Resume = .{ .status = .failure } };
@@ -103,8 +98,7 @@ pub const JoinState = struct {
                     self.resumed = true;
                     return .{ .Resume = .{ .status = .success } };
                 }
-            },
-        }
+            }, }
 
         return .Pending;
     }

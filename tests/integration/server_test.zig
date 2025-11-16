@@ -29,8 +29,7 @@ pub fn main() !void {
         fn render(ctx: *root.CtxBase) anyerror!root.Decision {
             _ = ctx;
             return root.done(.{
-                .status = 500,
-                .body = "Internal Server Error",
+                .status = 500, .body = "Internal Server Error",
             });
         }
     }.render;

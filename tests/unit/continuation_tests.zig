@@ -22,8 +22,7 @@ pub const TestSlot = enum {
 
 pub fn TestSlotType(comptime s: TestSlot) type {
     return switch (s) {
-        .State => u32,
-        .UserId => []const u8,
+        .State => u32, .UserId => []const u8,
         .ResultData => []const u8,
     };
 }
@@ -55,16 +54,14 @@ pub fn test_basic_continuation() !void {
 
             // Step 2: Call continuation
             decision = try need.continuation(&ctx);
-        },
-        else => @panic("Expected Need decision"),
+        }, else => @panic("Expected Need decision"),
     }
 
     // Verify: continuation returned Done
     switch (decision) {
         .Done => |response| {
             std.debug.assert(response.status == 200);
-        },
-        else => @panic("Expected Done decision"),
+        }, else => @panic("Expected Done decision"),
     }
 
     slog.infof("✓ Test basic continuation passed\n", .{});
@@ -73,8 +70,7 @@ pub fn test_basic_continuation() !void {
 fn step_request_effect() !zerver.Decision {
     return .{ .Need = .{
         .effects = &.{zerver.Effect{ .db_get = .{
-            .key = "test:123",
-            .token = 2,
+            .key = "test:123", .token = 2,
             .required = true,
         } }},
         .mode = .Sequential,
@@ -93,8 +89,7 @@ fn continuation_handle_result(ctx: *anyopaque) !zerver.Decision {
     _ = result;
 
     return zerver.done(zerver.Response{
-        .status = 200,
-        .body = "success",
+        .status = 200, .body = "success",
     });
 }
 
@@ -120,8 +115,7 @@ pub fn test_sequential_continuations() !void {
             // Simulate effect 1 completion
             try ctx._put(1, "user_123"); // UserId
             decision = try need.continuation(&ctx);
-        },
-        else => @panic("Expected Need in first step"),
+        }, else => @panic("Expected Need in first step"),
     }
 
     // State 2: Should request second effect
@@ -131,16 +125,14 @@ pub fn test_sequential_continuations() !void {
             // Simulate effect 2 completion
             try ctx._put(2, "processed"); // ResultData
             decision = try need.continuation(&ctx);
-        },
-        else => @panic("Expected Need in second step"),
+        }, else => @panic("Expected Need in second step"),
     }
 
     // State 3: Should be done
     switch (decision) {
         .Done => |response| {
             std.debug.assert(response.status == 200);
-        },
-        else => @panic("Expected Done"),
+        }, else => @panic("Expected Done"),
     }
 
     std.debug.assert(effects_executed == 2);
@@ -150,8 +142,7 @@ pub fn test_sequential_continuations() !void {
 fn step_first_effect() !zerver.Decision {
     return .{ .Need = .{
         .effects = &.{zerver.Effect{ .db_get = .{
-            .key = "users:123",
-            .token = 1,
+            .key = "users:123", .token = 1,
             .required = true,
         } }},
         .mode = .Sequential,
@@ -176,15 +167,13 @@ fn continuation_after_load_user(ctx: *anyopaque) !zerver.Decision {
         } }},
         .mode = .Sequential,
         .join = .all,
-        .continuation = @ptrCast(&continuation_after_process),
-    } };
+        .continuation = @ptrCast(&continuation_after_process), } };
 }
 
 fn continuation_after_process(ctx: *anyopaque) !zerver.Decision {
     _ = ctx;
     return zerver.done(zerver.Response{
-        .status = 200,
-        .body = "sequential success",
+        .status = 200, .body = "sequential success",
     });
 }
 
@@ -212,16 +201,14 @@ pub fn test_continuation_context_preservation() !void {
             // Simulate effect
             try ctx._put(2, "effect_result");
             decision = try need.continuation(&ctx);
-        },
-        else => @panic("Expected Need"),
+        }, else => @panic("Expected Need"),
     }
 
     // Verify continuation accessed original context
     switch (decision) {
         .Done => |response| {
             std.debug.assert(response.status == 200);
-        },
-        else => @panic("Expected Done"),
+        }, else => @panic("Expected Done"),
     }
 
     slog.infof("✓ Test continuation context preservation passed\n", .{});
@@ -230,8 +217,7 @@ pub fn test_continuation_context_preservation() !void {
 fn step_preserve_context() !zerver.Decision {
     return .{ .Need = .{
         .effects = &.{zerver.Effect{ .db_get = .{
-            .key = "test",
-            .token = 2,
+            .key = "test", .token = 2,
             .required = true,
         } }},
         .mode = .Sequential,
@@ -252,8 +238,7 @@ fn continuation_verify_preserved(ctx: *anyopaque) !zerver.Decision {
     }
 
     return zerver.done(zerver.Response{
-        .status = 200,
-        .body = "context preserved",
+        .status = 200, .body = "context preserved",
     });
 }
 
@@ -277,16 +262,14 @@ pub fn test_continuation_error_handling() !void {
             // Simulate missing result (effect failure)
             // Don't store ResultData - simulate required effect failure
             decision = try need.continuation(&ctx);
-        },
-        else => @panic("Expected Need"),
+        }, else => @panic("Expected Need"),
     }
 
     // Continuation should detect missing result and return Fail
     switch (decision) {
         .Fail => |err| {
             std.debug.assert(err.kind == 404);
-        },
-        else => @panic("Expected Fail"),
+        }, else => @panic("Expected Fail"),
     }
 
     slog.infof("✓ Test continuation error handling passed\n", .{});
@@ -295,8 +278,7 @@ pub fn test_continuation_error_handling() !void {
 fn step_check_error() !zerver.Decision {
     return .{ .Need = .{
         .effects = &.{zerver.Effect{ .db_get = .{
-            .key = "missing",
-            .token = 2,
+            .key = "missing", .token = 2,
             .required = true,
         } }},
         .mode = .Sequential,
@@ -315,8 +297,7 @@ fn continuation_check_missing(ctx: *anyopaque) !zerver.Decision {
     }
 
     return zerver.done(zerver.Response{
-        .status = 200,
-        .body = "found",
+        .status = 200, .body = "found",
     });
 }
 

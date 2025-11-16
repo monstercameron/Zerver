@@ -1,12 +1,14 @@
 // tests/html_renderer_tests.zig
 const std = @import("std");
 const html = @import("html.zig");
+const array_list_writer = @import("src/zerver/util/array_list_writer.zig");
 
 fn renderToString(node: anytype, allocator: std.mem.Allocator) ![]u8 {
-    var buffer = std.ArrayListUnmanaged(u8){};
+    var buffer = try std.ArrayList(u8).initCapacity(allocator, 256);
     defer buffer.deinit(allocator);
 
-    const writer = buffer.writer(allocator);
+    var writer_helper = array_list_writer.ArrayListWriter.init(&buffer, allocator);
+    const writer = writer_helper.writer();
     try node.render(writer);
 
     return try buffer.toOwnedSlice(allocator);
@@ -26,8 +28,7 @@ test "html renderer: basic nesting produces expected markup" {
     defer allocator.free(rendered);
 
     try std.testing.expectEqualStrings(
-        "<div class=\"container\"><h1>Hello Zig!</h1><p>Rendered at comptime.</p></div>",
-        rendered,
+        "<div class=\"container\"><h1>Hello Zig!</h1><p>Rendered at comptime.</p></div>", rendered,
     );
 }
 
@@ -37,8 +38,7 @@ test "html renderer: attributes handle strings, numbers, and booleans" {
     const allocator = gpa.allocator();
 
     const tree = html.input(.{
-        .type = "checkbox"[0..],
-        .checked = true,
+        .type = "checkbox"[0..], .checked = true,
         .value = 42,
     }, .{});
 
@@ -46,8 +46,7 @@ test "html renderer: attributes handle strings, numbers, and booleans" {
     defer allocator.free(rendered);
 
     try std.testing.expectEqualStrings(
-        "<input type=\"checkbox\" checked value=\"42\">",
-        rendered,
+        "<input type=\"checkbox\" checked value=\"42\">", rendered,
     );
 }
 
@@ -72,8 +71,7 @@ test "html renderer: generated tag helpers cover diverse elements" {
     defer allocator.free(rendered);
 
     try std.testing.expectEqualStrings(
-        "<section><article><h2>Example</h2><img src=\"/logo.png\" alt=\"logo\"><br><ul><li>First</li><li>Second</li></ul></article></section>",
-        rendered,
+        "<section><article><h2>Example</h2><img src=\"/logo.png\" alt=\"logo\"><br><ul><li>First</li><li>Second</li></ul></article></section>", rendered,
     );
 }
 
@@ -93,8 +91,7 @@ test "html renderer: runtime text escapes special characters" {
     defer allocator.free(rendered);
 
     try std.testing.expectEqualStrings(
-        "<span>&lt;price&gt; &quot;low&quot; &amp; &#39;fair&#39;</span>",
-        rendered,
+        "<span>&lt;price&gt; &quot;low&quot; &amp; &#39;fair&#39;</span>", rendered,
     );
 }
 
@@ -107,8 +104,7 @@ test "html renderer: attributes escape special characters" {
     defer allocator.free(href_value);
 
     const tree = html.a(.{
-        .href = href_value,
-        .title = "5 > 3 & 2"[0..],
+        .href = href_value, .title = "5 > 3 & 2"[0..],
     }, .{
         html.text("Example"){},
     });
@@ -117,7 +113,6 @@ test "html renderer: attributes escape special characters" {
     defer allocator.free(rendered);
 
     try std.testing.expectEqualStrings(
-        "<a href=\"https://example.com/?q=&quot;zig&quot;&amp;unsafe&lt;&#39;\" title=\"5 &gt; 3 &amp; 2\">Example</a>",
-        rendered,
+        "<a href=\"https://example.com/?q=&quot;zig&quot;&amp;unsafe&lt;&#39;\" title=\"5 &gt; 3 &amp; 2\">Example</a>", rendered,
     );
 }

@@ -3,6 +3,7 @@
 const std = @import("std");
 const zerver = @import("zerver");
 const slog = @import("src/zerver/observability/slog.zig");
+const array_list_writer = @import("src/zerver/util/array_list_writer.zig");
 
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
@@ -33,8 +34,7 @@ pub fn main() !void {
 
     // Test matches
     const test_cases = [_]struct {
-        method: zerver.Method,
-        path: []const u8,
+        method: zerver.Method, path: []const u8,
         should_match: bool,
     }{
         .{ .method = .GET, .path = "/todos", .should_match = true },
@@ -51,7 +51,8 @@ pub fn main() !void {
                 var line = std.ArrayList(u8).init(std.heap.page_allocator);
                 defer line.deinit();
 
-                var writer = line.writer(std.heap.page_allocator);
+                var writer_helper = array_list_writer.ArrayListWriter.init(&line, std.heap.page_allocator);
+                const writer = writer_helper.writer();
                 try writer.print("✓ {s} {s}", .{ @tagName(tc.method), tc.path });
 
                 var iter = m.params.iterator();

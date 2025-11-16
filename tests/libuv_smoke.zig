@@ -7,8 +7,7 @@ const c = @cImport({
 });
 
 const LibuvError = error{
-    LoopInitFailed,
-    LoopCloseFailed,
+    LoopInitFailed, LoopCloseFailed,
     TimerInitFailed,
     TimerStartFailed,
     TimerDidNotFire,

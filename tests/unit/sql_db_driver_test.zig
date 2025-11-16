@@ -36,12 +36,10 @@ test "sqlite driver integrates with db connection" {
         try std.testing.expectEqual(@as(usize, 2), values.len);
         switch (values[0]) {
             .integer => |v| try std.testing.expectEqual(@as(i64, 1), v),
-            else => try std.testing.expect(false),
-        }
+            else => try std.testing.expect(false), }
         switch (values[1]) {
             .text => |t| try std.testing.expectEqualStrings("alpha", t),
-            else => try std.testing.expect(false),
-        }
+            else => try std.testing.expect(false), }
     } else {
         try std.testing.expect(false);
     }
@@ -50,12 +48,10 @@ test "sqlite driver integrates with db connection" {
         defer db.deinitRow(allocator, values);
         switch (values[0]) {
             .integer => |v| try std.testing.expectEqual(@as(i64, 2), v),
-            else => try std.testing.expect(false),
-        }
+            else => try std.testing.expect(false), }
         switch (values[1]) {
             .text => |t| try std.testing.expectEqualStrings("beta", t),
-            else => try std.testing.expect(false),
-        }
+            else => try std.testing.expect(false), }
     } else {
         try std.testing.expect(false);
     }

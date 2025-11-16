@@ -2,12 +2,12 @@
 const std = @import("std");
 
 const c = @cImport({
+    @cDefine("_MATH_H", "1");
     @cInclude("uv.h");
 });
 
 pub const Error = error{
-    LoopInitFailed,
-    LoopCloseFailed,
+    LoopInitFailed, LoopCloseFailed,
     AsyncInitFailed,
     AsyncSendFailed,
     TimerInitFailed,
@@ -66,8 +66,7 @@ pub const Loop = struct {
 };
 
 pub const Async = struct {
-    handle: c.uv_async_t = undefined,
-    callback: Callback = defaultCallback,
+    handle: c.uv_async_t = undefined, callback: Callback = defaultCallback,
     user_data: ?*anyopaque = null,
     initialized: bool = false,
 
@@ -75,8 +74,7 @@ pub const Async = struct {
 
     pub fn init(self: *Async, loop: *Loop, callback: Callback, user_data: ?*anyopaque) Error!void {
         self.* = .{
-            .handle = std.mem.zeroes(c.uv_async_t),
-            .callback = callback,
+            .handle = std.mem.zeroes(c.uv_async_t), .callback = callback,
             .user_data = user_data,
             .initialized = false,
         };
@@ -117,8 +115,7 @@ pub const Async = struct {
 };
 
 pub const Timer = struct {
-    handle: c.uv_timer_t = undefined,
-    callback: Callback = defaultCallback,
+    handle: c.uv_timer_t = undefined, callback: Callback = defaultCallback,
     user_data: ?*anyopaque = null,
     initialized: bool = false,
 
@@ -126,8 +123,7 @@ pub const Timer = struct {
 
     pub fn init(self: *Timer, loop: *Loop, callback: Callback, user_data: ?*anyopaque) Error!void {
         self.* = .{
-            .handle = std.mem.zeroes(c.uv_timer_t),
-            .callback = callback,
+            .handle = std.mem.zeroes(c.uv_timer_t), .callback = callback,
             .user_data = user_data,
             .initialized = false,
         };
@@ -173,8 +169,7 @@ pub const Timer = struct {
 };
 
 pub const Work = struct {
-    request: c.uv_work_t = undefined,
-    work_cb: WorkCallback = defaultWork,
+    request: c.uv_work_t = undefined, work_cb: WorkCallback = defaultWork,
     after_cb: AfterWorkCallback = defaultAfterWork,
     user_data: ?*anyopaque = null,
     submitted: bool = false,
@@ -184,8 +179,7 @@ pub const Work = struct {
 
     pub fn submit(self: *Work, loop: *Loop, work_cb: WorkCallback, after_cb: AfterWorkCallback, user_data: ?*anyopaque) Error!void {
         self.* = .{
-            .request = std.mem.zeroes(c.uv_work_t),
-            .work_cb = work_cb,
+            .request = std.mem.zeroes(c.uv_work_t), .work_cb = work_cb,
             .after_cb = after_cb,
             .user_data = user_data,
             .submitted = false,

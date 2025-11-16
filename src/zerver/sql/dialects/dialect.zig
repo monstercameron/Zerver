@@ -3,8 +3,7 @@ const std = @import("std");
 
 /// Dialect feature discovery flags for renderer decisions.
 pub const FeatureFlags = struct {
-    supports_returning: bool = false,
-    supports_if_exists: bool = true,
+    supports_returning: bool = false, supports_if_exists: bool = true,
     uses_numbered_parameters: bool = false,
 };
 

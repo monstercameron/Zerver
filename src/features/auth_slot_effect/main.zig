@@ -3,16 +3,18 @@
 /// Implements user authentication with JWT tokens
 
 const std = @import("std");
+const zerver = @import("zerver");
+const array_list_writer = @import("../../zerver/util/array_list_writer.zig");
 const slot_effect = @import("../../zupervisor/slot_effect.zig");
 const slot_effect_dll = @import("../../zupervisor/slot_effect_dll.zig");
+const time_util = zerver.time_util;
 
 // ============================================================================
 // Slot definitions for authentication
 // ============================================================================
 
 const AuthSlot = enum {
-    request_body,
-    parsed_credentials,
+    request_body, parsed_credentials,
     user_record,
     jwt_token,
     error_message,
@@ -20,8 +22,7 @@ const AuthSlot = enum {
 
 fn authSlotType(comptime slot: AuthSlot) type {
     return switch (slot) {
-        .request_body => []const u8,
-        .parsed_credentials => Credentials,
+        .request_body => []const u8, .parsed_credentials => Credentials,
         .user_record => UserRecord,
         .jwt_token => []const u8,
         .error_message => []const u8,
@@ -65,8 +66,7 @@ const ErrorResponse = struct {
 /// Step 1: Parse credentials from request body
 fn parseCredentialsStep(ctx: *slot_effect.CtxBase) !slot_effect.Decision {
     const Ctx = slot_effect.CtxView(.{
-        .SlotEnum = AuthSlot,
-        .slotTypeFn = authSlotType,
+        .SlotEnum = AuthSlot, .slotTypeFn = authSlotType,
         .reads = &[_]AuthSlot{.request_body},
         .writes = &[_]AuthSlot{.parsed_credentials},
     });
@@ -78,8 +78,7 @@ fn parseCredentialsStep(ctx: *slot_effect.CtxBase) !slot_effect.Decision {
 
     // Parse JSON credentials
     const parsed = std.json.parseFromSlice(
-        Credentials,
-        ctx.allocator,
+        Credentials, ctx.allocator,
         body,
         .{},
     ) catch {
@@ -109,8 +108,7 @@ fn parseCredentialsStep(ctx: *slot_effect.CtxBase) !slot_effect.Decision {
 /// Step 2: Fetch user record from database
 fn fetchUserStep(ctx: *slot_effect.CtxBase) !slot_effect.Decision {
     const Ctx = slot_effect.CtxView(.{
-        .SlotEnum = AuthSlot,
-        .slotTypeFn = authSlotType,
+        .SlotEnum = AuthSlot, .slotTypeFn = authSlotType,
         .reads = &[_]AuthSlot{.parsed_credentials},
         .writes = &[_]AuthSlot{.user_record},
     });
@@ -121,14 +119,12 @@ fn fetchUserStep(ctx: *slot_effect.CtxBase) !slot_effect.Decision {
 
     // Build database query effect
     const query_sql = try std.fmt.allocPrint(
-        ctx.allocator,
-        "SELECT id, username, password_hash, email, created_at FROM users WHERE username = $1",
+        ctx.allocator, "SELECT id, username, password_hash, email, created_at FROM users WHERE username = $1",
         .{},
     );
 
     const db_effect = slot_effect.dbQ(
-        query_sql,
-        &[_][]const u8{creds.username},
+        query_sql, &[_][]const u8{creds.username},
     );
 
     // Return effect for execution
@@ -138,8 +134,7 @@ fn fetchUserStep(ctx: *slot_effect.CtxBase) !slot_effect.Decision {
 /// Step 3: Verify password
 fn verifyPasswordStep(ctx: *slot_effect.CtxBase) !slot_effect.Decision {
     const Ctx = slot_effect.CtxView(.{
-        .SlotEnum = AuthSlot,
-        .slotTypeFn = authSlotType,
+        .SlotEnum = AuthSlot, .slotTypeFn = authSlotType,
         .reads = &[_]AuthSlot{ .parsed_credentials, .user_record },
         .writes = &[_]AuthSlot{},
     });
@@ -164,8 +159,7 @@ fn verifyPasswordStep(ctx: *slot_effect.CtxBase) !slot_effect.Decision {
 /// Step 4: Generate JWT token
 fn generateTokenStep(ctx: *slot_effect.CtxBase) !slot_effect.Decision {
     const Ctx = slot_effect.CtxView(.{
-        .SlotEnum = AuthSlot,
-        .slotTypeFn = authSlotType,
+        .SlotEnum = AuthSlot, .slotTypeFn = authSlotType,
         .reads = &[_]AuthSlot{.user_record},
         .writes = &[_]AuthSlot{.jwt_token},
     });
@@ -185,8 +179,7 @@ fn generateTokenStep(ctx: *slot_effect.CtxBase) !slot_effect.Decision {
 /// Step 5: Build success response
 fn buildResponseStep(ctx: *slot_effect.CtxBase) !slot_effect.Decision {
     const Ctx = slot_effect.CtxView(.{
-        .SlotEnum = AuthSlot,
-        .slotTypeFn = authSlotType,
+        .SlotEnum = AuthSlot, .slotTypeFn = authSlotType,
         .reads = &[_]AuthSlot{ .jwt_token, .user_record },
         .writes = &[_]AuthSlot{},
     });
@@ -197,21 +190,20 @@ fn buildResponseStep(ctx: *slot_effect.CtxBase) !slot_effect.Decision {
     const user = try view.require(.user_record);
 
     // Build response object
-    const expires_at = std.time.timestamp() + 3600; // 1 hour
+    const expires_at = time_util.timestamp() + 3600; // 1 hour
     const response = LoginResponse{
-        .token = token,
-        .user_id = user.id,
+        .token = token, .user_id = user.id,
         .expires_at = expires_at,
     };
 
     // Serialize to JSON
     var json_buffer = std.ArrayList(u8).init(ctx.allocator);
-    try std.json.stringify(response, .{}, json_buffer.writer());
+    var writer_helper = array_list_writer.ArrayListWriter.init(&json_buffer, ctx.allocator);
+    try std.json.stringify(response, .{}, writer_helper.writer());
 
     const response_obj = slot_effect.Response{
         .status = 200,
-        .headers = slot_effect.Response.Headers.init(ctx.allocator),
-        .body = slot_effect.Body{ .json = json_buffer.items },
+        .headers = slot_effect.Response.Headers.init(ctx.allocator), .body = slot_effect.Body{ .json = json_buffer.items },
     };
 
     return slot_effect.done(response_obj);
@@ -230,8 +222,7 @@ fn hashPassword(allocator: std.mem.Allocator, password: []const u8) ![]const u8 
     hasher.final(&hash);
 
     const encoded = std.fmt.bufPrint(
-        hash_buffer,
-        "{x}",
+        hash_buffer, "{x}",
         .{std.fmt.fmtSliceHexLower(&hash)},
     ) catch unreachable;
 
@@ -241,15 +232,13 @@ fn hashPassword(allocator: std.mem.Allocator, password: []const u8) ![]const u8 
 fn generateJwt(allocator: std.mem.Allocator, user_id: u32, username: []const u8) ![]const u8 {
     // Simplified JWT generation - use proper library in production
     const payload = try std.fmt.allocPrint(
-        allocator,
-        "{{\"user_id\":{d},\"username\":\"{s}\",\"exp\":{d}}}",
-        .{ user_id, username, std.time.timestamp() + 3600 },
+        allocator, "{{\"user_id\":{d},\"username\":\"{s}\",\"exp\":{d}}}",
+        .{ user_id, username, time_util.timestamp() + 3600 },
     );
 
     // In production, sign the payload with a secret key
     const token = try std.fmt.allocPrint(
-        allocator,
-        "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.{s}.signature",
+        allocator, "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.{s}.signature",
         .{std.base64.standard.Encoder.encode(allocator, payload)},
     );
 
@@ -263,8 +252,7 @@ fn generateJwt(allocator: std.mem.Allocator, user_id: u32, username: []const u8)
 
 /// Login handler using slot-effect pipeline
 fn loginHandler(
-    server: *const slot_effect_dll.SlotEffectServerAdapter,
-    request: *anyopaque,
+    server: *const slot_effect_dll.SlotEffectServerAdapter, request: *anyopaque,
     response: *anyopaque,
 ) callconv(.c) c_int {
     _ = server;
@@ -329,7 +317,7 @@ export fn featureHealthCheck() callconv(.c) bool {
 }
 
 export fn featureMetadata() callconv(.c) [*:0]const u8 {
-    return "{\"name\":\"auth\",\"type\":\"slot-effect\",\"routes\":1}";
+    return "{\"name\":\"auth\", \"type\":\"slot-effect\",\"routes\":1}";
 }
 
 // ============================================================================

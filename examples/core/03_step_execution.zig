@@ -74,8 +74,7 @@ fn continuation_after_db_get(ctx: *anyopaque) !zerver.Decision {
     slog.infof("  [Continuation] Data loaded, continuing", .{});
     _ = ctx_base;
     return zerver.done(.{
-        .status = 200,
-        .body = "OK",
+        .status = 200, .body = "OK",
     });
 }
 
@@ -104,8 +103,7 @@ fn step_parallel_effects(ctx: *zerver.CtxBase) !zerver.Decision {
             .effects = &effects,
             .mode = .Parallel,
             .join = .all_required, // Wait for all required (optional may fail)
-            .continuation = continuation_parallel,
-        },
+            .continuation = continuation_parallel, },
     };
 }
 
@@ -115,8 +113,7 @@ fn continuation_parallel(ctx: *anyopaque) !zerver.Decision {
     slog.infof("  [Continuation] Both effects attempted, continuing", .{});
     _ = ctx_base;
     return zerver.done(.{
-        .status = 200,
-        .body = "Processed",
+        .status = 200, .body = "Processed",
     });
 }
 

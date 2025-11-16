@@ -32,10 +32,8 @@ pub fn SlotSchema(comptime SlotEnum: type, comptime slotTypeFn: anytype) type {
 
 /// Debug-only slot usage tracking
 pub const DebugSlotUsage = struct {
-    declared_reads: std.StaticBitSet(256),
-    declared_writes: std.StaticBitSet(256),
-    actual_reads: std.StaticBitSet(256),
-    actual_writes: std.StaticBitSet(256),
+    declared_reads: std.StaticBitSet(256), declared_writes: std.StaticBitSet(256),
+    actual_reads: std.StaticBitSet(256), actual_writes: std.StaticBitSet(256),
 };
 
 /// Assertion policy for slot usage validation
@@ -57,8 +55,7 @@ pub const AssertionPolicy = struct {
 pub const CtxBase = struct {
     allocator: std.mem.Allocator,
     request_id: []const u8,
-    slots: std.StringHashMap(*anyopaque),
-    slot_arena: std.heap.ArenaAllocator,
+    slots: std.StringHashMap(*anyopaque), slot_arena: std.heap.ArenaAllocator,
     assertion_policy: AssertionPolicy,
 
     // Debug-only field
@@ -68,16 +65,11 @@ pub const CtxBase = struct {
         return CtxBase{
             .allocator = allocator,
             .request_id = request_id,
-            .slots = std.StringHashMap(*anyopaque).init(allocator),
-            .slot_arena = std.heap.ArenaAllocator.init(allocator),
+            .slots = std.StringHashMap(*anyopaque).init(allocator), .slot_arena = std.heap.ArenaAllocator.init(allocator),
             .assertion_policy = .{},
             .debug_slot_usage = if (builtin.mode == .Debug)
                 DebugSlotUsage{
-                    .declared_reads = std.StaticBitSet(256).initEmpty(),
-                    .declared_writes = std.StaticBitSet(256).initEmpty(),
-                    .actual_reads = std.StaticBitSet(256).initEmpty(),
-                    .actual_writes = std.StaticBitSet(256).initEmpty(),
-                }
+                    .declared_reads = std.StaticBitSet(256).initEmpty(), .declared_writes = std.StaticBitSet(256).initEmpty(), .actual_reads = std.StaticBitSet(256).initEmpty(), .actual_writes = std.StaticBitSet(256).initEmpty(), }
             else {},
         };
     }
@@ -195,9 +187,7 @@ pub fn CtxView(comptime config: anytype) type {
 /// Step decision result
 pub const Decision = union(enum) {
     /// Continue to next step
-    Continue: void,
-
-    /// Need to perform effects
+    Continue: void, // Need to perform effects
     need: Need,
 
     /// Complete with response
@@ -264,8 +254,7 @@ pub const DbDelEffect = struct {
 
 /// SQL parameter for queries
 pub const SqlParam = union(enum) {
-    string: []const u8,
-    int: i64,
+    string: []const u8, int: i64,
     float: f64,
     bool: bool,
     null: void,
@@ -291,8 +280,7 @@ pub const HttpMethod = enum {
 
     pub fn toString(self: HttpMethod) []const u8 {
         return switch (self) {
-            .GET => "GET",
-            .POST => "POST",
+            .GET => "GET", .POST => "POST",
             .PUT => "PUT",
             .PATCH => "PATCH",
             .DELETE => "DELETE",
@@ -323,8 +311,7 @@ pub const ComputeTaskType = enum {
 
 /// Compute task effect (for CPU-bound work)
 pub const ComputeTask = struct {
-    task_type: ComputeTaskType,
-    input: ?[]const u8,
+    task_type: ComputeTaskType, input: ?[]const u8,
     result_slot: u32,
 };
 
@@ -339,8 +326,7 @@ pub const CompensationAction = union(enum) {
     db_delete: struct { database: []const u8, key: []const u8 },
     db_restore: struct { database: []const u8, key: []const u8, old_value: []const u8 },
     http_rollback: struct { url: []const u8, payload: []const u8 },
-    custom: *const fn (*CtxBase) anyerror!void,
-};
+    custom: *const fn (*CtxBase) anyerror!void, };
 
 /// Compensation effect
 pub const CompensateEffect = struct {
@@ -414,9 +400,8 @@ pub const Response = struct {
 /// Response body (complete or streaming)
 pub const Body = union(enum) {
     /// Complete body in memory
-    complete: []const u8,
-
     /// Streaming body (stub for future implementation)
+    complete: []const u8,
     streaming: void,
 };
 
@@ -449,8 +434,7 @@ pub const ErrorCode = enum {
 
     pub fn toString(self: ErrorCode) []const u8 {
         return switch (self) {
-            .InvalidInput => "INVALID_INPUT",
-            .NotFound => "NOT_FOUND",
+            .InvalidInput => "INVALID_INPUT", .NotFound => "NOT_FOUND",
             .Unauthorized => "UNAUTHORIZED",
             .Forbidden => "FORBIDDEN",
             .Conflict => "CONFLICT",
@@ -520,8 +504,7 @@ pub fn dbQ(database: []const u8, query: []const u8, params: []const SqlParam, re
 /// Step specification with metadata
 pub const StepSpec = struct {
     name: []const u8,
-    fn_ptr: *const fn (*CtxBase) anyerror!Decision,
-    reads: []const u32,
+    fn_ptr: *const fn (*CtxBase) anyerror!Decision, reads: []const u32,
     writes: []const u32,
 
     /// Call the step function with assertion tracking
@@ -637,8 +620,7 @@ pub const RouteSpec = struct {
 
 /// Comptime route validation with dependency checking
 pub fn routeChecked(
-    comptime path: []const u8,
-    comptime method: HttpMethod,
+    comptime path: []const u8, comptime method: HttpMethod,
     comptime steps: []const StepSpec,
     comptime checks: struct {
         require_reads_produced: bool = true,
@@ -659,8 +641,7 @@ pub fn routeChecked(
 
                 if (checks.require_reads_produced and !produced.isSet(slot_id)) {
                     @compileError(std.fmt.comptimePrint(
-                        "Step '{s}' reads slot {d} but it was never written by a previous step",
-                        .{step.name, slot_id}
+                        "Step '{s}' reads slot {d} but it was never written by a previous step", .{step.name, slot_id}
                     ));
                 }
             }
@@ -669,8 +650,7 @@ pub fn routeChecked(
             for (step.writes) |slot_id| {
                 if (checks.forbid_duplicate_writers and writers.isSet(slot_id)) {
                     @compileError(std.fmt.comptimePrint(
-                        "Step '{s}' writes to slot {d} but another step already wrote to it",
-                        .{step.name, slot_id}
+                        "Step '{s}' writes to slot {d} but another step already wrote to it", .{step.name, slot_id}
                     ));
                 }
 
@@ -696,14 +676,12 @@ pub fn routeChecked(
 
 /// Compensation tracker for saga rollback
 pub const CompensationTracker = struct {
-    compensations: std.ArrayList(Effect),
-    allocator: std.mem.Allocator,
+    compensations: std.ArrayList(Effect), allocator: std.mem.Allocator,
 
     pub fn init(allocator: std.mem.Allocator) CompensationTracker {
         const AL = std.ArrayList(Effect);
         return .{
-            .compensations = AL.init(allocator),
-            .allocator = allocator,
+            .compensations = AL.init(allocator), .allocator = allocator,
         };
     }
 
@@ -738,8 +716,7 @@ pub const Interpreter = struct {
 
     pub fn init(steps: []const StepSpec) Interpreter {
         return .{
-            .steps = steps,
-            .current_step = 0,
+            .steps = steps, .current_step = 0,
         };
     }
 
@@ -753,8 +730,7 @@ pub const Interpreter = struct {
                 .Continue => {
                     self.current_step += 1;
                     continue;
-                },
-                .need => {
+                }, .need => {
                     // Pause here, will resume after effects execute
                     return decision;
                 },
@@ -780,9 +756,7 @@ pub const Interpreter = struct {
 
 /// Effector table for executing effects (stub implementations)
 pub const EffectorTable = struct {
-    allocator: std.mem.Allocator,
-
-    pub fn init(allocator: std.mem.Allocator) EffectorTable {
+    allocator: std.mem.Allocator, pub fn init(allocator: std.mem.Allocator) EffectorTable {
         return .{ .allocator = allocator };
     }
 
@@ -986,15 +960,13 @@ fn logTraceEvent(event: TraceEvent) void {
 
 test "SlotSchema - slotId and TypeOf" {
     const TestSlot = enum(u32) {
-        Input = 0,
-        Output = 1,
+        Input = 0, Output = 1,
     };
 
     const slotTypeFn = struct {
         fn f(comptime slot: TestSlot) type {
             return switch (slot) {
-                .Input => []const u8,
-                .Output => u32,
+                .Input => []const u8, .Output => u32,
             };
         }
     }.f;
@@ -1190,8 +1162,7 @@ test "EffectorTable - execute stubs" {
     defer ctx.deinit();
 
     const db_get = Effect{ .db_get = .{
-        .database = "main",
-        .key = "user:123",
+        .database = "main", .key = "user:123",
         .result_slot = 1,
     }};
 
@@ -1205,8 +1176,7 @@ test "TraceCollector - emit event" {
     var collector = TraceCollector.init(testing.allocator);
 
     const event = TraceEvent{ .request_start = .{
-        .request_id = "test-123",
-        .method = "GET",
+        .request_id = "test-123", .method = "GET",
         .path = "/api/users",
         .timestamp_ns = 0,
     }};
@@ -1223,8 +1193,7 @@ test "CompensationTracker - track and run" {
 
     // Track some compensations
     const comp1 = Effect{ .db_del = .{
-        .database = "main",
-        .key = "temp_key",
+        .database = "main", .key = "temp_key",
         .result_slot = null,
     }};
 
@@ -1339,8 +1308,7 @@ test "Example - saga with compensations" {
             _ = ctx;
             // Simulate order creation that needs effect
             const db_put = Effect{ .db_put = .{
-                .database = "orders",
-                .key = "order:123",
+                .database = "orders", .key = "order:123",
                 .value = "{\"total\":100}",
                 .result_slot = 0,
             }};
@@ -1365,8 +1333,7 @@ test "Example - saga with compensations" {
             _ = ctx;
             // Simulate payment processing
             const http_call = httpJsonPost(
-                "https://payment.api/charge",
-                "{\"amount\":100}",
+                "https://payment.api/charge", "{\"amount\":100}",
                 1
             );
 
@@ -1430,8 +1397,7 @@ test "Example - parallel effects" {
         fn execute(_: *CtxBase) !Decision {
             const effects = &[_]Effect{
                 Effect{ .http_call = .{
-                    .method = .GET,
-                    .url = "https://api1.com/data",
+                    .method = .GET, .url = "https://api1.com/data",
                     .headers = &.{},
                     .body = null,
                     .result_slot = 0,

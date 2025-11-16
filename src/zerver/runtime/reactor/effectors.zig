@@ -8,8 +8,7 @@ const db_effects = @import("db_effects.zig");
 const http_effects = @import("http_effects.zig");
 
 pub const DispatchError = error{
-    UnsupportedEffect,
-};
+    UnsupportedEffect, };
 
 /// Completion callback for async effects
 pub const EffectCompletionCallback = *const fn (

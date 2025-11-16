@@ -6,8 +6,7 @@ pub fn initSchema(db: *sql.db.Connection) !void {
     // Create posts table
     try db.exec(
         \\CREATE TABLE IF NOT EXISTS posts (
-        \\    id TEXT PRIMARY KEY,
-        \\    title TEXT NOT NULL,
+        \\    id TEXT PRIMARY KEY, \\    title TEXT NOT NULL,
         \\    content TEXT NOT NULL,
         \\    author TEXT NOT NULL,
         \\    created_at INTEGER NOT NULL,
@@ -18,8 +17,7 @@ pub fn initSchema(db: *sql.db.Connection) !void {
     // Create comments table
     try db.exec(
         \\CREATE TABLE IF NOT EXISTS comments (
-        \\    id TEXT PRIMARY KEY,
-        \\    post_id TEXT NOT NULL,
+        \\    id TEXT PRIMARY KEY, \\    post_id TEXT NOT NULL,
         \\    content TEXT NOT NULL,
         \\    author TEXT NOT NULL,
         \\    created_at INTEGER NOT NULL,

@@ -6,12 +6,12 @@ const job_system = @import("job_system.zig");
 const effectors = @import("effectors.zig");
 const libuv = @import("libuv.zig");
 const scheduler_mod = @import("../scheduler.zig");
+const time_util = @import("../../util/time.zig");
 
 const AtomicOrder = std.builtin.AtomicOrder;
 
 pub const ReactorResources = struct {
-    allocator: std.mem.Allocator = undefined,
-    enabled: bool = false,
+    allocator: std.mem.Allocator = undefined, enabled: bool = false,
     scheduler: scheduler_mod.Scheduler = .{},
     effector_jobs: job_system.JobSystem = undefined,
     has_scheduler: bool = false,
@@ -20,8 +20,7 @@ pub const ReactorResources = struct {
     loop: libuv.Loop = undefined,
     loop_initialized: bool = false,
     loop_thread: ?std.Thread = null,
-    loop_should_run: std.atomic.Value(bool) = std.atomic.Value(bool).init(false),
-    wake_handle: libuv.Async = undefined,
+    loop_should_run: std.atomic.Value(bool) = std.atomic.Value(bool).init(false), wake_handle: libuv.Async = undefined,
     wake_initialized: bool = false,
 
     pub fn init(self: *ReactorResources, allocator: std.mem.Allocator, cfg: config_mod.ReactorConfig) !void {
@@ -32,12 +31,10 @@ pub const ReactorResources = struct {
             .has_effector_jobs = false,
             .scheduler = .{},
             .effector_jobs = undefined,
-            .dispatcher = effectors.EffectDispatcher.init(),
-            .loop = undefined,
+            .dispatcher = effectors.EffectDispatcher.init(), .loop = undefined,
             .loop_initialized = false,
             .loop_thread = null,
-            .loop_should_run = std.atomic.Value(bool).init(false),
-            .wake_handle = undefined,
+            .loop_should_run = std.atomic.Value(bool).init(false), .wake_handle = undefined,
             .wake_initialized = false,
         };
 
@@ -50,16 +47,14 @@ pub const ReactorResources = struct {
         self.loop_initialized = true;
 
         try self.effector_jobs.init(.{
-            .allocator = allocator,
-            .worker_count = cfg.effector_pool.size,
+            .allocator = allocator, .worker_count = cfg.effector_pool.size,
             .queue_capacity = cfg.effector_pool.queue_capacity,
             .label = "effector_jobs",
         });
         self.has_effector_jobs = true;
 
         try self.scheduler.init(.{
-            .allocator = allocator,
-            .continuation_workers = cfg.continuation_pool.size,
+            .allocator = allocator, .continuation_workers = cfg.continuation_pool.size,
             .continuation_queue_capacity = cfg.continuation_pool.queue_capacity,
             .compute_kind = convertComputeKind(cfg.compute_pool.kind),
             .compute_workers = cfg.compute_pool.size,
@@ -155,14 +150,12 @@ pub const ReactorResources = struct {
         if (!self.loop_initialized) return null;
         const compute_jobs = if (self.has_scheduler) self.scheduler.computeJobs() else null;
         return effectors.Context{
-            .allocator = self.allocator,
-            .loop = &self.loop,
+            .allocator = self.allocator, .loop = &self.loop,
             .jobs = &self.effector_jobs,
             .compute_jobs = compute_jobs,
             .accelerator_jobs = null,
             .kv_cache = null,
-            .task_system = if (self.has_scheduler) self.scheduler.taskSystem() else null,
-        };
+            .task_system = if (self.has_scheduler) self.scheduler.taskSystem() else null, };
     }
 
     pub fn triggerWake(self: *ReactorResources) void {
@@ -172,8 +165,7 @@ pub const ReactorResources = struct {
 
     fn convertComputeKind(kind: config_mod.ComputePoolKind) task_system.ComputePoolKind {
         return switch (kind) {
-            .disabled => .disabled,
-            .shared => .shared,
+            .disabled => .disabled, .shared => .shared,
             .dedicated => .dedicated,
         };
     }
@@ -183,7 +175,7 @@ fn loopThreadMain(self: *ReactorResources) void {
     while (self.loop_should_run.load(AtomicOrder.seq_cst)) {
         const active = self.loop.run(.once);
         if (!active) {
-            std.Thread.sleep(1 * std.time.ns_per_ms);
+            time_util.sleep(1 * std.time.ns_per_ms);
         }
     }
 

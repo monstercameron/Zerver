@@ -151,8 +151,7 @@ pub const ResumeFn = *const fn (*ctx_module.CtxBase) anyerror!Decision;
 
 /// A Decision represents the outcome of a step and tells the engine what to do next.
 pub const Need = struct {
-    effects: []const Effect,
-    mode: Mode,
+    effects: []const Effect, mode: Mode,
     join: Join,
     continuation: ?ResumeFn = null,
     compensations: []const Compensation = &.{},
@@ -197,8 +196,7 @@ pub const ParsedRequest = struct {
     method: []const u8,
     path: []const u8,
     headers: std.StringHashMap(std.ArrayList([]const u8)),
-    query: std.StringHashMap([]const u8),
-    body: []const u8,
+    query: std.StringHashMap([]const u8), body: []const u8,
     client_ip: []const u8,
 
     /// Clean up allocated memory in the request

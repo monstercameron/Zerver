@@ -83,8 +83,7 @@ const ReactorNeedRunner = struct {
         self.completed_step_ctx = null;
         self.join_state = if (self.outstanding > 0)
             reactor_join.JoinState.init(.{
-                .mode = self.need.mode,
-                .join = self.need.join,
+                .mode = self.need.mode, .join = self.need.join,
             }, self.outstanding, countRequiredEffects(self.need.effects))
         else
             null;
@@ -154,8 +153,7 @@ const ReactorNeedRunner = struct {
                     if (payload.allocator) |alloc| {
                         alloc.free(data);
                     }
-                },
-                .failure => |err| {
+                }, .failure => |err| {
                     self.ctx_base.last_error = err;
                 },
             }
@@ -167,8 +165,7 @@ const ReactorNeedRunner = struct {
 
         slog.debug("reactor_need_resume_ready", &.{
             slog.Attr.uint("need_seq", @as(u64, @intCast(self.need_sequence))),
-            slog.Attr.uint("step_ptr", if (self.need.continuation) |c| @intFromPtr(c) else 0),
-        });
+            slog.Attr.uint("step_ptr", if (self.need.continuation) |c| @intFromPtr(c) else 0), });
 
         if (self.task_system) |ts| {
             return try self.resumeStepViaTaskSystem(ts);
@@ -189,8 +186,7 @@ const ReactorNeedRunner = struct {
         const target = effectTarget(effect_ptr.*);
         const effect_sequence = if (self.telemetry_ctx) |t|
             t.effectStart(.{
-                .kind = @tagName(effect_ptr.*),
-                .token = token,
+                .kind = @tagName(effect_ptr.*), .token = token,
                 .required = required,
                 .mode = self.need.mode,
                 .join = self.need.join,
@@ -211,8 +207,7 @@ const ReactorNeedRunner = struct {
 
         const job_ctx = try self.allocator.create(JobContext);
         job_ctx.* = .{
-            .runner = self,
-            .effect = effect_ptr,
+            .runner = self, .effect = effect_ptr,
             .timeout_ms = timeout_ms,
             .required = required,
             .token = token,
@@ -222,8 +217,7 @@ const ReactorNeedRunner = struct {
 
         const job = reactor_jobs.Job{
             .callback = reactorNeedJobCallback,
-            .ctx = @ptrCast(@alignCast(job_ctx)),
-        };
+            .ctx = @ptrCast(@alignCast(job_ctx)), };
 
         const submit_attempt = self.trySubmitCompute(effect_ptr.*, job) catch |submit_err| {
             slog.err("reactor_effect_compute_submit_failed", &.{
@@ -240,8 +234,7 @@ const ReactorNeedRunner = struct {
                     job_ctx.queue_label = computeQueueLabel(self);
                     if (self.telemetry_ctx) |t| {
                         t.effectJobEnqueued(.{
-                            .need_sequence = self.need_sequence,
-                            .effect_sequence = effect_sequence,
+                            .need_sequence = self.need_sequence, .effect_sequence = effect_sequence,
                             .queue = job_ctx.queue_label,
                         });
                     }
@@ -282,8 +275,7 @@ const ReactorNeedRunner = struct {
 
         if (self.telemetry_ctx) |t| {
             t.effectJobEnqueued(.{
-                .need_sequence = self.need_sequence,
-                .effect_sequence = effect_sequence,
+                .need_sequence = self.need_sequence, .effect_sequence = effect_sequence,
                 .queue = job_ctx.queue_label,
             });
         }
@@ -312,8 +304,7 @@ const ReactorNeedRunner = struct {
         return self.executor.effect_handler(effect_ptr, timeout_ms) catch {
             const error_result: types.Error = .{
                 .kind = types.ErrorCode.UpstreamUnavailable,
-                .ctx = .{ .what = "effect", .key = @tagName(effect_ptr.*) },
-            };
+                .ctx = .{ .what = "effect", .key = @tagName(effect_ptr.*) }, };
             slog.err("reactor_effect_execute_failed", &.{
                 slog.Attr.string("effect", @tagName(effect_ptr.*)),
             });
@@ -333,8 +324,7 @@ const ReactorNeedRunner = struct {
             .success => |payload| {
                 is_success = true;
                 bytes_len = payload.bytes.len;
-            },
-            .failure => |err| {
+            }, .failure => |err| {
                 failure_details = err;
                 error_ctx = err.ctx;
             },
@@ -354,13 +344,11 @@ const ReactorNeedRunner = struct {
 
         if (self.telemetry_ctx) |t| {
             t.effectJobCompleted(.{
-                .need_sequence = self.need_sequence,
-                .effect_sequence = job_ctx.telemetry_sequence,
+                .need_sequence = self.need_sequence, .effect_sequence = job_ctx.telemetry_sequence,
                 .queue = job_ctx.queue_label,
                 .success = is_success,
                 .job_ctx = @intFromPtr(job_ctx),
-                .worker_index = if (worker_info) |info| info.worker_index else null,
-            });
+                .worker_index = if (worker_info) |info| info.worker_index else null, });
         }
 
         self.mutex.lock();
@@ -386,8 +374,7 @@ const ReactorNeedRunner = struct {
 
         if (self.telemetry_ctx) |t| {
             t.effectEnd(.{
-                .sequence = job_ctx.telemetry_sequence,
-                .need_sequence = self.need_sequence,
+                .sequence = job_ctx.telemetry_sequence, .need_sequence = self.need_sequence,
                 .kind = @tagName(job_ctx.effect.*),
                 .token = job_ctx.token,
                 .required = job_ctx.required,
@@ -399,12 +386,10 @@ const ReactorNeedRunner = struct {
 
         if (self.join_state) |*state| {
             const resolution = state.record(.{
-                .required = job_ctx.required,
-                .success = is_success,
+                .required = job_ctx.required, .success = is_success,
             });
             switch (resolution) {
-                .Pending => {},
-                .Resume => |resume_info| {
+                .Pending => {}, .Resume => |resume_info| {
                     self.join_status = resume_info.status;
                 },
             }
@@ -440,8 +425,7 @@ const ReactorNeedRunner = struct {
                     if (payload.allocator) |alloc| {
                         alloc.free(payload.bytes);
                     }
-                },
-                .failure => {},
+                }, .failure => {},
             }
         }
     }
@@ -484,8 +468,7 @@ const ReactorNeedRunner = struct {
 
         const job = reactor_jobs.Job{
             .callback = stepJobCallback,
-            .ctx = @ptrCast(@alignCast(job_ctx)),
-        };
+            .ctx = @ptrCast(@alignCast(job_ctx)), };
 
         slog.debug("reactor_step_schedule", &.{
             slog.Attr.uint("need_seq", @as(u64, @intCast(self.need_sequence))),
@@ -509,8 +492,7 @@ const ReactorNeedRunner = struct {
 
         if (self.telemetry_ctx) |t| {
             t.stepJobEnqueued(.{
-                .need_sequence = self.need_sequence,
-                .job_ctx = @intFromPtr(job_ctx),
+                .need_sequence = self.need_sequence, .job_ctx = @intFromPtr(job_ctx),
                 .queue = queue_label,
             });
         }
@@ -583,12 +565,10 @@ fn reactorNeedJobCallback(ctx_ptr: *anyopaque) void {
     if (runner.telemetry_ctx) |t| {
         const worker_info = reactor_jobs.currentWorkerInfo();
         t.effectJobStarted(.{
-            .need_sequence = runner.need_sequence,
-            .effect_sequence = job_ctx.telemetry_sequence,
+            .need_sequence = runner.need_sequence, .effect_sequence = job_ctx.telemetry_sequence,
             .queue = job_ctx.queue_label,
             .job_ctx = @intFromPtr(job_ctx),
-            .worker_index = if (worker_info) |info| info.worker_index else null,
-        });
+            .worker_index = if (worker_info) |info| info.worker_index else null, });
     }
     const result = runner.executeEffect(job_ctx.effect, job_ctx.timeout_ms);
     runner.recordCompletion(job_ctx, result);
@@ -614,8 +594,7 @@ fn stepJobCallback(ctx_ptr: *anyopaque) void {
 
     if (runner.telemetry_ctx) |t| {
         t.stepJobStarted(.{
-            .need_sequence = runner.need_sequence,
-            .job_ctx = @intFromPtr(job_ctx),
+            .need_sequence = runner.need_sequence, .job_ctx = @intFromPtr(job_ctx),
             .queue = queue_label,
             .worker_index = worker_index_value,
         });
@@ -631,12 +610,10 @@ fn stepJobCallback(ctx_ptr: *anyopaque) void {
             runner.markStepJobComplete(job_ctx);
             if (runner.telemetry_ctx) |t| {
                 t.stepJobCompleted(.{
-                    .need_sequence = runner.need_sequence,
-                    .job_ctx = @intFromPtr(job_ctx),
+                    .need_sequence = runner.need_sequence, .job_ctx = @intFromPtr(job_ctx),
                     .queue = queue_label,
                     .worker_index = worker_index_value,
-                    .decision = @tagName(failure),
-                });
+                    .decision = @tagName(failure), });
             }
             runner.finishStep(failure);
             return;
@@ -647,12 +624,10 @@ fn stepJobCallback(ctx_ptr: *anyopaque) void {
     runner.markStepJobComplete(job_ctx);
     if (runner.telemetry_ctx) |t| {
         t.stepJobCompleted(.{
-            .need_sequence = runner.need_sequence,
-            .job_ctx = @intFromPtr(job_ctx),
+            .need_sequence = runner.need_sequence, .job_ctx = @intFromPtr(job_ctx),
             .queue = queue_label,
             .worker_index = worker_index_value,
-            .decision = @tagName(decision),
-        });
+            .decision = @tagName(decision), });
     }
     runner.finishStep(decision);
     slog.debug("reactor_step_job_finish", &.{
@@ -674,8 +649,7 @@ pub const Executor = struct {
     telemetry_ctx: ?*telemetry.Telemetry = null,
 
     pub fn init(
-        allocator: std.mem.Allocator,
-        effect_handler: *const fn (*const types.Effect, u32) anyerror!types.EffectResult,
+        allocator: std.mem.Allocator, effect_handler: *const fn (*const types.Effect, u32) anyerror!types.EffectResult,
     ) Executor {
         return .{
             .allocator = allocator,
@@ -688,8 +662,7 @@ pub const Executor = struct {
     /// - .Continue / .Done / .Fail: final decision
     /// - .need: effects not yet executed (only if executor is in Async mode)
     pub fn executeStep(
-        self: *Executor,
-        ctx_base: *ctx_module.CtxBase,
+        self: *Executor, ctx_base: *ctx_module.CtxBase,
         step_fn: *const fn (*ctx_module.CtxBase) anyerror!types.Decision,
     ) !types.Decision {
         self.telemetry_ctx = null;
@@ -698,8 +671,7 @@ pub const Executor = struct {
 
     /// Execute a single step with telemetry instrumentation.
     pub fn executeStepWithTelemetry(
-        self: *Executor,
-        ctx_base: *ctx_module.CtxBase,
+        self: *Executor, ctx_base: *ctx_module.CtxBase,
         step_fn: *const fn (*ctx_module.CtxBase) anyerror!types.Decision,
         telemetry_ctx: *telemetry.Telemetry,
     ) !types.Decision {
@@ -709,16 +681,14 @@ pub const Executor = struct {
 
     /// Internal: execute step and handle any Need decisions recursively.
     fn executeStepInternal(
-        self: *Executor,
-        ctx_base: *ctx_module.CtxBase,
+        self: *Executor, ctx_base: *ctx_module.CtxBase,
         step_fn: *const fn (*ctx_module.CtxBase) anyerror!types.Decision,
         depth: usize,
     ) !types.Decision {
         // Safety: prevent infinite recursion
         if (depth > 1000) {
             return .{ .Fail = .{
-                .kind = types.ErrorCode.InternalError,
-                .ctx = .{ .what = "executor", .key = "recursion_limit" },
+                .kind = types.ErrorCode.InternalError, .ctx = .{ .what = "executor", .key = "recursion_limit" },
             } };
         }
 
@@ -737,8 +707,7 @@ pub const Executor = struct {
             const need = decision.need;
             const need_sequence = if (self.telemetry_ctx) |t|
                 t.needScheduled(.{
-                    .effect_count = need.effects.len,
-                    .mode = need.mode,
+                    .effect_count = need.effects.len, .mode = need.mode,
                     .join = need.join,
                 })
             else
@@ -754,8 +723,7 @@ pub const Executor = struct {
 
     /// Execute all effects in a Need and call the continuation.
     fn executeNeed(
-        self: *Executor,
-        ctx_base: *ctx_module.CtxBase,
+        self: *Executor, ctx_base: *ctx_module.CtxBase,
         need: types.Need,
         depth: usize,
         need_sequence: usize,
@@ -785,8 +753,7 @@ pub const Executor = struct {
         const required_effects = countRequiredEffects(need.effects);
         var join_state: ?reactor_join.JoinState = if (total_effects > 0)
             reactor_join.JoinState.init(.{
-                .mode = need.mode,
-                .join = need.join,
+                .mode = need.mode, .join = need.join,
             }, total_effects, required_effects)
         else
             null;
@@ -806,8 +773,7 @@ pub const Executor = struct {
 
             const effect_sequence = if (self.telemetry_ctx) |t|
                 t.effectStart(.{
-                    .kind = effect_kind,
-                    .token = token,
+                    .kind = effect_kind, .token = token,
                     .required = required,
                     .mode = need.mode,
                     .join = need.join,
@@ -823,13 +789,11 @@ pub const Executor = struct {
             const result = self.effect_handler(&effect, timeout_ms) catch {
                 const error_result: types.Error = .{
                     .kind = types.ErrorCode.UpstreamUnavailable,
-                    .ctx = .{ .what = "effect", .key = @tagName(effect) },
-                };
+                    .ctx = .{ .what = "effect", .key = @tagName(effect) }, };
                 try results.put(token, .{ .failure = error_result });
                 if (self.telemetry_ctx) |t| {
                     t.effectEnd(.{
-                        .sequence = effect_sequence,
-                        .need_sequence = need_sequence,
+                        .sequence = effect_sequence, .need_sequence = need_sequence,
                         .kind = effect_kind,
                         .token = token,
                         .required = required,
@@ -847,12 +811,10 @@ pub const Executor = struct {
 
                 if (join_state) |*state| {
                     const resolution = state.record(.{
-                        .required = required,
-                        .success = false,
+                        .required = required, .success = false,
                     });
                     switch (resolution) {
-                        .Pending => {},
-                        .Resume => |resume_info| {
+                        .Pending => {}, .Resume => |resume_info| {
                             join_status = resume_info.status;
                             if (state.isResumed()) {
                                 should_break = true;
@@ -873,8 +835,7 @@ pub const Executor = struct {
                 .success => |payload| blk: {
                     bytes_len = payload.bytes.len;
                     break :blk true;
-                },
-                .failure => |err| blk: {
+                }, .failure => |err| blk: {
                     error_ctx = err.ctx;
                     failure_details = err;
                     break :blk false;
@@ -883,8 +844,7 @@ pub const Executor = struct {
 
             if (self.telemetry_ctx) |t| {
                 t.effectEnd(.{
-                    .sequence = effect_sequence,
-                    .need_sequence = need_sequence,
+                    .sequence = effect_sequence, .need_sequence = need_sequence,
                     .kind = effect_kind,
                     .token = token,
                     .required = required,
@@ -905,12 +865,10 @@ pub const Executor = struct {
 
             if (join_state) |*state| {
                 const resolution = state.record(.{
-                    .required = required,
-                    .success = is_success,
+                    .required = required, .success = is_success,
                 });
                 switch (resolution) {
-                    .Pending => {},
-                    .Resume => |resume_info| {
+                    .Pending => {}, .Resume => |resume_info| {
                         join_status = resume_info.status;
                         if (state.isResumed()) {
                             should_break = true;
@@ -954,8 +912,7 @@ pub const Executor = struct {
                     if (payload.allocator) |alloc| {
                         alloc.free(data);
                     }
-                },
-                .failure => |err| {
+                }, .failure => |err| {
                     // Store error in last_error context
                     ctx_base.last_error = err;
                 },
@@ -975,8 +932,7 @@ pub const Executor = struct {
     }
 
     fn maybeExecuteNeedViaReactor(
-        self: *Executor,
-        ctx_base: *ctx_module.CtxBase,
+        self: *Executor, ctx_base: *ctx_module.CtxBase,
         need: types.Need,
         depth: usize,
         need_sequence: usize,
@@ -989,8 +945,7 @@ pub const Executor = struct {
         const effector_jobs = resources.reactorEffectorJobs() orelse return null;
 
         var runner = ReactorNeedRunner{
-            .allocator = self.allocator,
-            .executor = self,
+            .allocator = self.allocator, .executor = self,
             .ctx_base = ctx_base,
             .need = need,
             .depth = depth,
@@ -1009,8 +964,7 @@ pub const Executor = struct {
 
 fn effectToken(effect: types.Effect) u32 {
     return switch (effect) {
-        .http_get => |e| e.token,
-        .http_head => |e| e.token,
+        .http_get => |e| e.token, .http_head => |e| e.token,
         .http_post => |e| e.token,
         .http_put => |e| e.token,
         .http_delete => |e| e.token,
@@ -1045,8 +999,7 @@ fn effectToken(effect: types.Effect) u32 {
 
 fn effectTimeout(effect: types.Effect) u32 {
     return switch (effect) {
-        .http_get => |e| e.timeout_ms,
-        .http_head => |e| e.timeout_ms,
+        .http_get => |e| e.timeout_ms, .http_head => |e| e.timeout_ms,
         .http_post => |e| e.timeout_ms,
         .http_put => |e| e.timeout_ms,
         .http_delete => |e| e.timeout_ms,
@@ -1081,8 +1034,7 @@ fn effectTimeout(effect: types.Effect) u32 {
 
 fn effectRequired(effect: types.Effect) bool {
     return switch (effect) {
-        .http_get => |e| e.required,
-        .http_head => |e| e.required,
+        .http_get => |e| e.required, .http_head => |e| e.required,
         .http_post => |e| e.required,
         .http_put => |e| e.required,
         .http_delete => |e| e.required,
@@ -1117,8 +1069,7 @@ fn effectRequired(effect: types.Effect) bool {
 
 fn effectTarget(effect: types.Effect) []const u8 {
     return switch (effect) {
-        .http_get => |e| e.url,
-        .http_head => |e| e.url,
+        .http_get => |e| e.url, .http_head => |e| e.url,
         .http_post => |e| e.url,
         .http_put => |e| e.url,
         .http_delete => |e| e.url,
@@ -1168,19 +1119,16 @@ fn computeQueueLabel(self: *ReactorNeedRunner) []const u8 {
 
 fn effectQueueFailure(effect: types.Effect, err: anyerror) types.Error {
     const kind: u16 = switch (err) {
-        reactor_jobs.SubmitError.QueueFull => types.ErrorCode.TooManyRequests,
-        else => types.ErrorCode.UpstreamUnavailable,
+        reactor_jobs.SubmitError.QueueFull => types.ErrorCode.TooManyRequests, else => types.ErrorCode.UpstreamUnavailable,
     };
     return .{
         .kind = kind,
-        .ctx = .{ .what = @tagName(effect), .key = @errorName(err) },
-    };
+        .ctx = .{ .what = @tagName(effect), .key = @errorName(err) }, };
 }
 
 fn stepQueueFailure(err: anyerror) types.Error {
     const kind: u16 = switch (err) {
-        reactor_jobs.SubmitError.QueueFull => types.ErrorCode.TooManyRequests,
-        else => types.ErrorCode.UpstreamUnavailable,
+        reactor_jobs.SubmitError.QueueFull => types.ErrorCode.TooManyRequests, else => types.ErrorCode.UpstreamUnavailable,
     };
     return .{
         .kind = kind,
@@ -1204,8 +1152,7 @@ fn releaseEffectResults(map: *std.AutoHashMap(u32, types.EffectResult)) void {
                 if (payload.allocator) |alloc| {
                     alloc.free(payload.bytes);
                 }
-            },
-            .failure => {},
+            }, .failure => {},
         }
     }
 }
@@ -1218,8 +1165,7 @@ fn defaultJoinFailureError() types.Error {
 }
 
 fn failFromCrash(
-    self: *Executor,
-    ctx_base: *ctx_module.CtxBase,
+    self: *Executor, ctx_base: *ctx_module.CtxBase,
     phase: []const u8,
     err: anyerror,
     depth: usize,

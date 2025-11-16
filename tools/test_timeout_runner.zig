@@ -1,12 +1,12 @@
 const std = @import("std");
+const time_util = @import("src/zerver/util/time.zig");
 
 const timeout_ns: u64 = 3 * std.time.ns_per_min;
 const timeout_seconds: u64 = timeout_ns / std.time.ns_per_s;
 const poll_interval_ns: u64 = 50 * std.time.ns_per_ms;
 
 const Watchdog = struct {
-    child: *std.process.Child,
-    mutex: std.Thread.Mutex = .{},
+    child: *std.process.Child, mutex: std.Thread.Mutex = .{},
     done: bool = false,
     timed_out: bool = false,
 };
@@ -16,7 +16,7 @@ fn watchdogMain(ctx: *Watchdog) void {
     while (elapsed < timeout_ns) {
         const remaining = timeout_ns - elapsed;
         const step = if (remaining < poll_interval_ns) remaining else poll_interval_ns;
-        std.Thread.sleep(step);
+        time_util.sleep(step);
 
         ctx.mutex.lock();
         const finished = ctx.done;
@@ -98,16 +98,13 @@ pub fn main() !void {
     switch (term) {
         .Exited => |code| {
             std.process.exit(code);
-        },
-        .Signal => |sig| {
+        }, .Signal => |sig| {
             std.log.err("process terminated by signal {d}", .{sig});
             std.process.exit(1);
-        },
-        .Stopped => |sig| {
+        }, .Stopped => |sig| {
             std.log.err("process stopped by signal {d}", .{sig});
             std.process.exit(1);
-        },
-        .Unknown => |value| {
+        }, .Unknown => |value| {
             std.log.err("process terminated with unknown status {d}", .{value});
             std.process.exit(1);
         },

@@ -3,8 +3,7 @@ const std = @import("std");
 const base = @import("../dialect.zig");
 
 pub const dialect = base.Dialect{
-    .name = "sqlite",
-    .quoteIdentifier = quoteIdentifier,
+    .name = "sqlite", .quoteIdentifier = quoteIdentifier,
     .placeholder = placeholder,
     .escapeStringLiteral = escapeStringLiteral,
     .features = .{

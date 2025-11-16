@@ -10,8 +10,7 @@ const slot_effect_dll = @import("slot_effect_dll.zig");
 
 /// HTTP method enumeration
 pub const HttpMethod = enum(c_int) {
-    GET = 0,
-    POST = 1,
+    GET = 0, POST = 1,
     PUT = 2,
     DELETE = 3,
     PATCH = 4,
@@ -23,8 +22,7 @@ pub const HttpMethod = enum(c_int) {
 pub const RouteHandler = union(enum) {
     /// Legacy step-based handler
     step_pipeline: struct {
-        handler: *const fn (*anyopaque, *anyopaque) callconv(.c) c_int,
-    },
+        handler: *const fn (*anyopaque, *anyopaque) callconv(.c) c_int, },
 
     /// New slot-effect handler
     slot_effect: struct {
@@ -55,8 +53,7 @@ pub const RouteRegistry = struct {
 
     pub fn init(allocator: std.mem.Allocator) RouteRegistry {
         return .{
-            .allocator = allocator,
-            .routes = std.ArrayList(Route){},
+            .allocator = allocator, .routes = std.ArrayList(Route){},
             .mutex = .{},
         };
     }
@@ -76,11 +73,9 @@ pub const RouteRegistry = struct {
 
     /// Register a step-based route
     pub fn registerStepRoute(
-        self: *RouteRegistry,
-        method: HttpMethod,
+        self: *RouteRegistry, method: HttpMethod,
         path: []const u8,
-        handler: *const fn (*anyopaque, *anyopaque) callconv(.c) c_int,
-    ) !void {
+        handler: *const fn (*anyopaque, *anyopaque) callconv(.c) c_int,  ) !void {
         self.mutex.lock();
         defer self.mutex.unlock();
 
@@ -97,8 +92,7 @@ pub const RouteRegistry = struct {
 
     /// Register a slot-effect route
     pub fn registerSlotEffectRoute(
-        self: *RouteRegistry,
-        method: HttpMethod,
+        self: *RouteRegistry, method: HttpMethod,
         path: []const u8,
         handler: slot_effect_dll.SlotEffectHandlerFn,
         metadata: ?Route.RouteMetadata,
@@ -115,8 +109,7 @@ pub const RouteRegistry = struct {
             errdefer self.allocator.free(desc_copy);
 
             metadata_copy = .{
-                .description = desc_copy,
-                .max_body_size = meta.max_body_size,
+                .description = desc_copy, .max_body_size = meta.max_body_size,
                 .timeout_ms = meta.timeout_ms,
                 .requires_auth = meta.requires_auth,
             };
@@ -132,8 +125,7 @@ pub const RouteRegistry = struct {
 
     /// Register routes from a DLL's exported route table
     pub fn registerDllRoutes(
-        self: *RouteRegistry,
-        routes: []const slot_effect_dll.SlotEffectRoute,
+        self: *RouteRegistry, routes: []const slot_effect_dll.SlotEffectRoute,
     ) !void {
         for (routes) |route| {
             const path = route.path[0..route.path_len];
@@ -143,8 +135,7 @@ pub const RouteRegistry = struct {
             if (route.metadata) |meta| {
                 const desc = meta.description[0..meta.description_len];
                 metadata = .{
-                    .description = desc,
-                    .max_body_size = meta.max_body_size,
+                    .description = desc, .max_body_size = meta.max_body_size,
                     .timeout_ms = meta.timeout_ms,
                     .requires_auth = meta.requires_auth,
                 };
@@ -191,8 +182,7 @@ pub const RouteRegistry = struct {
 
     /// Find a matching route with path parameters
     pub fn findRouteWithParams(
-        self: *RouteRegistry,
-        allocator: std.mem.Allocator,
+        self: *RouteRegistry, allocator: std.mem.Allocator,
         method: HttpMethod,
         path: []const u8,
     ) !?RouteMatch {
@@ -225,8 +215,7 @@ pub const RouteRegistry = struct {
     /// Match a path pattern against an actual path and extract parameters
     /// Pattern: "/blogs/{id}" matches "/blogs/123" and extracts id=123
     fn matchPathPattern(
-        allocator: std.mem.Allocator,
-        pattern: []const u8,
+        allocator: std.mem.Allocator, pattern: []const u8,
         path: []const u8,
     ) !?PathParams {
         var pattern_parts = std.mem.splitScalar(u8, pattern, '/');
@@ -264,8 +253,7 @@ pub const RouteRegistry = struct {
         }
 
         return PathParams{
-            .names = try param_names.toOwnedSlice(allocator),
-            .values = try param_values.toOwnedSlice(allocator),
+            .names = try param_names.toOwnedSlice(allocator), .values = try param_values.toOwnedSlice(allocator),
         };
     }
 
@@ -288,8 +276,7 @@ pub const RouteRegistry = struct {
 
 /// Request dispatcher that invokes the appropriate handler
 pub const Dispatcher = struct {
-    registry: *RouteRegistry,
-    bridge: *slot_effect_dll.SlotEffectBridge,
+    registry: *RouteRegistry, bridge: *slot_effect_dll.SlotEffectBridge,
     allocator: std.mem.Allocator,
 
     pub fn init(
@@ -306,8 +293,7 @@ pub const Dispatcher = struct {
 
     /// Dispatch a request to the appropriate handler
     pub fn dispatch(
-        self: *Dispatcher,
-        method: HttpMethod,
+        self: *Dispatcher, method: HttpMethod,
         path: []const u8,
         request: *anyopaque,
         response: *anyopaque,
@@ -374,8 +360,7 @@ test "RouteRegistry - slot-effect route registration" {
     };
 
     const metadata = Route.RouteMetadata{
-        .description = "Test endpoint",
-        .max_body_size = 2048,
+        .description = "Test endpoint", .max_body_size = 2048,
         .timeout_ms = 5000,
         .requires_auth = true,
     };

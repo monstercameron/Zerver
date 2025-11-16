@@ -15,6 +15,7 @@
 // Production code should use zerver.slog for structured logging with proper log levels.
 const std = @import("std");
 const zerver = @import("zerver");
+const time_util = zerver.time_util;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // TEAM NAMESPACES: Separate contexts for Frontend, Backend, Platform teams
@@ -56,8 +57,7 @@ const Slot = enum {
 // Map each slot to its runtime type
 fn SlotType(comptime s: Slot) type {
     return switch (s) {
-        .TeamId => Team,
-        .TodoId => []const u8,
+        .TeamId => Team, .TodoId => []const u8,
         .ParsedJson => zerver.types.Response, // Placeholder for JSON
         .UserId => []const u8,
         .TodoItem => TodoRecord,
@@ -102,8 +102,7 @@ const ErrorKind = enum {
 
 fn makeError(kind: ErrorKind, what: []const u8, key: []const u8) zerver.types.Error {
     return .{
-        .kind = @intFromEnum(kind),
-        .ctx = .{ .what = what, .key = key },
+        .kind = @intFromEnum(kind), .ctx = .{ .what = what, .key = key },
     };
 }
 
@@ -145,7 +144,7 @@ fn mw_auth(ctx: *zerver.CtxBase) !zerver.Decision {
     // For MVP, simulate token parsing with random latency
     const latency_ms = simulateRandomLatency(50, 150);
     std.debug.print("[mw_auth] Simulating token validation ({d}ms)...\n", .{latency_ms});
-    std.time.sleep(latency_ms * 1_000_000); // Convert ms to nanoseconds
+    time_util.sleep(latency_ms * 1_000_000); // Convert ms to nanoseconds
 
     // BTS: Validate token format (simplified)
     if (!std.mem.startsWith(u8, auth_header, "Bearer ")) {
@@ -243,7 +242,7 @@ fn step_validate_create(ctx: *zerver.CtxBase) !zerver.Decision {
     const team = std.meta.stringToEnum(Team, team_name) orelse .Frontend;
 
     var id_buf: [16]u8 = undefined;
-    const id_str = std.fmt.bufPrint(&id_buf, "todo_{d}", .{std.time.timestamp()}) catch unreachable;
+    const id_str = std.fmt.bufPrint(&id_buf, "todo_{d}", .{time_util.timestamp()}) catch unreachable;
 
     const todo = TodoRecord{
         .id = id_str,
@@ -270,7 +269,7 @@ fn step_db_load(ctx: *zerver.CtxBase) !zerver.Decision {
     const latency = std.fmt.parseInt(u32, latency_str, 10) catch 100;
 
     std.debug.print("[step_db_load] Loading {s}... (simulating {d}ms latency)\n", .{ todo_id, latency });
-    std.time.sleep(latency * 1_000_000);
+    time_util.sleep(latency * 1_000_000);
 
     // BTS: In real DB, this would be a key-value lookup
     // For MVP, return a mock todo
@@ -291,7 +290,7 @@ fn step_db_save(ctx: *zerver.CtxBase) !zerver.Decision {
     const write_latency = latency + simulateRandomLatency(50, 100);
 
     std.debug.print("[step_db_save] Saving {s}... (simulating {d}ms latency)\n", .{ todo_id, write_latency });
-    std.time.sleep(write_latency * 1_000_000);
+    time_util.sleep(write_latency * 1_000_000);
 
     // BTS: Mark write acknowledgment
     try ctx.slotPutString(@intFromEnum(Slot.WriteAck), "true");
@@ -310,7 +309,7 @@ fn step_db_list(ctx: *zerver.CtxBase) !zerver.Decision {
     const scan_latency = latency + simulateRandomLatency(50, 150);
 
     std.debug.print("[step_db_list] Scanning team '{s}' todos... (simulating {d}ms latency)\n", .{ team_name, scan_latency });
-    std.time.sleep(scan_latency * 1_000_000);
+    time_util.sleep(scan_latency * 1_000_000);
 
     std.debug.print("[step_db_list] Found 0 todos for {s}\n", .{team_name});
     return .Continue;
@@ -320,8 +319,7 @@ fn step_db_list(ctx: *zerver.CtxBase) !zerver.Decision {
 fn step_render_list(_: *zerver.CtxBase) !zerver.Decision {
     std.debug.print("[step_render_list] Rendering todo list\n", .{});
     return zerver.done(.{
-        .status = 200,
-        .body = "[]", // Empty list for MVP
+        .status = 200, .body = "[]", // Empty list for MVP
     });
 }
 
@@ -331,8 +329,7 @@ fn step_render_item(ctx: *zerver.CtxBase) !zerver.Decision {
     std.debug.print("[step_render_item] Rendering {s}\n", .{todo_id});
 
     return zerver.done(.{
-        .status = 200,
-        .body = "{}",
+        .status = 200, .body = "{}",
     });
 }
 
@@ -340,8 +337,7 @@ fn step_render_item(ctx: *zerver.CtxBase) !zerver.Decision {
 fn step_render_created(ctx: *zerver.CtxBase) !zerver.Decision {
     std.debug.print("[step_render_created] Rendering 201 response\n", .{});
     return zerver.done(.{
-        .status = 201,
-        .body = "{}",
+        .status = 201, .body = "{}",
     });
 }
 
@@ -349,8 +345,7 @@ fn step_render_created(ctx: *zerver.CtxBase) !zerver.Decision {
 fn step_render_no_content(_: *zerver.CtxBase) !zerver.Decision {
     std.debug.print("[step_render_no_content] Rendering 204 response\n", .{});
     return zerver.done(.{
-        .status = 204,
-        .body = "",
+        .status = 204, .body = "",
     });
 }
 
@@ -363,8 +358,7 @@ fn render_error(ctx: *zerver.CtxBase) !zerver.Decision {
     const error_kind: ErrorKind = @enumFromInt(error_info.kind);
 
     const status_code = switch (error_kind) {
-        .InvalidInput => 400,
-        .Unauthorized => 401,
+        .InvalidInput => 400, .Unauthorized => 401,
         .Forbidden => 403,
         .NotFound => 404,
         .Conflict => 409,
@@ -382,8 +376,7 @@ fn render_error(ctx: *zerver.CtxBase) !zerver.Decision {
     });
 
     return zerver.done(.{
-        .status = status_code,
-        .body = "{\"error\":\"Internal Server Error\"}",
+        .status = status_code, .body = "{\"error\":\"Internal Server Error\"}",
     });
 }
 
@@ -394,7 +387,7 @@ fn render_error(ctx: *zerver.CtxBase) !zerver.Decision {
 /// Generate random latency in milliseconds within range [min_ms, max_ms]
 /// This simulates variable network/database performance
 fn simulateRandomLatency(min_ms: u32, max_ms: u32) u32 {
-    var prng = std.Random.DefaultPrng.init(std.time.timestamp());
+    var prng = std.Random.DefaultPrng.init(time_util.timestamp());
     const random = prng.random();
     const range = max_ms - min_ms;
     const offset = random.intRangeLessThan(u32, 0, range);
@@ -517,32 +510,28 @@ pub fn main() !void {
     std.debug.print("Test Request 1: GET /teams/frontend/todos\n", .{});
     std.debug.print("─────────────────────────────────────────\n", .{});
     const test1 = try server.handleRequest(
-        "GET /teams/frontend/todos HTTP/1.1\r\nAuthorization: Bearer test_token_abc\r\nHost: localhost:8081\r\n\r\n",
-        allocator,
+        "GET /teams/frontend/todos HTTP/1.1\r\nAuthorization: Bearer test_token_abc\r\nHost: localhost:8081\r\n\r\n", allocator,
     );
     std.debug.print("Response: {s}\n\n", .{test1});
 
     std.debug.print("Test Request 2: GET /teams/backend/todos/todo_123\n", .{});
     std.debug.print("─────────────────────────────────────────\n", .{});
     const test2 = try server.handleRequest(
-        "GET /teams/backend/todos/todo_123 HTTP/1.1\r\nAuthorization: Bearer another_token\r\nHost: localhost:8081\r\n\r\n",
-        allocator,
+        "GET /teams/backend/todos/todo_123 HTTP/1.1\r\nAuthorization: Bearer another_token\r\nHost: localhost:8081\r\n\r\n", allocator,
     );
     std.debug.print("Response: {s}\n\n", .{test2});
 
     std.debug.print("Test Request 3: POST /teams/platform/todos (create)\n", .{});
     std.debug.print("─────────────────────────────────────────\n", .{});
     const test3 = try server.handleRequest(
-        "POST /teams/platform/todos HTTP/1.1\r\nAuthorization: Bearer platform_token\r\nContent-Type: application/json\r\nContent-Length: 26\r\n\r\n{\"title\":\"Fix deployment\"}\n",
-        allocator,
+        "POST /teams/platform/todos HTTP/1.1\r\nAuthorization: Bearer platform_token\r\nContent-Type: application/json\r\nContent-Length: 26\r\n\r\n{\"title\":\"Fix deployment\"}\n", allocator,
     );
     std.debug.print("Response: {s}\n\n", .{test3});
 
     std.debug.print("Test Request 4: Invalid team (should fail gracefully)\n", .{});
     std.debug.print("─────────────────────────────────────────\n", .{});
     const test4 = try server.handleRequest(
-        "GET /teams/invalid/todos HTTP/1.1\r\nAuthorization: Bearer test_token\r\nHost: localhost:8081\r\n\r\n",
-        allocator,
+        "GET /teams/invalid/todos HTTP/1.1\r\nAuthorization: Bearer test_token\r\nHost: localhost:8081\r\n\r\n", allocator,
     );
     std.debug.print("Response: {s}\n\n", .{test4});
 

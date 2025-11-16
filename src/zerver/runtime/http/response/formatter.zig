@@ -4,10 +4,10 @@
 /// TODO: Security: allow configuring/disabling the 'Server' header and avoid exposing version information by default.
 const std = @import("std");
 const types = @import("../../../core/types.zig");
+const time_util = @import("../../../util/time.zig");
 
 pub const CorrelationHeader = struct {
-    name: []const u8,
-    value: []const u8,
+    name: []const u8, value: []const u8,
 };
 
 pub const FormatOptions = struct {
@@ -24,7 +24,10 @@ pub fn formatResponse(
     options: FormatOptions,
 ) ![]const u8 {
     var buf = std.ArrayList(u8).initCapacity(arena, 512) catch unreachable;
-    const w = buf.writer(arena);
+    var writer_alloc = std.Io.Writer.Allocating.fromArrayList(arena, &buf);
+    var writer_done = false;
+    defer if (!writer_done) writer_alloc.deinit();
+    const w = &writer_alloc.writer;
 
     const status_text = statusText(response.status);
     try w.print("HTTP/1.1 {} {s}\r\n", .{ response.status, status_text });
@@ -32,7 +35,7 @@ pub fn formatResponse(
     const status = response.status;
     const send_date = !((status >= 100 and status < 200) or status == 204 or status == 304);
     if (send_date and !headerExists(response.headers, "Date")) {
-        const now_raw = std.time.timestamp();
+        const now_raw = time_util.timestamp();
         const now = @as(i64, @intCast(now_raw));
         const date_str = try formatHttpDate(arena, now);
         try w.print("Date: {s}\r\n", .{date_str});
@@ -98,20 +101,20 @@ pub fn formatResponse(
             if (!options.is_head) {
                 try w.writeAll(body);
             }
-        },
-        .streaming => |_| {
+        }, .streaming => |_| {
             // TODO: Implement chunked Transfer-Encoding for streaming bodies and optional Trailer support (RFC 9112 §6).
             try w.print("\r\n", .{});
         },
     }
 
-    return buf.items;
+    const msg = try writer_alloc.toOwnedSlice();
+    writer_done = true;
+    return msg;
 }
 
 fn statusText(status: u16) []const u8 {
     return switch (status) {
-        100 => "Continue",
-        101 => "Switching Protocols",
+        100 => "Continue", 101 => "Switching Protocols",
         102 => "Processing",
         200 => "OK",
         201 => "Created",
@@ -196,8 +199,7 @@ pub fn formatHttpDate(arena: std.mem.Allocator, timestamp: i64) ![]const u8 {
         month_names[month_index],
         year_day.year,
         day_seconds.getHoursIntoDay(),
-        day_seconds.getMinutesIntoHour(),
-        day_seconds.getSecondsIntoMinute(),
+        day_seconds.getMinutesIntoHour(), day_seconds.getSecondsIntoMinute(),
     });
 }
 

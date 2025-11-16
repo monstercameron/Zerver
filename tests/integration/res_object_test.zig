@@ -33,15 +33,13 @@ fn responseStatusCodes(server: *TestServer, allocator: std.mem.Allocator) !void 
     }.handler);
 
     const ok_response = try server.handle(
-        allocator,
-        "GET /status/200 HTTP/1.1\r\n" ++ "Host: localhost\r\n" ++ "\r\n",
+        allocator, "GET /status/200 HTTP/1.1\r\n" ++ "Host: localhost\r\n" ++ "\r\n",
     );
     defer allocator.free(ok_response);
     try expectStartsWith(ok_response, "HTTP/1.1 200 OK");
 
     const missing_response = try server.handle(
-        allocator,
-        "GET /status/404 HTTP/1.1\r\n" ++ "Host: localhost\r\n" ++ "\r\n",
+        allocator, "GET /status/404 HTTP/1.1\r\n" ++ "Host: localhost\r\n" ++ "\r\n",
     );
     defer allocator.free(missing_response);
     try expectStartsWith(missing_response, "HTTP/1.1 404 Not Found");
@@ -56,8 +54,7 @@ fn responseHeaderSetsValue(server: *TestServer, allocator: std.mem.Allocator) !v
     }.handler);
 
     const response = try server.handle(
-        allocator,
-        "GET /header HTTP/1.1\r\n" ++ "Host: localhost\r\n" ++ "\r\n",
+        allocator, "GET /header HTTP/1.1\r\n" ++ "Host: localhost\r\n" ++ "\r\n",
     );
     defer allocator.free(response);
 
@@ -73,8 +70,7 @@ fn responseSendBody(server: *TestServer, allocator: std.mem.Allocator) !void {
     }.handler);
 
     const response = try server.handle(
-        allocator,
-        "GET /send HTTP/1.1\r\n" ++ "Host: localhost\r\n" ++ "\r\n",
+        allocator, "GET /send HTTP/1.1\r\n" ++ "Host: localhost\r\n" ++ "\r\n",
     );
     defer allocator.free(response);
 
@@ -91,8 +87,7 @@ fn responseJson(server: *TestServer, allocator: std.mem.Allocator) !void {
     }.handler);
 
     const response = try server.handle(
-        allocator,
-        "GET /json HTTP/1.1\r\n" ++ "Host: localhost\r\n" ++ "\r\n",
+        allocator, "GET /json HTTP/1.1\r\n" ++ "Host: localhost\r\n" ++ "\r\n",
     );
     defer allocator.free(response);
 
@@ -109,8 +104,7 @@ fn responseRedirect(server: *TestServer, allocator: std.mem.Allocator) !void {
     }.handler);
 
     const response = try server.handle(
-        allocator,
-        "GET /old HTTP/1.1\r\n" ++ "Host: localhost\r\n" ++ "\r\n",
+        allocator, "GET /old HTTP/1.1\r\n" ++ "Host: localhost\r\n" ++ "\r\n",
     );
     defer allocator.free(response);
 

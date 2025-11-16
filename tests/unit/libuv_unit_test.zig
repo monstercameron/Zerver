@@ -3,8 +3,7 @@ const zerver = @import("zerver");
 const libuv = zerver.libuv_reactor;
 
 const AsyncState = struct {
-    count: usize = 0,
-};
+    count: usize = 0, };
 
 fn asyncCallback(async: *libuv.Async) void {
     const state_ptr = async.getUserData() orelse return;
@@ -14,8 +13,7 @@ fn asyncCallback(async: *libuv.Async) void {
 }
 
 const TimerState = struct {
-    fired: bool = false,
-};
+    fired: bool = false, };
 
 fn timerCallback(timer: *libuv.Timer) void {
     const state_ptr = timer.getUserData() orelse return;

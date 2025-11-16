@@ -3,8 +3,7 @@ const db = @import("../db.zig");
 
 /// Identifiers represent table or column names prior to dialect quoting.
 pub const Identifier = struct {
-    name: []const u8,
-};
+    name: []const u8, };
 
 /// Expression tree for simple SQL generation use cases.
 pub const Expr = union(enum) {
@@ -16,8 +15,7 @@ pub const Expr = union(enum) {
 
 /// Simple equality expression (column = value).
 pub const Equal = struct {
-    column: Identifier,
-    value: db.BindValue,
+    column: Identifier, value: db.BindValue,
 };
 
 /// Ordering clause helper.

@@ -14,8 +14,7 @@ pub fn build(b: *std.Build) void {
 
     // Copy blog sources to src/features/blog/ with flattened structure
     const setup_src = b.addSystemCommand(&[_][]const u8{
-        "sh",
-        "-c",
+        "sh", "-c",
         "mkdir -p ../../src/features/blog && " ++
         // Copy blog source files directly (flatten src/ directory)
         "cp src/*.zig ../../src/features/blog/ 2>/dev/null || true && " ++
@@ -29,13 +28,11 @@ pub fn build(b: *std.Build) void {
         "-e 's|@import(\"../../shared/|@import(\"../shared/|g' " ++
         // Fix imports to local files (src/routes.zig -> routes.zig)
         "-e 's|@import(\"src/\\([^\"]*\\)\")|@import(\"\\1\")|g' " ++
-        "{} \\;",
-    });
+        "{} \\;", });
 
     // Build from src/features/blog/ where imports work correctly
     const build_cmd = b.addSystemCommand(&[_][]const u8{
-        "zig",
-        "build-lib",
+        "zig", "build-lib",
         "-dynamic",
         "-lc",
         "-target",
@@ -48,8 +45,7 @@ pub fn build(b: *std.Build) void {
     // Add optimization
     build_cmd.addArg("-O");
     build_cmd.addArg(switch (optimize) {
-        .Debug => "Debug",
-        .ReleaseSafe => "ReleaseSafe",
+        .Debug => "Debug", .ReleaseSafe => "ReleaseSafe",
         .ReleaseFast => "ReleaseFast",
         .ReleaseSmall => "ReleaseSmall",
     });
@@ -64,16 +60,14 @@ pub fn build(b: *std.Build) void {
 
     // Move DLL to features/blog/ and clean up temp src
     const cleanup = b.addSystemCommand(&[_][]const u8{
-        "sh",
-        "-c",
+        "sh", "-c",
         b.fmt("mv ../../{s} . && rm -rf ../../src/features/blog", .{lib_name}),
     });
     cleanup.step.dependOn(&build_cmd.step);
 
     // Install the resulting library
     const install_step = b.addInstallBinFile(
-        b.path(lib_name),
-        lib_name,
+        b.path(lib_name), lib_name,
     );
     install_step.step.dependOn(&cleanup.step);
 

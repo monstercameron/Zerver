@@ -13,8 +13,7 @@ const slog = @import("../observability/slog.zig");
 
 /// Test request builder and context.
 pub const ReqTest = struct {
-    allocator: std.mem.Allocator,
-    arena: std.heap.ArenaAllocator,
+    allocator: std.mem.Allocator, arena: std.heap.ArenaAllocator,
     ctx: ctx_module.CtxBase,
 
     pub fn init(allocator: std.mem.Allocator) !ReqTest {
@@ -25,8 +24,7 @@ pub const ReqTest = struct {
         errdefer ctx.deinit();
 
         return .{
-            .allocator = allocator,
-            .arena = arena,
+            .allocator = allocator, .arena = arena,
             .ctx = ctx,
         };
     }

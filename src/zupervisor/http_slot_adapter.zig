@@ -10,11 +10,11 @@ const slot_effect_dll = @import("slot_effect_dll.zig");
 const slot_effect_executor = @import("slot_effect_executor.zig");
 const route_registry = @import("route_registry.zig");
 const effect_executors = @import("effect_executors.zig");
+const time_util = zerver.time_util;
 
 /// HTTP request data from IPC message
 pub const HttpRequest = struct {
-    method: []const u8,
-    path: []const u8,
+    method: []const u8, path: []const u8,
     headers: []const Header,
     body: []const u8,
 
@@ -65,8 +65,7 @@ pub export fn getPathParam(name_ptr: [*c]const u8, name_len: usize) callconv(.c)
 
 /// Main HTTP to slot-effect adapter
 pub const HttpSlotAdapter = struct {
-    allocator: std.mem.Allocator,
-    bridge: slot_effect_dll.SlotEffectBridge,
+    allocator: std.mem.Allocator, bridge: slot_effect_dll.SlotEffectBridge,
     registry: route_registry.RouteRegistry,
     executor: slot_effect_executor.PipelineExecutor,
     request_counter: std.atomic.Value(u64),
@@ -83,8 +82,7 @@ pub const HttpSlotAdapter = struct {
             .bridge = bridge,
             .registry = route_registry.RouteRegistry.init(allocator),
             .executor = slot_effect_executor.PipelineExecutor.init(allocator, &bridge),
-            .request_counter = std.atomic.Value(u64).init(0),
-        };
+            .request_counter = std.atomic.Value(u64).init(0), };
     }
 
     pub fn deinit(self: *HttpSlotAdapter) void {
@@ -94,15 +92,13 @@ pub const HttpSlotAdapter = struct {
 
     /// Handle an HTTP request via slot-effect pipeline
     pub fn handleRequest(
-        self: *HttpSlotAdapter,
-        request: HttpRequest,
+        self: *HttpSlotAdapter, request: HttpRequest,
     ) !HttpResponse {
         // Generate request ID
         const req_num = self.request_counter.fetchAdd(1, .monotonic);
         const request_id = try std.fmt.allocPrint(
-            self.allocator,
-            "req-{d}-{d}",
-            .{ std.time.timestamp(), req_num },
+            self.allocator, "req-{d}-{d}",
+            .{ time_util.timestamp(), req_num },
         );
         defer self.allocator.free(request_id);
 
@@ -130,8 +126,7 @@ pub const HttpSlotAdapter = struct {
     }
 
     fn handleStepPipeline(
-        self: *HttpSlotAdapter,
-        request_id: []const u8,
+        self: *HttpSlotAdapter, request_id: []const u8,
         request: HttpRequest,
         route: *const route_registry.Route,
         params: *const route_registry.RouteRegistry.PathParams,
@@ -151,16 +146,13 @@ pub const HttpSlotAdapter = struct {
         const ResponseBuilder = struct {
             allocator: std.mem.Allocator,
             status: u16,
-            headers: std.ArrayList(ResponseHeader),
-            body: std.ArrayList(u8),
+            headers: std.ArrayList(ResponseHeader), body: std.ArrayList(u8),
 
             fn init(allocator: std.mem.Allocator) !@This() {
                 return .{
-                    .allocator = allocator,
-                    .status = 200,
+                    .allocator = allocator, .status = 200,
                     .headers = std.ArrayList(ResponseHeader){},
-                    .body = std.ArrayList(u8){},
-                };
+                    .body = std.ArrayList(u8){}, };
             }
 
             fn deinit(s: *@This()) void {
@@ -208,8 +200,7 @@ pub const HttpSlotAdapter = struct {
     }
 
     fn handleSlotEffect(
-        self: *HttpSlotAdapter,
-        request_id: []const u8,
+        self: *HttpSlotAdapter, request_id: []const u8,
         request: HttpRequest,
         route: *const route_registry.Route,
     ) !HttpResponse {
@@ -228,8 +219,7 @@ pub const HttpSlotAdapter = struct {
         }
 
         const ctx = try ctx_builder.buildFromHttp(
-            request_id,
-            request.method,
+            request_id, request.method,
             request.path,
             converted_headers,
             request.body,
@@ -241,8 +231,7 @@ pub const HttpSlotAdapter = struct {
 
         // Create response object that handler will populate
         var response = slot_effect.Response.init(
-            200,
-            slot_effect.Body{ .complete = "" },
+            200, slot_effect.Body{ .complete = "" },
         );
 
         // Build adapter for DLL handler
@@ -250,10 +239,8 @@ pub const HttpSlotAdapter = struct {
 
         // Call the DLL handler via C ABI
         const handler_result = route.handler.slot_effect.handler(
-            &adapter,
-            @ptrCast(ctx),
-            @ptrCast(&response),
-        );
+            &adapter, @ptrCast(ctx),
+            @ptrCast(&response),  );
 
         // Check handler result
         if (handler_result != 0) {
@@ -301,8 +288,7 @@ pub const HttpSlotAdapter = struct {
 
     fn buildErrorResponse(self: *HttpSlotAdapter, status: u16, message: []const u8) !HttpResponse {
         const body = try std.fmt.allocPrint(
-            self.allocator,
-            "{{\"error\":\"{s}\",\"code\":{d}}}",
+            self.allocator, "{{\"error\":\"{s}\",\"code\":{d}}}",
             .{ message, status },
         );
 
@@ -340,8 +326,7 @@ test "HttpSlotAdapter - 404 response" {
     defer adapter.deinit();
 
     const request = HttpRequest{
-        .method = "GET",
-        .path = "/nonexistent",
+        .method = "GET", .path = "/nonexistent",
         .headers = &.{},
         .body = "",
     };
@@ -367,8 +352,7 @@ test "HttpSlotAdapter - route registration and lookup" {
     };
 
     try adapter.registry.registerSlotEffectRoute(
-        .GET,
-        "/api/test",
+        .GET, "/api/test",
         Handler.handle,
         null,
     );

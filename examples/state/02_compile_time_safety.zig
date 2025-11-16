@@ -26,8 +26,7 @@ const slog = @import("src/zerver/observability/slog.zig");
 // EXAMPLE 2: Invalid write - slot not in writes
 //
 // const BadWriteView = zerver.CtxView(.{
-//     .reads = &.{ .TodoId },
-//     .writes = &.{ .UserId },         // Only UserId can be written
+//     .reads = &.{ .TodoId }, //     .writes = &.{ .UserId },         // Only UserId can be written
 // });
 //
 // fn bad_write_step(ctx: *BadWriteView) !zerver.Decision {
@@ -55,8 +54,7 @@ fn good_step(ctx: *GoodView) !zerver.Decision {
 
 // EXAMPLE 4: Optional reads work too
 const OptionalView = zerver.CtxView(.{
-    .reads = &.{.TodoId},
-});
+    .reads = &.{.TodoId}, });
 
 fn optional_step(ctx: *OptionalView) !zerver.Decision {
     // ✓ Can optionally read TodoId

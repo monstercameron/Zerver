@@ -15,18 +15,17 @@
 // Production code should use zerver.slog for structured logging with proper log levels.
 const std = @import("std");
 const zerver = @import("../src/zerver/root.zig");
+const array_list_writer = @import("../src/zerver/util/array_list_writer.zig");
 
 /// StreamingJsonWriter: Incrementally builds JSON without buffering all data
 pub const StreamingJsonWriter = struct {
-    allocator: std.mem.Allocator,
-    buffer: std.ArrayList(u8),
+    allocator: std.mem.Allocator, buffer: std.ArrayList(u8),
     depth: u32 = 0,
     needs_comma: bool = false,
 
     pub fn init(allocator: std.mem.Allocator) !@This() {
         return .{
-            .allocator = allocator,
-            .buffer = try std.ArrayList(u8).initCapacity(allocator, 1024),
+            .allocator = allocator, .buffer = try std.ArrayList(u8).initCapacity(allocator, 1024),
         };
     }
 
@@ -37,7 +36,7 @@ pub const StreamingJsonWriter = struct {
     /// Start a JSON object
     pub fn objectStart(self: *@This()) !void {
         if (self.needs_comma) {
-            try self.buffer.append(',');
+            try self.buffer.append(', ');
         }
         try self.buffer.append('{');
         self.depth += 1;
@@ -54,7 +53,7 @@ pub const StreamingJsonWriter = struct {
     /// Start a JSON array
     pub fn arrayStart(self: *@This()) !void {
         if (self.needs_comma) {
-            try self.buffer.append(',');
+            try self.buffer.append(', ');
         }
         try self.buffer.append('[');
         self.depth += 1;
@@ -71,34 +70,40 @@ pub const StreamingJsonWriter = struct {
     /// Write a key-value pair
     pub fn keyValue(self: *@This(), key: []const u8, value: []const u8) !void {
         if (self.needs_comma) {
-            try self.buffer.append(',');
+            try self.buffer.append(', ');
         }
-        try self.buffer.writer().print("\"{s}\":{s}", .{ key, value });
+        var writer_helper = array_list_writer.ArrayListWriter.init(&self.buffer, self.allocator);
+        const writer = writer_helper.writer();
+        try writer.print("\"{s}\":{s}", .{ key, value });
         self.needs_comma = true;
     }
 
     /// Write a string value
     pub fn stringValue(self: *@This(), value: []const u8) !void {
         if (self.needs_comma) {
-            try self.buffer.append(',');
+            try self.buffer.append(', ');
         }
-        try self.buffer.writer().print("\"{s}\"", .{value});
+        var writer_helper = array_list_writer.ArrayListWriter.init(&self.buffer, self.allocator);
+        const writer = writer_helper.writer();
+        try writer.print("\"{s}\"", .{value});
         self.needs_comma = true;
     }
 
     /// Write a number value
     pub fn numberValue(self: *@This(), value: i64) !void {
         if (self.needs_comma) {
-            try self.buffer.append(',');
+            try self.buffer.append(', ');
         }
-        try self.buffer.writer().print("{}", .{value});
+        var writer_helper = array_list_writer.ArrayListWriter.init(&self.buffer, self.allocator);
+        const writer = writer_helper.writer();
+        try writer.print("{}", .{value});
         self.needs_comma = true;
     }
 
     /// Write a boolean value
     pub fn boolValue(self: *@This(), value: bool) !void {
         if (self.needs_comma) {
-            try self.buffer.append(',');
+            try self.buffer.append(', ');
         }
         try self.buffer.writeAll(if (value) "true" else "false");
         self.needs_comma = true;
@@ -107,7 +112,7 @@ pub const StreamingJsonWriter = struct {
     /// Write a null value
     pub fn nullValue(self: *@This()) !void {
         if (self.needs_comma) {
-            try self.buffer.append(',');
+            try self.buffer.append(', ');
         }
         try self.buffer.writeAll("null");
         self.needs_comma = true;
@@ -159,9 +164,7 @@ pub fn example_stream_users() !void {
 // ============================================================================
 
 pub const LargeDataset = struct {
-    items: []const Item,
-
-    pub const Item = struct {
+    items: []const Item, pub const Item = struct {
         id: u64,
         value: []const u8,
     };
@@ -185,13 +188,21 @@ pub fn example_stream_large_dataset() !void {
     try writer.objectStart();
     try writer.keyValue("count", "3");
 
-    try writer.buffer.writer().print(",\"items\":", .{});
+    {
+        var helper = array_list_writer.ArrayListWriter.init(&writer.buffer, writer.allocator);
+        const w = helper.writer();
+        try w.writeAll(", \"items\":");
+    }
     try writer.arrayStart();
 
     for (items, 0..) |item, idx| {
         try writer.objectStart();
-        try writer.buffer.writer().print("\"id\":{}", .{item.id});
-        try writer.buffer.writer().print(",\"value\":\"{s}\"", .{item.value});
+        {
+            var helper = array_list_writer.ArrayListWriter.init(&writer.buffer, writer.allocator);
+            const w = helper.writer();
+            try w.print("\"id\":{}", .{item.id});
+            try w.print(", \"value\":\"{s}\"", .{item.value});
+        }
         try writer.objectEnd();
 
         if (idx % 10 == 9) {
@@ -241,8 +252,7 @@ pub fn step_list_todos_streaming(ctx: *zerver.CtxBase) !zerver.Decision {
     const response_body = try ctx.allocator.dupe(u8, writer.toJson());
 
     return zerver.done(zerver.Response{
-        .status = 200,
-        .body = response_body,
+        .status = 200, .body = response_body,
     });
 }
 
@@ -263,13 +273,21 @@ pub fn example_nested_streaming() !void {
     try writer.keyValue("timestamp", "2025-10-22T10:30:00Z");
 
     // Nested data object
-    try writer.buffer.writer().print(",\"data\":", .{});
+    {
+        var helper = array_list_writer.ArrayListWriter.init(&writer.buffer, writer.allocator);
+        const w = helper.writer();
+        try w.writeAll(", \"data\":");
+    }
     try writer.objectStart();
 
     try writer.keyValue("total_items", "42");
 
     // Nested filters array
-    try writer.buffer.writer().print(",\"filters\":", .{});
+    {
+        var helper = array_list_writer.ArrayListWriter.init(&writer.buffer, writer.allocator);
+        const w = helper.writer();
+        try w.writeAll(", \"filters\":");
+    }
     try writer.arrayStart();
 
     try writer.stringValue("active");

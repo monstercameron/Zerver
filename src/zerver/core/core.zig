@@ -11,8 +11,7 @@ const ctx_module = @import("ctx.zig");
 /// Or: fn (*CtxView(spec)) !Decision (with spec containing reads/writes)
 pub fn step(comptime name: []const u8, comptime F: anytype) types.Step {
     const fn_type = switch (@typeInfo(@TypeOf(F))) {
-        .@"fn" => |info| info,
-        else => @compileError("step expects a function value"),
+        .@"fn" => |info| info, else => @compileError("step expects a function value"),
     };
 
     // Memory Safety Note: Step.name must be a comptime literal or static string.
@@ -31,16 +30,14 @@ pub fn step(comptime name: []const u8, comptime F: anytype) types.Step {
 
     const param_type = fn_type.params[0].type.?;
     const param_info = switch (@typeInfo(param_type)) {
-        .pointer => |info| info,
-        else => @compileError("step function must accept a pointer parameter"),
+        .pointer => |info| info, else => @compileError("step function must accept a pointer parameter"),
     };
 
     const child_type = param_info.child;
 
     if (child_type == ctx_module.CtxBase) {
         return types.Step{
-            .name = name,
-            .call = F,
+            .name = name, .call = F,
             .reads = &.{},
             .writes = &.{},
         };
@@ -71,8 +68,7 @@ fn extractReadsWrites(comptime _CtxViewType: type) struct { reads: []const u32, 
 
     return .{
         .reads = convertSlotsToIds(_CtxViewType.__reads),
-        .writes = convertSlotsToIds(_CtxViewType.__writes),
-    };
+        .writes = convertSlotsToIds(_CtxViewType.__writes), };
 }
 
 /// Create a wrapper function that adapts from *CtxBase to the typed view expected by F.
@@ -86,8 +82,7 @@ fn makeTrampolineFor(comptime F: anytype, comptime CtxViewPtr: type) *const fn (
     return struct {
         pub fn wrapper(base: *ctx_module.CtxBase) anyerror!types.Decision {
             var view = CtxViewType{
-                .base = base,
-            };
+                .base = base, };
             return F(&view);
         }
     }.wrapper;

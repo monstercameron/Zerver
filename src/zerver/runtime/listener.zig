@@ -1,3 +1,4 @@
+const time_util = @import("../util/time.zig");
 // src/zerver/runtime/listener.zig
 /// TCP listener and connection handling
 ///
@@ -10,22 +11,20 @@ const root = @import("../root.zig");
 const handler = @import("handler.zig");
 const slog = @import("../observability/slog.zig");
 const http_connection = @import("http/connection.zig");
+const compat_net = @import("net_compat.zig");
 
 /// Listen for incoming connections and serve HTTP requests
 pub fn listenAndServe(
-    srv: *root.Server,
-    allocator: std.mem.Allocator,
+    srv: *root.Server, allocator: std.mem.Allocator,
 ) !void {
     const addr = srv.config.addr;
-    const server_addr = try std.net.Address.parseIp(
+    const server_addr = try compat_net.Address.parseIp(
         try std.fmt.allocPrint(allocator, "{d}.{d}.{d}.{d}", .{ addr.ip[0], addr.ip[1], addr.ip[2], addr.ip[3] }),
         addr.port,
     );
-    defer allocator.free(server_addr.getIp());
 
     var listener = try server_addr.listen(.{
-        .reuse_address = true,
-    });
+        .reuse_address = true, });
     defer listener.deinit();
 
     slog.info("Server started and listening", &.{
@@ -57,9 +56,8 @@ pub fn listenAndServe(
 /// Handle a single persistent HTTP/1.1 connection
 /// RFC 9112 Section 9: Persistent connections allow multiple requests/responses per connection
 fn handleConnection(
-    srv: *root.Server,
-    allocator: std.mem.Allocator,
-    connection: std.net.Server.Connection,
+    srv: *root.Server, allocator: std.mem.Allocator,
+    connection: compat_net.Connection,
 ) !void {
     defer connection.stream.close();
 
@@ -67,11 +65,11 @@ fn handleConnection(
     // Default to 60 seconds as recommended
     const keep_alive_timeout_ms = 60 * 1000;
     // TODO: Configurability: surface keep-alive timeout via server config; consider per-connection idle vs header/body read timeouts.
-    var last_activity = std.time.milliTimestamp();
+    var last_activity = time_util.milliTimestamp();
 
     while (true) {
         // Check for idle timeout
-        const now = std.time.milliTimestamp();
+        const now = time_util.milliTimestamp();
         if (now - last_activity > keep_alive_timeout_ms) {
             slog.debug("Connection idle timeout", &.{});
             return;
@@ -99,7 +97,7 @@ fn handleConnection(
             return;
         }
 
-        last_activity = std.time.milliTimestamp();
+        last_activity = time_util.milliTimestamp();
 
         const preview_len = @min(req_data.len, 120);
         slog.info("Received HTTP request", &.{

@@ -35,8 +35,7 @@ fn middlewareExecutionOrder(server: *TestServer, allocator: std.mem.Allocator) !
     }.handler);
 
     const response = try server.handle(
-        allocator,
-        "GET /test HTTP/1.1\r\n" ++ "Host: localhost\r\n" ++ "\r\n",
+        allocator, "GET /test HTTP/1.1\r\n" ++ "Host: localhost\r\n" ++ "\r\n",
     );
     defer allocator.free(response);
 
@@ -59,8 +58,7 @@ fn middlewareErrorHandling(server: *TestServer, allocator: std.mem.Allocator) !v
     }.handler);
 
     const response = try server.handle(
-        allocator,
-        "GET /test HTTP/1.1\r\n" ++ "Host: localhost\r\n" ++ "\r\n",
+        allocator, "GET /test HTTP/1.1\r\n" ++ "Host: localhost\r\n" ++ "\r\n",
     );
     defer allocator.free(response);
 
@@ -93,8 +91,7 @@ fn middlewareNext(server: *TestServer, allocator: std.mem.Allocator) !void {
     }.handler);
 
     const response = try server.handle(
-        allocator,
-        "GET /test HTTP/1.1\r\n" ++ "Host: localhost\r\n" ++ "\r\n",
+        allocator, "GET /test HTTP/1.1\r\n" ++ "Host: localhost\r\n" ++ "\r\n",
     );
     defer allocator.free(response);
 

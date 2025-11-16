@@ -5,8 +5,7 @@ const slog = @import("../../observability/slog.zig");
 const AtomicOrder = std.builtin.AtomicOrder;
 
 pub const SubmitError = error{
-    ShuttingDown,
-    OutOfMemory,
+    ShuttingDown, OutOfMemory,
     QueueFull,
 };
 
@@ -34,8 +33,7 @@ pub const JobSystem = struct {
     mutex: std.Thread.Mutex = .{},
     cond: std.Thread.Condition = .{},
     queue: JobQueue,
-    accepting: std.atomic.Value(bool) = std.atomic.Value(bool).init(true),
-    workers: []std.Thread,
+    accepting: std.atomic.Value(bool) = std.atomic.Value(bool).init(true), workers: []std.Thread,
     queue_label: []const u8,
 
     pub fn init(self: *JobSystem, options: InitOptions) !void {
@@ -44,8 +42,7 @@ pub const JobSystem = struct {
             .mutex = .{},
             .cond = .{},
             .queue = JobQueue.init(options.allocator, options.queue_capacity),
-            .accepting = std.atomic.Value(bool).init(true),
-            .workers = &[_]std.Thread{},
+            .accepting = std.atomic.Value(bool).init(true), .workers = &[_]std.Thread{},
             .queue_label = options.label,
         };
 
@@ -126,8 +123,7 @@ pub const JobSystem = struct {
                 slog.Attr.uint("job_cb", @as(u64, @intCast(@intFromPtr(job.callback)))),
             });
             return switch (err) {
-                error.QueueFull => SubmitError.QueueFull,
-                error.OutOfMemory => SubmitError.OutOfMemory,
+                error.QueueFull => SubmitError.QueueFull, error.OutOfMemory => SubmitError.OutOfMemory,
             };
         };
         const after_len = self.queue.count;
@@ -227,8 +223,7 @@ pub const JobSystem = struct {
 };
 
 const WorkerState = struct {
-    system: *JobSystem,
-    worker_index: usize,
+    system: *JobSystem, worker_index: usize,
 };
 
 threadlocal var tls_worker_state: ?WorkerState = null;
@@ -236,8 +231,7 @@ threadlocal var tls_worker_state: ?WorkerState = null;
 pub fn currentWorkerInfo() ?WorkerInfo {
     if (tls_worker_state) |state| {
         return WorkerInfo{
-            .queue = state.system.label(),
-            .worker_index = state.worker_index,
+            .queue = state.system.label(), .worker_index = state.worker_index,
         };
     }
     return null;

@@ -16,18 +16,17 @@
 // Production code should use zerver.slog for structured logging with proper log levels.
 const std = @import("std");
 const zerver = @import("zerver");
+const array_list_writer = @import("src/zerver/util/array_list_writer.zig");
 
 /// StreamingJsonWriter: Incrementally builds JSON without buffering all data
 pub const StreamingJsonWriter = struct {
-    allocator: std.mem.Allocator,
-    buffer: std.ArrayList(u8),
+    allocator: std.mem.Allocator, buffer: std.ArrayList(u8),
     depth: u32 = 0,
     needs_comma: bool = false,
 
     pub fn init(allocator: std.mem.Allocator) !@This() {
         return .{
-            .allocator = allocator,
-            .buffer = try std.ArrayList(u8).initCapacity(allocator, 1024),
+            .allocator = allocator, .buffer = try std.ArrayList(u8).initCapacity(allocator, 1024),
         };
     }
 
@@ -38,7 +37,7 @@ pub const StreamingJsonWriter = struct {
     /// Start a JSON object
     pub fn objectStart(self: *@This()) !void {
         if (self.needs_comma) {
-            try self.buffer.append(',');
+            try self.buffer.append(', ');
         }
         try self.buffer.append('{');
         self.depth += 1;
@@ -55,7 +54,7 @@ pub const StreamingJsonWriter = struct {
     /// Start a JSON array
     pub fn arrayStart(self: *@This()) !void {
         if (self.needs_comma) {
-            try self.buffer.append(',');
+            try self.buffer.append(', ');
         }
         try self.buffer.append('[');
         self.depth += 1;
@@ -72,34 +71,40 @@ pub const StreamingJsonWriter = struct {
     /// Write a key-value pair
     pub fn keyValue(self: *@This(), key: []const u8, value: []const u8) !void {
         if (self.needs_comma) {
-            try self.buffer.append(',');
+            try self.buffer.append(', ');
         }
-        try self.buffer.writer().print("\"{s}\":{s}", .{ key, value });
+        var writer_helper = array_list_writer.ArrayListWriter.init(&self.buffer, self.allocator);
+        const writer = writer_helper.writer();
+        try writer.print("\"{s}\":{s}", .{ key, value });
         self.needs_comma = true;
     }
 
     /// Write a string value
     pub fn stringValue(self: *@This(), value: []const u8) !void {
         if (self.needs_comma) {
-            try self.buffer.append(',');
+            try self.buffer.append(', ');
         }
-        try self.buffer.writer().print("\"{s}\"", .{value});
+        var writer_helper = array_list_writer.ArrayListWriter.init(&self.buffer, self.allocator);
+        const writer = writer_helper.writer();
+        try writer.print("\"{s}\"", .{value});
         self.needs_comma = true;
     }
 
     /// Write a number value
     pub fn numberValue(self: *@This(), value: i64) !void {
         if (self.needs_comma) {
-            try self.buffer.append(',');
+            try self.buffer.append(', ');
         }
-        try self.buffer.writer().print("{}", .{value});
+        var writer_helper = array_list_writer.ArrayListWriter.init(&self.buffer, self.allocator);
+        const writer = writer_helper.writer();
+        try writer.print("{}", .{value});
         self.needs_comma = true;
     }
 
     /// Write a boolean value
     pub fn boolValue(self: *@This(), value: bool) !void {
         if (self.needs_comma) {
-            try self.buffer.append(',');
+            try self.buffer.append(', ');
         }
         try self.buffer.writeAll(if (value) "true" else "false");
         self.needs_comma = true;
@@ -108,7 +113,7 @@ pub const StreamingJsonWriter = struct {
     /// Write a null value
     pub fn nullValue(self: *@This()) !void {
         if (self.needs_comma) {
-            try self.buffer.append(',');
+            try self.buffer.append(', ');
         }
         try self.buffer.writeAll("null");
         self.needs_comma = true;
@@ -167,7 +172,11 @@ fn continuation_stream_json(ctx_opaque: *anyopaque) !zerver.Decision {
     try writer.keyValue("total_records", "1000");
 
     // Start the data array
-    try writer.buffer.writer().print(",\"data\":", .{});
+    {
+        var helper = array_list_writer.ArrayListWriter.init(&writer.buffer, writer.allocator);
+        const w = helper.writer();
+        try w.writeAll(", \"data\":");
+    }
     try writer.arrayStart();
 
     // Simulate streaming 1000 records
@@ -175,10 +184,12 @@ fn continuation_stream_json(ctx_opaque: *anyopaque) !zerver.Decision {
     var i: usize = 0;
     while (i < 1000) : (i += 1) {
         try writer.objectStart();
-        try writer.buffer.writer().print("\"id\":{}", .{i + 1});
-        try writer.buffer.writer().print(",\"name\":\"Item {}\"", .{i + 1});
-        try writer.buffer.writer().print(",\"value\":{}", .{i * 10});
-        try writer.buffer.writer().print(",\"active\":{}", .{i % 2 == 0});
+        var helper = array_list_writer.ArrayListWriter.init(&writer.buffer, writer.allocator);
+        const w = helper.writer();
+        try w.print("\"id\":{}", .{i + 1});
+        try w.print(", \"name\":\"Item {}\"", .{i + 1});
+        try w.print(", \"value\":{}", .{i * 10});
+        try w.print(", \"active\":{}", .{i % 2 == 0});
         try writer.objectEnd();
 
         // In a real streaming implementation, you might flush here
@@ -197,8 +208,7 @@ fn continuation_stream_json(ctx_opaque: *anyopaque) !zerver.Decision {
     std.debug.print("  [Stream] Generated {} bytes of JSON\n", .{response_body.len});
 
     return zerver.done(zerver.Response{
-        .status = 200,
-        .body = response_body,
+        .status = 200, .body = response_body,
         .headers = &.{
             .{ "Content-Type", "application/json" },
             .{ "X-Streamed", "true" },
@@ -233,7 +243,11 @@ pub fn step_stream_with_pagination(ctx: *zerver.CtxBase) !zerver.Decision {
     // Calculate offset for this page
     const offset = (page - 1) * limit;
 
-    try writer.buffer.writer().print(",\"items\":", .{});
+    {
+        var helper = array_list_writer.ArrayListWriter.init(&writer.buffer, writer.allocator);
+        const w = helper.writer();
+        try w.writeAll(", \"items\":");
+    }
     try writer.arrayStart();
 
     // Stream items for this page
@@ -242,9 +256,11 @@ pub fn step_stream_with_pagination(ctx: *zerver.CtxBase) !zerver.Decision {
         const item_id = offset + i + 1;
 
         try writer.objectStart();
-        try writer.buffer.writer().print("\"id\":{}", .{item_id});
-        try writer.buffer.writer().print(",\"title\":\"Streamed Item {}\"", .{item_id});
-        try writer.buffer.writer().print(",\"description\":\"This is item {} in the stream\"", .{item_id});
+        var helper = array_list_writer.ArrayListWriter.init(&writer.buffer, writer.allocator);
+        const w = helper.writer();
+        try w.print("\"id\":{}", .{item_id});
+        try w.print(", \"title\":\"Streamed Item {}\"", .{item_id});
+        try w.print(", \"description\":\"This is item {} in the stream\"", .{item_id});
         try writer.objectEnd();
     }
 
@@ -254,8 +270,7 @@ pub fn step_stream_with_pagination(ctx: *zerver.CtxBase) !zerver.Decision {
     const response_body = try ctx.allocator.dupe(u8, writer.toJson());
 
     return zerver.done(zerver.Response{
-        .status = 200,
-        .body = response_body,
+        .status = 200, .body = response_body,
         .headers = &.{
             .{ "Content-Type", "application/json" },
             .{ "X-Pagination-Page", page_str },
@@ -298,8 +313,7 @@ pub fn effectHandler(effect: *const zerver.Effect, _timeout_ms: u32) anyerror!ze
 pub fn onError(ctx: *zerver.CtxBase) anyerror!zerver.Decision {
     _ = ctx;
     return zerver.done(.{
-        .status = 500,
-        .body = "{\"error\":\"Internal server error\"}",
+        .status = 500, .body = "{\"error\":\"Internal server error\"}",
     });
 }
 

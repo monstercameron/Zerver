@@ -3,12 +3,13 @@
 const std = @import("std");
 const zerver = @import("../src/zerver/root.zig");
 const slog = @import("../src/zerver/observability/slog.zig");
+const time_util = zerver.time_util;
 
 pub const IdempotencyHelper = struct {
     /// Generate a new idempotency key for this request
     /// Uses a combination of timestamp and random bytes for uniqueness
     pub fn generate(allocator: std.mem.Allocator) ![]const u8 {
-        const now = std.time.nanoTimestamp();
+        const now = time_util.nanoTimestamp();
         const random_bytes = try allocator.alloc(u8, 16);
 
         // In production, use a proper CSPRNG
@@ -72,8 +73,7 @@ pub const IdempotencyHelper = struct {
         // 1. Get the idempotency key from request headers
         const idem_key = ctx.header("Idempotency-Key") orelse {
             return zerver.fail(
-                zerver.ErrorCode.InvalidInput,
-                "idempotency",
+                zerver.ErrorCode.InvalidInput, "idempotency",
                 "missing_key",
             );
         };
@@ -81,8 +81,7 @@ pub const IdempotencyHelper = struct {
         // 2. Validate the key format
         if (!isValid(idem_key)) {
             return zerver.fail(
-                zerver.ErrorCode.InvalidInput,
-                "idempotency",
+                zerver.ErrorCode.InvalidInput, "idempotency",
                 "invalid_key_format",
             );
         }
@@ -100,8 +99,7 @@ pub const IdempotencyHelper = struct {
                 .effects = &.{
                     zerver.Effect{
                         .db_put = .{
-                            .key = "todo:123",
-                            .value = "{}",
+                            .key = "todo:123", .value = "{}",
                             .token = 0, // Or whatever slot stores the result
                             .idem = idem_key, // Idempotency key for safe retry
                             .required = true,
@@ -123,8 +121,7 @@ pub const IdempotencyHelper = struct {
         // - Write effects are deduped automatically
 
         return zerver.done(zerver.Response{
-            .status = 201,
-            .body = "{}",
+            .status = 201, .body = "{}",
         });
     }
 };
@@ -196,8 +193,7 @@ pub fn testIdempotencyHelpers() !void {
 //       if (is_write) {
 //           if (IdempotencyHelper.fromRequest(ctx) == null) {
 //               return zerver.fail(
-//                   zerver.ErrorCode.InvalidInput,
-//                   "idempotency",
+//                   zerver.ErrorCode.InvalidInput, //                   "idempotency",
 //                   "required_for_writes",
 //               );
 //           }

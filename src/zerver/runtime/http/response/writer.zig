@@ -5,6 +5,7 @@
 // TODO: Transport: ensure proper half-close/flush semantics (especially under TLS) when closing after write errors.
 const std = @import("std");
 const slog = @import("../../../observability/slog.zig");
+const compat_net = @import("../../net_compat.zig");
 
 /// Send an HTTP response to a connection.
 /// Ensures errors are logged and propagated back to callers.
@@ -22,8 +23,7 @@ const slog = @import("../../../observability/slog.zig");
 ///   - Trailer header support (optional)
 /// SSE Streaming: Partially implemented via sendStreamingResponse() but needs work
 pub fn sendResponse(
-    connection: std.net.Server.Connection,
-    response: []const u8,
+    connection: compat_net.Connection, response: []const u8,
 ) !void {
     const preview_len = @min(response.len, 120);
     slog.debug("Sending HTTP response", &.{
@@ -46,8 +46,7 @@ pub fn sendResponse(
 /// handled by caller using the connection.stream directly. A future enhancement
 /// could add a streaming loop here that calls writer() repeatedly with connection.stream.
 pub fn sendStreamingResponse(
-    connection: std.net.Server.Connection,
-    headers: []const u8,
+    connection: compat_net.Connection, headers: []const u8,
     writer: *const fn (*anyopaque, []const u8) anyerror!void,
     context: *anyopaque,
 ) !void {
@@ -60,8 +59,7 @@ pub fn sendStreamingResponse(
 
 /// Send a plain-text error response with the provided status and message.
 pub fn sendErrorResponse(
-    connection: std.net.Server.Connection,
-    status: []const u8,
+    connection: compat_net.Connection, status: []const u8,
     message: []const u8,
 ) !void {
     // TODO: Consider adding Date and Connection headers per RFC 9112; centralize formatting via formatter to keep behavior consistent.

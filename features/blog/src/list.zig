@@ -8,6 +8,7 @@ const html_lib = @import("zerver/shared/html.zig");
 const util = @import("util.zig");
 const http_util = @import("zerver/shared/http.zig");
 const http_status = zerver.HttpStatus;
+const array_list_writer = @import("zerver/util/array_list_writer.zig");
 
 const Slot = blog_types.BlogSlot;
 const Attrs = components.Attrs;
@@ -75,8 +76,7 @@ const BlogNavbar = struct {
 };
 
 const FooterStyle = struct {
-    class: []const u8,
-    title: []const u8,
+    class: []const u8, title: []const u8,
     links: []const u8,
     link: []const u8,
     text: []const u8,
@@ -94,8 +94,7 @@ const BlogFooter = struct {
     pub fn render(self: BlogFooter, writer: anytype) !void {
         const style = switch (self.variant) {
             .List => FooterStyle{
-                .class = "bg-sky-900 text-white py-10 text-center",
-                .title = "text-xl font-semibold mb-4",
+                .class = "bg-sky-900 text-white py-10 text-center", .title = "text-xl font-semibold mb-4",
                 .links = "flex justify-center space-x-8 mb-4",
                 .link = "flex items-center space-x-2 hover:text-orange-400 transition",
                 .text = "text-sky-200 text-sm",
@@ -128,8 +127,7 @@ const BlogFooter = struct {
 };
 
 const BlogPostCards = struct {
-    posts: []const blog_types.Post,
-    hx_target: []const u8,
+    posts: []const blog_types.Post, hx_target: []const u8,
     hx_swap: []const u8,
 
     pub fn init(posts: []const blog_types.Post, hx_target: []const u8, hx_swap: []const u8) BlogPostCards {
@@ -150,8 +148,7 @@ const BlogPostCards = struct {
             const date_str = try std.fmt.bufPrint(&date_buffer, "{d}", .{post.created_at});
 
             try components.BlogPostCardDynamic.init(.{
-                .title = post.title,
-                .excerpt = excerpt,
+                .title = post.title, .excerpt = excerpt,
                 .date = date_str,
                 .author = post.author,
                 .href = full_href,
@@ -225,7 +222,8 @@ fn continuation_render_blog_list_page(ctx: *zerver.CtxBase) !zerver.Decision {
     var buffer = std.ArrayList(u8).initCapacity(ctx.allocator, 8192) catch unreachable;
     defer buffer.deinit(ctx.allocator);
 
-    const writer = buffer.writer(ctx.allocator);
+    var writer_helper = array_list_writer.ArrayListWriter.init(&buffer, ctx.allocator);
+    const writer = writer_helper.writer();
     const content = BlogListContent.init(posts, "#main-content", "innerHTML");
 
     if (!is_htmx) {
@@ -240,8 +238,7 @@ fn continuation_render_blog_list_page(ctx: *zerver.CtxBase) !zerver.Decision {
         const body_el = html_lib.body(Attrs{ .class = "bg-gradient-to-b from-sky-50 to-sky-100 text-sky-800" }, .{
             BlogNavbar.init(.{ .hx_target = "#main-content" }),
             html_lib.div(Attrs{ .id = "main-content" }, .{content}),
-            BlogFooter.init(.List),
-        });
+            BlogFooter.init(.List), });
 
         try html_lib.writeDoctype(writer);
         try html_lib.html(Attrs{ .lang = "en" }, .{ head_el, body_el }).render(writer);
@@ -276,7 +273,9 @@ fn continuation_render_blog_post_cards(ctx: *zerver.CtxBase) !zerver.Decision {
     var buffer = std.ArrayList(u8).initCapacity(ctx.allocator, 4096) catch unreachable;
     defer buffer.deinit(ctx.allocator);
 
-    try BlogPostCards.init(parsed.value, "#main-content", "innerHTML").render(buffer.writer(ctx.allocator));
+    var cards_writer = array_list_writer.ArrayListWriter.init(&buffer, ctx.allocator);
+    const cards_writer_handle = cards_writer.writer();
+    try BlogPostCards.init(parsed.value, "#main-content", "innerHTML").render(cards_writer_handle);
 
     const html = try buffer.toOwnedSlice(ctx.allocator);
 
@@ -326,16 +325,17 @@ fn continuation_render_single_blog_post_card(ctx: *zerver.CtxBase) !zerver.Decis
     var date_buffer: [32]u8 = undefined;
     const date_str = try std.fmt.bufPrint(&date_buffer, "{d}", .{post.created_at});
 
+    var card_writer_helper = array_list_writer.ArrayListWriter.init(&buffer, ctx.allocator);
+    const card_writer = card_writer_helper.writer();
     try components.BlogPostCardDynamic.init(.{
-        .title = post.title,
-        .excerpt = excerpt,
+        .title = post.title, .excerpt = excerpt,
         .date = date_str,
         .author = post.author,
         .href = full_href,
         .hx_get = fragment_href,
         .hx_target = "#main-content",
         .hx_swap = "innerHTML",
-    }).render(buffer.writer(ctx.allocator));
+    }).render(card_writer);
 
     const html = try buffer.toOwnedSlice(ctx.allocator);
 
@@ -346,10 +346,11 @@ pub fn step_render_blog_list_header(ctx: *zerver.CtxBase) !zerver.Decision {
     var buffer = std.ArrayList(u8).initCapacity(ctx.allocator, 512) catch unreachable;
     defer buffer.deinit(ctx.allocator);
 
+    var header_writer_helper = array_list_writer.ArrayListWriter.init(&buffer, ctx.allocator);
+    const header_writer = header_writer_helper.writer();
     try components.BlogListHeaderDynamic.init(.{
-        .title = BLOG_HEADER_TITLE,
-        .description = BLOG_HEADER_DESCRIPTION,
-    }).render(buffer.writer(ctx.allocator));
+        .title = BLOG_HEADER_TITLE, .description = BLOG_HEADER_DESCRIPTION,
+    }).render(header_writer);
 
     const html = try buffer.toOwnedSlice(ctx.allocator);
 
@@ -397,10 +398,10 @@ fn continuation_render_blog_post_page(ctx: *zerver.CtxBase) !zerver.Decision {
     var buffer = std.ArrayList(u8).initCapacity(ctx.allocator, 8192) catch unreachable;
     defer buffer.deinit(ctx.allocator);
 
-    const writer = buffer.writer(ctx.allocator);
+    var page_writer_helper = array_list_writer.ArrayListWriter.init(&buffer, ctx.allocator);
+    const writer = page_writer_helper.writer();
     const post_component = components.BlogPostPage.init(.{
-        .id = post.id,
-        .title = post.title,
+        .id = post.id, .title = post.title,
         .content = post.content,
         .author = post.author,
         .created_at = post.created_at,
@@ -421,8 +422,7 @@ fn continuation_render_blog_post_page(ctx: *zerver.CtxBase) !zerver.Decision {
         const body_el = html_lib.body(Attrs{ .class = "bg-neutral-100 text-gray-800" }, .{
             BlogNavbar.init(.{ .hx_target = "body" }),
             main_content,
-            BlogFooter.init(.Post),
-        });
+            BlogFooter.init(.Post), });
 
         try html_lib.writeDoctype(writer);
         try html_lib.html(Attrs{ .lang = "en" }, .{ head_el, body_el }).render(writer);

@@ -12,8 +12,7 @@ const slog = @import("../../observability/slog.zig");
 pub const TaskSystemError = job.SubmitError || error{NoComputePool};
 
 pub const ComputePoolKind = enum {
-    disabled,
-    shared,
+    disabled, shared,
     dedicated,
 };
 
@@ -75,31 +74,27 @@ pub const TaskSystem = struct {
         }
 
         try self.continuation.init(.{
-            .allocator = config.allocator,
-            .worker_count = config.continuation_workers,
+            .allocator = config.allocator, .worker_count = config.continuation_workers,
             .queue_capacity = config.continuation_queue_capacity,
             .label = "step_jobs",
         });
         errdefer self.continuation.deinit();
 
         switch (config.compute_kind) {
-            .disabled => {},
-            .shared => {},
+            .disabled => {}, .shared => {},
             .dedicated => {
                 if (config.compute_workers == 0) {
                     self.compute_kind = .disabled;
                 } else {
                     try self.compute.init(.{
-                        .allocator = config.allocator,
-                        .worker_count = config.compute_workers,
+                        .allocator = config.allocator, .worker_count = config.compute_workers,
                         .queue_capacity = config.compute_queue_capacity,
                         .label = "compute_jobs",
                     });
                     errdefer self.compute.deinit();
                     self.has_compute = true;
                 }
-            },
-        }
+            }, }
 
         slog.debug("task_system_init", &.{
             slog.Attr.string("step_queue", self.continuation.label()),
@@ -170,8 +165,7 @@ pub const TaskSystem = struct {
             slog.Attr.uint("job_cb", @as(u64, @intCast(@intFromPtr(task.callback)))),
         });
         return switch (self.compute_kind) {
-            .disabled => error.NoComputePool,
-            .shared => self.continuation.submit(task) catch |err| {
+            .disabled => error.NoComputePool, .shared => self.continuation.submit(task) catch |err| {
                 slog.err("task_submit_compute_failed", &.{
                     slog.Attr.string("queue", self.continuation.label()),
                     slog.Attr.string("error", @errorName(err)),
@@ -203,8 +197,7 @@ pub const TaskSystem = struct {
 
     pub fn computeJobs(self: *TaskSystem) ?*job.JobSystem {
         return switch (self.compute_kind) {
-            .disabled => null,
-            .shared => &self.continuation,
+            .disabled => null, .shared => &self.continuation,
             .dedicated => if (self.has_compute) &self.compute else null,
         };
     }
@@ -287,8 +280,7 @@ fn stepWorkerMain(task_system: *TaskSystem, worker_index: usize) !void {
 
             // Mark as failed
             ctx.completeFailed(.{
-                .kind = types.ErrorCode.InternalError,
-                .ctx = .{ .what = "worker", .key = "execution_error" },
+                .kind = types.ErrorCode.InternalError, .ctx = .{ .what = "worker", .key = "execution_error" },
             });
         };
 
@@ -303,8 +295,7 @@ fn stepWorkerMain(task_system: *TaskSystem, worker_index: usize) !void {
                     });
                     ctx.deinit();
                 };
-            },
-            .waiting => {
+            }, .waiting => {
                 // Parked for I/O - effects are executing asynchronously
                 // Context will be re-queued by effect completion callback
                 // Worker moves on to next task immediately (non-blocking)
@@ -327,29 +318,25 @@ fn stepWorkerMain(task_system: *TaskSystem, worker_index: usize) !void {
                     });
                     ctx.deinit();
                 };
-            },
-            .completed => {
+            }, .completed => {
                 // Request complete - send response
                 if (ctx.response) |response| {
                     sendResponse(ctx.request_ctx, response);
                 }
                 ctx.deinit();
-            },
-            .failed => {
+            }, .failed => {
                 // Request failed - send error response
                 if (ctx.error_result) |err| {
                     sendErrorResponse(ctx.request_ctx, err);
                 }
                 ctx.deinit();
-            },
-            .running => {
+            }, .running => {
                 // Should not be in running state after execution
                 slog.warn("step_worker_running_state", &.{
                     slog.Attr.uint("worker_index", @as(u64, @intCast(worker_index))),
                 });
                 ctx.deinit();
-            },
-        }
+            }, }
     }
 
     slog.debug("step_worker_stop", &.{

@@ -4,12 +4,12 @@
 /// This module provides low-level socket I/O operations for Windows.
 /// Used because std.net.Stream currently fails with GetLastError(87).
 const std = @import("std");
+const compat_net = @import("../net_compat.zig");
 const builtin = @import("builtin");
 
 /// Error set for Windows recv operations
 pub const RecvError = if (builtin.os.tag == .windows) error{
-    ConnectionResetByPeer,
-    SocketNotConnected,
+    ConnectionResetByPeer, SocketNotConnected,
     SocketNotBound,
     MessageTooBig,
     NetworkSubsystemFailed,
@@ -34,7 +34,7 @@ pub const SendError = if (builtin.os.tag == .windows) error{
 } else error{};
 
 /// Receive data from a socket handle with timeout using raw Winsock
-pub fn recvWithTimeout(handle: std.net.Stream.Handle, buffer: []u8, timeout_ms: u32) RecvError!usize {
+pub fn recvWithTimeout(handle: compat_net.Stream.Handle, buffer: []u8, timeout_ms: u32) RecvError!usize {
     if (builtin.os.tag != .windows) {
         unreachable;
     }
@@ -88,8 +88,7 @@ pub fn recvWithTimeout(handle: std.net.Stream.Handle, buffer: []u8, timeout_ms: 
     const to_read = if (buffer.len > max_chunk) max_chunk else buffer.len;
 
     const rc = windows.ws2_32.recv(
-        handle,
-        buffer.ptr,
+        handle, buffer.ptr,
         @as(i32, @intCast(to_read)),
         0,
     );
@@ -113,7 +112,7 @@ pub fn recvWithTimeout(handle: std.net.Stream.Handle, buffer: []u8, timeout_ms: 
 }
 
 /// Send all data to a socket handle using raw Winsock
-pub fn sendAll(handle: std.net.Stream.Handle, data: []const u8) SendError!void {
+pub fn sendAll(handle: compat_net.Stream.Handle, data: []const u8) SendError!void {
     if (builtin.os.tag != .windows) {
         unreachable;
     }
@@ -127,8 +126,7 @@ pub fn sendAll(handle: std.net.Stream.Handle, data: []const u8) SendError!void {
         const chunk = if (remaining > max_chunk) max_chunk else remaining;
 
         const rc = windows.ws2_32.send(
-            handle,
-            data[sent_total .. sent_total + chunk].ptr,
+            handle, data[sent_total .. sent_total + chunk].ptr,
             @as(i32, @intCast(chunk)),
             0,
         );

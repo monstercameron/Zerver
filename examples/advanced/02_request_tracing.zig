@@ -5,6 +5,7 @@
 // Production code should use zerver.slog for structured logging with proper log levels.
 const std = @import("std");
 const zerver = @import("zerver");
+const time_util = zerver.time_util;
 
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
@@ -22,18 +23,18 @@ pub fn main() !void {
     tracer.recordRequestStart();
 
     tracer.recordStepStart("authenticate");
-    std.time.sleep(5 * std.time.ns_per_ms);
+    time_util.sleep(5 * std.time.ns_per_ms);
     tracer.recordStepEnd("authenticate", "Continue");
 
     tracer.recordStepStart("fetch_data");
     tracer.recordEffectStart("db_get");
-    std.time.sleep(10 * std.time.ns_per_ms);
+    time_util.sleep(10 * std.time.ns_per_ms);
     tracer.recordEffectEnd("db_get", true);
     tracer.recordStepEnd("fetch_data", "Continue");
 
     tracer.recordStepStart("process");
     tracer.recordEffectStart("http_post");
-    std.time.sleep(15 * std.time.ns_per_ms);
+    time_util.sleep(15 * std.time.ns_per_ms);
     tracer.recordEffectEnd("http_post", true);
     tracer.recordStepEnd("process", "Done");
 

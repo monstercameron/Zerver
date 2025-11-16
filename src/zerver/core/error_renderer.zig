@@ -5,6 +5,7 @@ const types = @import("types.zig");
 const ctx = @import("ctx.zig");
 const slog = @import("../observability/slog.zig");
 const http_status = @import("http_status.zig").HttpStatus;
+const array_list_writer = @import("../util/array_list_writer.zig");
 
 // Static header slice reused for all JSON error responses (performance optimization)
 const json_error_headers = [_]types.Header{
@@ -17,12 +18,9 @@ pub const ErrorRenderer = struct {
         try writer.writeAll("\"");
         for (s) |char| {
             switch (char) {
-                '"' => try writer.writeAll("\\\""),
-                '\\' => try writer.writeAll("\\\\"),
-                '\n' => try writer.writeAll("\\n"),
-                '\r' => try writer.writeAll("\\r"),
-                '\t' => try writer.writeAll("\\t"),
-                else => try writer.writeByte(char),
+                '"' => try writer.writeAll("\\\""), '\\' => try writer.writeAll("\\\\"),
+                '\n' => try writer.writeAll("\\n"), '\r' => try writer.writeAll("\\r"),
+                '\t' => try writer.writeAll("\\t"), else => try writer.writeByte(char),
             }
         }
         try writer.writeAll("\"");
@@ -52,12 +50,13 @@ pub const ErrorRenderer = struct {
         // Current approach is simpler and errors are infrequent enough that pooling may not be worth complexity.
         defer buf.deinit(allocator);
 
-        const writer = buf.writer(allocator);
+        var writer_helper = array_list_writer.ArrayListWriter.init(&buf, allocator);
+        const writer = writer_helper.writer();
         try writer.writeAll("{\"error\":{\"code\":");
         try writer.print("{}", .{error_val.kind});
-        try writer.writeAll(",\"what\":");
+        try writer.writeAll(", \"what\":");
         try escapeJsonString(writer, error_val.ctx.what);
-        try writer.writeAll(",\"key\":");
+        try writer.writeAll(", \"key\":");
         try escapeJsonString(writer, error_val.ctx.key);
         try writer.writeAll("}}");
 
@@ -76,8 +75,7 @@ pub const ErrorRenderer = struct {
     /// Extension: Additional codes can be added as needed (405, 406, 408, 409, 410, 412, 413, 414, 415, 417, etc.)
     fn errorCodeToStatus(code: u16) u16 {
         return switch (code) {
-            http_status.bad_request => http_status.bad_request,
-            http_status.unauthorized => http_status.unauthorized,
+            http_status.bad_request => http_status.bad_request, http_status.unauthorized => http_status.unauthorized,
             http_status.forbidden => http_status.forbidden,
             http_status.not_found => http_status.not_found,
             http_status.conflict => http_status.conflict,
@@ -113,8 +111,7 @@ pub fn testErrorRenderer() !void {
     const allocator = gpa.allocator();
 
     const error_val = types.Error{
-        .kind = types.ErrorCode.NotFound,
-        .ctx = .{
+        .kind = types.ErrorCode.NotFound, .ctx = .{
             .what = "todo",
             .key = "123",
         },
@@ -122,8 +119,7 @@ pub fn testErrorRenderer() !void {
 
     const response = try ErrorRenderer.render(allocator, error_val);
     const body_str = switch (response.body) {
-        .complete => |body| body,
-        .streaming => "<streaming>",
+        .complete => |body| body, .streaming => "<streaming>",
     };
     slog.info("Error renderer test completed", &.{
         slog.Attr.uint("status", response.status),

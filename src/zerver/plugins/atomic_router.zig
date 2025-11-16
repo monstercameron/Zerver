@@ -16,8 +16,7 @@ pub fn AtomicRouter(comptime HandlerType: type) type {
     return struct {
         const Self = @This();
 
-        allocator: std.mem.Allocator,
-        current: std.atomic.Value(?*RouterImpl),
+        allocator: std.mem.Allocator, current: std.atomic.Value(?*RouterImpl),
         mutex: std.Thread.Mutex, // Only for swaps, not reads
 
         pub fn init(allocator: std.mem.Allocator) !Self {
@@ -25,9 +24,7 @@ pub fn AtomicRouter(comptime HandlerType: type) type {
             router.* = try RouterImpl.init(allocator);
 
         return .{
-            .allocator = allocator,
-            .current = std.atomic.Value(?*RouterImpl).init(router),
-            .mutex = .{},
+            .allocator = allocator, .current = std.atomic.Value(?*RouterImpl).init(router), .mutex = .{},
         };
     }
 
@@ -48,8 +45,7 @@ pub fn AtomicRouter(comptime HandlerType: type) type {
 
     /// Add a route to the current router (requires lock)
     pub fn addRoute(
-        self: *Self,
-        method: route_types.Method,
+        self: *Self, method: route_types.Method,
         path: []const u8,
         handler: HandlerType,
     ) !void {
@@ -62,8 +58,7 @@ pub fn AtomicRouter(comptime HandlerType: type) type {
 
     /// Match a request against current routes (lock-free read)
     pub fn match(
-        self: *const Self,
-        method: route_types.Method,
+        self: *const Self, method: route_types.Method,
         path: []const u8,
         arena: std.mem.Allocator,
     ) !?RouteMatch {
@@ -73,8 +68,7 @@ pub fn AtomicRouter(comptime HandlerType: type) type {
 
     /// Get allowed methods for a path (lock-free read)
     pub fn getAllowedMethods(
-        self: *const Self,
-        path: []const u8,
+        self: *const Self, path: []const u8,
         arena: std.mem.Allocator,
     ) ![]const u8 {
         const router = self.getCurrent();
@@ -129,8 +123,7 @@ pub fn AtomicRouter(comptime HandlerType: type) type {
     /// Build a new router from scratch and swap it in
     /// Used during DLL reload - returns old router for draining
     pub fn rebuild(
-        self: *Self,
-        comptime buildFn: fn (router: *RouterImpl) anyerror!void,
+        self: *Self, comptime buildFn: fn (router: *RouterImpl) anyerror!void,
     ) !*RouterImpl {
         const new_router = try self.allocator.create(RouterImpl);
         errdefer self.allocator.destroy(new_router);
@@ -153,16 +146,13 @@ pub fn AtomicRouter(comptime HandlerType: type) type {
         for (route.pattern.segments) |segment| {
             try buf.append('/');
             switch (segment) {
-                .literal => |lit| try buf.appendSlice(lit),
-                .param => |name| {
+                .literal => |lit| try buf.appendSlice(lit), .param => |name| {
                     try buf.append(':');
                     try buf.appendSlice(name);
-                },
-                .wildcard => |name| {
+                }, .wildcard => |name| {
                     try buf.append('*');
                     try buf.appendSlice(name);
-                },
-            }
+                }, }
         }
 
         return try buf.toOwnedSlice();
@@ -185,8 +175,7 @@ pub fn RouterLifecycle(comptime HandlerType: type) type {
     return struct {
         const Self = @This();
 
-        allocator: std.mem.Allocator,
-        atomic_router: *AtomicRouterImpl,
+        allocator: std.mem.Allocator, atomic_router: *AtomicRouterImpl,
         draining_router: ?*RouterImpl,
         mutex: std.Thread.Mutex,
 

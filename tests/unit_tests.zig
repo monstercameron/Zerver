@@ -17,8 +17,7 @@ test "router: simple path matching" {
     defer router.deinit();
 
     const spec = zerver.RouteSpec{
-        .before = &.{},
-        .steps = &.{},
+        .before = &.{}, .steps = &.{},
     };
 
     try router.addRoute(.GET, "/", spec);
@@ -36,8 +35,7 @@ test "router: path with parameters" {
     defer router.deinit();
 
     const spec = zerver.RouteSpec{
-        .before = &.{},
-        .steps = &.{},
+        .before = &.{}, .steps = &.{},
     };
 
     try router.addRoute(.GET, "/todos/:id", spec);
@@ -63,8 +61,7 @@ test "router: no match returns null" {
     defer router.deinit();
 
     const spec = zerver.RouteSpec{
-        .before = &.{},
-        .steps = &.{},
+        .before = &.{}, .steps = &.{},
     };
 
     try router.addRoute(.GET, "/", spec);
@@ -82,8 +79,7 @@ test "router: method matching" {
     defer router.deinit();
 
     const spec = zerver.RouteSpec{
-        .before = &.{},
-        .steps = &.{},
+        .before = &.{}, .steps = &.{},
     };
 
     try router.addRoute(.GET, "/", spec);
@@ -172,8 +168,7 @@ test "decision: Continue" {
 test "decision: Done" {
     const dec = zerver.Decision{
         .Done = .{
-            .status = 200,
-            .body = "OK",
+            .status = 200, .body = "OK",
         },
     };
     try std.testing.expect(dec == .Done);
@@ -380,8 +375,7 @@ test "integration: effect lifecycle" {
     // Create an effect
     const effect = zerver.Effect{
         .db_get = .{
-            .key = "user:100",
-            .token = 5,
+            .key = "user:100", .token = 5,
             .timeout_ms = 1000,
             .retry = .{
                 .max = 3,

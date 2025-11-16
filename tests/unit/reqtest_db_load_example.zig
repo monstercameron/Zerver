@@ -17,8 +17,7 @@ const TodoSlot = enum { TodoId, TodoItem, UserId };
 /// Map slot tags to types
 fn TodoSlotType(comptime slot: TodoSlot) type {
     return switch (slot) {
-        .TodoId => []const u8,
-        .TodoItem => struct { id: []const u8, title: []const u8, done: bool },
+        .TodoId => []const u8, .TodoItem => struct { id: []const u8, title: []const u8, done: bool },
         .UserId => []const u8,
     };
 }
@@ -26,8 +25,7 @@ fn TodoSlotType(comptime slot: TodoSlot) type {
 /// Example: Load a todo by ID from the database
 fn step_load_todo_by_id(ctx_base: *zerver.CtxBase) !zerver.Decision {
     const LoadView = zerver.CtxView(.{
-        .slotTypeFn = TodoSlotType,
-        .reads = &.{TodoSlot.TodoId},
+        .slotTypeFn = TodoSlotType, .reads = &.{TodoSlot.TodoId},
         .writes = &.{TodoSlot.TodoItem},
     });
 
@@ -42,8 +40,7 @@ fn step_load_todo_by_id(ctx_base: *zerver.CtxBase) !zerver.Decision {
             zerver.Effect{
                 .db_get = .{
                     .key = try ctx_base.bufFmt("todo:{s}", .{todo_id}),
-                    .token = @intFromEnum(TodoSlot.TodoItem),
-                    .timeout_ms = 300,
+                    .token = @intFromEnum(TodoSlot.TodoItem), .timeout_ms = 300,
                     .required = true,
                 },
             },
@@ -57,8 +54,7 @@ fn step_load_todo_by_id(ctx_base: *zerver.CtxBase) !zerver.Decision {
 /// Continuation: Handle the loaded todo
 fn step_handle_todo_loaded(ctx: *zerver.CtxBase) !zerver.Decision {
     const HandleView = zerver.CtxView(.{
-        .slotTypeFn = TodoSlotType,
-        .reads = &.{TodoSlot.TodoItem},
+        .slotTypeFn = TodoSlotType, .reads = &.{TodoSlot.TodoItem},
         .writes = &.{},
     });
 
@@ -70,8 +66,7 @@ fn step_handle_todo_loaded(ctx: *zerver.CtxBase) !zerver.Decision {
 
     if (_item) |_| {
         return .{ .Done = .{
-            .status = 200,
-            .body = "loaded",
+            .status = 200, .body = "loaded",
         } };
     } else {
         return .{ .Fail = .{

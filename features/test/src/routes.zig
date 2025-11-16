@@ -8,8 +8,7 @@ const std = @import("std");
 // ============================================================================
 
 const Method = enum(c_int) {
-    GET = 0,
-    POST = 1,
+    GET = 0, POST = 1,
     PUT = 2,
     PATCH = 3,
     DELETE = 4,
@@ -26,35 +25,30 @@ const HandlerFn = *const fn (
 ) callconv(.c) c_int;
 
 const AddRouteFn = *const fn (
-    router: *anyopaque,
-    method: c_int,
+    router: *anyopaque, method: c_int,
     path_ptr: [*c]const u8,
     path_len: usize,
     handler: HandlerFn,
 ) callconv(.c) c_int;
 
 const SetStatusFn = *const fn (
-    response: *ResponseBuilder,
-    status: c_int,
+    response: *ResponseBuilder, status: c_int,
 ) callconv(.c) void;
 
 const SetHeaderFn = *const fn (
-    response: *ResponseBuilder,
-    name_ptr: [*c]const u8,
+    response: *ResponseBuilder, name_ptr: [*c]const u8,
     name_len: usize,
     value_ptr: [*c]const u8,
     value_len: usize,
 ) callconv(.c) c_int;
 
 const SetBodyFn = *const fn (
-    response: *ResponseBuilder,
-    body_ptr: [*c]const u8,
+    response: *ResponseBuilder, body_ptr: [*c]const u8,
     body_len: usize,
 ) callconv(.c) c_int;
 
 const ServerAdapter = extern struct {
-    router: *anyopaque,
-    runtime_resources: *anyopaque,
+    router: *anyopaque, runtime_resources: *anyopaque,
     addRoute: AddRouteFn,
     setStatus: SetStatusFn,
     setHeader: SetHeaderFn,
@@ -78,8 +72,7 @@ pub fn registerRoutes(server: *anyopaque) !void {
     // Register GET /test
     const path = "/test";
     const result = adapter.addRoute(
-        adapter.router,
-        @intFromEnum(Method.GET),
+        adapter.router, @intFromEnum(Method.GET),
         path.ptr,
         path.len,
         &handleTestRoute,
@@ -99,8 +92,7 @@ pub fn registerRoutes(server: *anyopaque) !void {
 /// Handler for GET /test
 /// Returns HTML: <h1>Test Feature Works!</h1>
 fn handleTestRoute(
-    request: *RequestContext,
-    response: *ResponseBuilder,
+    request: *RequestContext, response: *ResponseBuilder,
 ) callconv(.c) c_int {
     _ = request; // Not used in this simple handler
 
@@ -113,8 +105,7 @@ fn handleTestRoute(
     const header_name = "Content-Type";
     const header_value = "text/html";
     _ = server.setHeader(
-        response,
-        header_name.ptr,
+        response, header_name.ptr,
         header_name.len,
         header_value.ptr,
         header_value.len,
@@ -123,8 +114,7 @@ fn handleTestRoute(
     // Set HTML body
     const html = "<h1>Test Feature Works!</h1>";
     const body_result = server.setBody(
-        response,
-        html.ptr,
+        response, html.ptr,
         html.len,
     );
 

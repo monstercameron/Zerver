@@ -5,10 +5,10 @@
 const std = @import("std");
 const builtin = @import("builtin");
 const slog = @import("../observability/slog.zig");
+const time_util = @import("../util/time.zig");
 
 pub const FileWatcher = struct {
-    allocator: std.mem.Allocator,
-    watch_dir: std.fs.Dir,
+    allocator: std.mem.Allocator, watch_dir: std.fs.Dir,
     watch_path: []const u8,
     impl: Impl,
 
@@ -16,8 +16,7 @@ pub const FileWatcher = struct {
         .macos, .ios, .tvos, .watchos, .freebsd, .netbsd, .openbsd, .dragonfly => KqueueImpl,
         .linux => InotifyImpl,
         .windows => WindowsImpl,
-        else => @compileError("Unsupported OS for FileWatcher"),
-    };
+        else => @compileError("Unsupported OS for FileWatcher"), };
 
     pub fn init(allocator: std.mem.Allocator, watch_path: []const u8) !FileWatcher {
         var dir = try std.fs.openDirAbsolute(watch_path, .{ .iterate = true });
@@ -61,8 +60,7 @@ pub const FileWatcher = struct {
 // ============================================================================
 
 const KqueueImpl = struct {
-    allocator: std.mem.Allocator,
-    kq: std.posix.fd_t,
+    allocator: std.mem.Allocator, kq: std.posix.fd_t,
     watch_dir: std.fs.Dir,
     watch_dir_fd: std.posix.fd_t,
     watched_files: std.StringHashMap(WatchedFile),
@@ -81,12 +79,10 @@ const KqueueImpl = struct {
         const dir_fd = dir.fd;
 
         var impl = KqueueImpl{
-            .allocator = allocator,
-            .kq = kq,
+            .allocator = allocator, .kq = kq,
             .watch_dir = dir,
             .watch_dir_fd = dir_fd,
-            .watched_files = std.StringHashMap(WatchedFile).init(allocator),
-        };
+            .watched_files = std.StringHashMap(WatchedFile).init(allocator), };
 
         // Watch the directory for new file events
         try impl.watchDirectory();
@@ -200,13 +196,11 @@ const KqueueImpl = struct {
 
         var eventlist: [1]std.c.Kevent = undefined;
         const timeout = std.os.timespec{
-            .tv_sec = @intCast(timeout_ms / 1000),
-            .tv_nsec = @intCast((timeout_ms % 1000) * 1_000_000),
+            .tv_sec = @intCast(timeout_ms / 1000), .tv_nsec = @intCast((timeout_ms % 1000) * 1_000_000),
         };
 
         const n = try std.posix.kevent(
-            self.kq,
-            &[_]std.c.Kevent{},
+            self.kq, &[_]std.c.Kevent{},
             &eventlist,
             &timeout,
         );
@@ -267,15 +261,14 @@ const KqueueImpl = struct {
 // ============================================================================
 
 const InotifyImpl = struct {
-    allocator: std.mem.Allocator,
-    inotify_fd: std.posix.fd_t,
+    allocator: std.mem.Allocator, inotify_fd: std.posix.fd_t,
     watch_fd: std.posix.fd_t,
     watch_path: []const u8,
 
     fn init(allocator: std.mem.Allocator, dir: std.fs.Dir, watch_path: []const u8) !InotifyImpl {
         _ = dir;
 
-        const inotify_fd = try std.os.inotify_init1(std.os.linux.IN.CLOEXEC);
+        const inotify_fd = try std.posix.inotify_init1(std.os.linux.IN.CLOEXEC);
         errdefer std.posix.close(inotify_fd);
 
         // Watch directory for modifications
@@ -284,13 +277,12 @@ const InotifyImpl = struct {
             std.os.linux.IN.DELETE |
             std.os.linux.IN.MOVED_TO;
 
-        const watch_fd = try std.os.inotify_add_watch(
-            inotify_fd,
-            watch_path,
+        const watch_fd = try std.posix.inotify_add_watch(
+            inotify_fd, watch_path,
             mask,
         );
 
-        slog.debug("inotify watch added", .{
+        slog.debug("inotify watch added", &.{
             slog.Attr.string("path", watch_path),
             slog.Attr.int("watch_fd", watch_fd),
         });
@@ -320,19 +312,18 @@ const InotifyImpl = struct {
 
         const len = blk: {
             if (blocking) {
-                var fds = [_]std.os.pollfd{.{
-                    .fd = self.inotify_fd,
-                    .events = std.os.POLL.IN,
+                var fds = [_]std.posix.pollfd{.{
+                    .fd = self.inotify_fd, .events = std.os.linux.POLL.IN,
                     .revents = 0,
                 }};
 
-                const ready = try std.os.poll(&fds, @intCast(timeout_ms));
+                const ready = try std.posix.poll(&fds, @intCast(timeout_ms));
                 if (ready == 0) return null; // Timeout
 
-                break :blk try std.os.read(self.inotify_fd, &buf);
+                break :blk try std.posix.read(self.inotify_fd, &buf);
             } else {
                 // Non-blocking
-                break :blk std.os.read(self.inotify_fd, &buf) catch |err| {
+                break :blk std.posix.read(self.inotify_fd, &buf) catch |err| {
                     if (err == error.WouldBlock) return null;
                     return err;
                 };
@@ -353,7 +344,7 @@ const InotifyImpl = struct {
 
         if (!isDLLFile(filename)) return null;
 
-        slog.debug("inotify event", .{
+        slog.debug("inotify event", &.{
             slog.Attr.string("file", filename),
             slog.Attr.int("mask", event.mask),
         });
@@ -450,7 +441,7 @@ test "FileWatcher - detect new file" {
     file.close();
 
     // Give filesystem time to propagate
-    std.time.sleep(100 * std.time.ns_per_ms);
+    time_util.sleep(100 * std.time.ns_per_ms);
 
     // Should detect the new file
     const result = try watcher.poll();
@@ -478,7 +469,7 @@ test "FileWatcher - ignore non-DLL files" {
     const file = try tmp.dir.createFile("test.txt", .{});
     file.close();
 
-    std.time.sleep(100 * std.time.ns_per_ms);
+    time_util.sleep(100 * std.time.ns_per_ms);
 
     // Should not detect non-DLL files
     const result = try watcher.poll();
@@ -506,7 +497,7 @@ test "FileWatcher - detect file modification" {
     defer watcher.deinit();
 
     // Give it time to set up watches
-    std.time.sleep(200 * std.time.ns_per_ms);
+    time_util.sleep(200 * std.time.ns_per_ms);
 
     // Poll to clear any initial events
     _ = try watcher.poll();
@@ -517,7 +508,7 @@ test "FileWatcher - detect file modification" {
     file2.close();
 
     // Give filesystem time to propagate
-    std.time.sleep(200 * std.time.ns_per_ms);
+    time_util.sleep(200 * std.time.ns_per_ms);
 
     // Should detect the modification
     const result = try watcher.poll();
@@ -549,14 +540,14 @@ test "FileWatcher - detect file delete and recreate (rebuild scenario)" {
     defer watcher.deinit();
 
     // Give it time to set up watches
-    std.time.sleep(200 * std.time.ns_per_ms);
+    time_util.sleep(200 * std.time.ns_per_ms);
 
     // Clear any initial events
     _ = try watcher.poll();
 
     // Simulate rebuild: delete then recreate
     try tmp.dir.deleteFile("rebuild.so");
-    std.time.sleep(100 * std.time.ns_per_ms);
+    time_util.sleep(100 * std.time.ns_per_ms);
 
     // Should detect deletion
     const delete_result = try watcher.poll();
@@ -570,7 +561,7 @@ test "FileWatcher - detect file delete and recreate (rebuild scenario)" {
     try file2.writeAll("version 2");
     file2.close();
 
-    std.time.sleep(200 * std.time.ns_per_ms);
+    time_util.sleep(200 * std.time.ns_per_ms);
 
     // Should detect the new file
     const create_result = try watcher.poll();
@@ -597,7 +588,7 @@ test "FileWatcher - multiple rapid changes" {
     var watcher = try FileWatcher.init(testing.allocator, tmp_path);
     defer watcher.deinit();
 
-    std.time.sleep(100 * std.time.ns_per_ms);
+    time_util.sleep(100 * std.time.ns_per_ms);
 
     // Create multiple files rapidly
     const file1 = try tmp.dir.createFile("test1.so", .{});
@@ -607,7 +598,7 @@ test "FileWatcher - multiple rapid changes" {
     const file3 = try tmp.dir.createFile("test3.dll", .{});
     file3.close();
 
-    std.time.sleep(200 * std.time.ns_per_ms);
+    time_util.sleep(200 * std.time.ns_per_ms);
 
     // Should detect at least one change
     var detected_files = std.ArrayList([]const u8).init(testing.allocator);
@@ -621,7 +612,7 @@ test "FileWatcher - multiple rapid changes" {
         if (try watcher.poll()) |filename| {
             try detected_files.append(filename);
         }
-        std.time.sleep(50 * std.time.ns_per_ms);
+        time_util.sleep(50 * std.time.ns_per_ms);
     }
 
     // Should have detected at least one file

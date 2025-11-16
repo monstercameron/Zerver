@@ -10,11 +10,11 @@ const std = @import("std");
 const zerver = @import("zerver");
 const domain = @import("../core/domain.zig");
 const slog = @import("src/zerver/observability/slog.zig");
+const time_util = zerver.time_util;
 
 // Slot IDs for request context storage (typed state)
 pub const Slot = enum(u32) {
-    user_id = 1,
-    auth_token = 2,
+    user_id = 1, auth_token = 2,
     rate_limit_key = 3,
     operation_latency = 4,
     todo_id = 5,
@@ -26,8 +26,7 @@ pub fn mw_authenticate(ctx: *zerver.CtxBase) !zerver.Decision {
     const auth_header = ctx.header("authorization") orelse {
         slog.warnf("[auth] ✗ Missing authorization header", .{});
         return zerver.fail(domain.makeError(
-            .Unauthorized,
-            "Missing authorization header",
+            .Unauthorized, "Missing authorization header",
             "auth",
         ));
     };
@@ -36,8 +35,7 @@ pub fn mw_authenticate(ctx: *zerver.CtxBase) !zerver.Decision {
     if (!std.mem.startsWith(u8, auth_header, "Bearer ")) {
         slog.warnf("[auth] ✗ Invalid token format", .{});
         return zerver.fail(domain.makeError(
-            .Unauthorized,
-            "Invalid token format",
+            .Unauthorized, "Invalid token format",
             "auth",
         ));
     }
@@ -48,7 +46,7 @@ pub fn mw_authenticate(ctx: *zerver.CtxBase) !zerver.Decision {
     const latency_config = domain.OperationLatency{ .min_ms = 10, .max_ms = 50 };
     const latency = latency_config.random();
     slog.infof("[auth] Validating token... ({d}ms)", .{latency});
-    std.time.sleep(latency * 1_000_000);
+    time_util.sleep(latency * 1_000_000);
 
     // Store token for downstream use
     try ctx.slotPutString(@intFromEnum(Slot.auth_token), token);
